@@ -1,0 +1,21 @@
+# Runtime secrets for local `next dev` / `wrangler dev`. Copy to .dev.vars.
+# In production set the same keys with:  npx wrangler secret put <NAME>
+
+NEXTJS_ENV=development
+APP_ENV=development
+PUBLIC_SITE_URL=http://localhost:3000
+
+# 32+ random bytes, base64. Used to HMAC session/cart tokens and IP hashes.
+# Generate: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+SESSION_SECRET=
+
+# 32 random bytes, base64. AES-GCM master key for integration_secrets.
+SECRETS_MASTER_KEY=
+SECRETS_KEY_VERSION=v1
+
+# Protects /api/cron/* (expire reservations, outbox). Random string.
+CRON_SECRET=
+
+# true -> staff with mfa_required=1 must complete MFA before admin access.
+# MFA verification flow is a TODO (see README); keep false until implemented.
+ADMIN_MFA_ENFORCED=false

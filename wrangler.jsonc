@@ -1,0 +1,29 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "nova-commerce",
+	"main": ".open-next/worker.js",
+	"compatibility_date": "2026-10-01",
+	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS",
+	},
+	"services": [],
+	// database_name / database_id / remote are written from .env by `npm run sync:wrangler`
+	// (runs automatically before dev, preview and deploy). Do not edit by hand.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "nova-db",
+			"database_id": "11111111-1111-1111-1111-111111111111",
+			// In local mode, `next dev` uses wrangler's local SQLite file for D1.
+			// In remote mode, it connects to Cloudflare D1.
+			"remote": false,
+		},
+	],
+	"observability": { "enabled": true },
+	"vars": {
+		"APP_ENV": "production",
+		"PUBLIC_SITE_URL": "https://example.com",
+	},
+}

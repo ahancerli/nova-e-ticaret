@@ -1,0 +1,1 @@
+export const NextResponse = { json: (body, init) => new Response(JSON.stringify(body), { status: init?.status ?? 200, headers: { "content-type": "application/json" } }), redirect: (u, s) => Response.redirect(u, s) };

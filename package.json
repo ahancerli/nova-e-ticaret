@@ -1,0 +1,57 @@
+{
+	"name": "nova-commerce",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"sync:wrangler": "node scripts/sync-wrangler.mjs",
+		"predev": "D1_MODE=local npm run sync:wrangler",
+		"dev:remote": "D1_MODE=remote npm run dev",
+		"dev": "D1_MODE=local next dev",
+		"build": "next build",
+		"start": "next start",
+		"lint": "eslint .",
+		"typecheck": "tsc --noEmit",
+		"preview": "D1_MODE=remote npm run sync:wrangler && opennextjs-cloudflare build && opennextjs-cloudflare preview",
+		"deploy": "D1_MODE=remote npm run sync:wrangler && opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+		"upload": "D1_MODE=remote npm run sync:wrangler && opennextjs-cloudflare build && opennextjs-cloudflare upload",
+		"db:create": "D1_MODE=remote node scripts/d1.mjs create",
+		"db:schema:local": "D1_MODE=local node scripts/d1.mjs execute --file=db/schema.sql",
+		"db:seed:local": "D1_MODE=local node scripts/d1.mjs execute --file=db/seed.sql",
+		"db:reset:local": "D1_MODE=local node scripts/d1.mjs execute --file=db/drop_all.sql && npm run db:schema:local && npm run db:seed:local",
+		"db:schema:remote": "D1_MODE=remote node scripts/d1.mjs execute --file=db/schema.sql",
+		"db:seed:remote": "D1_MODE=remote node scripts/d1.mjs execute --file=db/seed.sql",
+		"db:reset:remote": "D1_MODE=remote node scripts/d1.mjs execute --file=db/drop_all.sql && npm run db:schema:remote && npm run db:seed:remote",
+		"db:query": "D1_MODE=remote node scripts/d1.mjs execute --command",
+		"db:query:local": "D1_MODE=local node scripts/d1.mjs execute --command",
+		"db:test": "python3 db/tests/test_schema.py",
+		"admin:create": "node scripts/create-admin.mjs",
+		"deps:latest": "npx --yes npm-check-updates@latest -u && npm install",
+		"test": "npm run db:test && npm run test:services",
+		"test:services": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/services.test.ts"
+	},
+	"dependencies": {
+		"@opennextjs/cloudflare": "^1.20.6",
+		"bcryptjs": "latest",
+		"lucide-react": "^1.66.0",
+		"next": "^16.4.3",
+		"react": "^19.3.1",
+		"react-dom": "^19.3.1",
+		"server-only": "latest",
+		"zod": "latest"
+	},
+	"devDependencies": {
+		"@tailwindcss/postcss": "^4.3.3",
+		"@types/node": "latest",
+		"@types/react": "latest",
+		"@types/react-dom": "latest",
+		"eslint": "latest",
+		"eslint-config-next": "^16.4.3",
+		"tailwindcss": "^4.3.3",
+		"typescript": "latest",
+		"wrangler": "latest"
+	}
+}
