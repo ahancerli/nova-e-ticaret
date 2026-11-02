@@ -1,24 +1,18 @@
-import { handler, ok, readJson } from "@/server/http";
-import { assertSameOrigin } from "@/server/security";
-import { cartCouponCode, removeItem, updateItem } from "@/server/services/cart";
-import { buildQuote } from "@/server/services/pricing";
-import { updateCartItemSchema } from "@/server/validation";
+import { RemoveCartItemToken, UpdateCartItemToken, updateCartItemSchema } from "@/modules/cart";
+import { idParams } from "@/modules/shared/schemas";
+import { route } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
-type Ctx = { params: Promise<{ id: string }> };
-
-export const PATCH = handler(async (req, ctx: Ctx) => {
-  await assertSameOrigin(req);
-  const { id } = await ctx.params;
-  const body = updateCartItemSchema.parse(await readJson(req));
-  const cartId = await updateItem(id, body.quantity, body.version);
-  return ok(req, await buildQuote(cartId, await cartCouponCode(cartId)));
+export const PATCH = route({
+  auth: { audience: "storefront" },
+  params: idParams,
+  body: updateCartItemSchema,
+  handle: ({ params, body, resolve }) => resolve(UpdateCartItemToken).execute(params.id, body.quantity, body.version),
 });
 
-export const DELETE = handler(async (req, ctx: Ctx) => {
-  await assertSameOrigin(req);
-  const { id } = await ctx.params;
-  const cartId = await removeItem(id);
-  return ok(req, await buildQuote(cartId, await cartCouponCode(cartId)));
+export const DELETE = route({
+  auth: { audience: "storefront" },
+  params: idParams,
+  handle: ({ params, resolve }) => resolve(RemoveCartItemToken).execute(params.id),
 });

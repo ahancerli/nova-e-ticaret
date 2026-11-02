@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { NavItem } from "@/server/services/catalog";
+import type { NavItem } from "@/modules/storefront";
 
 export function Footer({ nav, tagline }: { nav: NavItem[]; tagline?: string }) {
   return (

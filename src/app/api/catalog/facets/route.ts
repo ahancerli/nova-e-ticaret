@@ -1,10 +1,8 @@
-import { handler, ok } from "@/server/http";
-import { getFacets } from "@/server/services/catalog";
-import { parseListQuery } from "@/server/validation";
+import { GetFacetsToken, parseListQuery } from "@/modules/storefront";
+import { route } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
-export const GET = handler(async (req) => {
-  const p = parseListQuery(new URL(req.url).searchParams);
-  return ok(req, await getFacets(p));
+export const GET = route({
+  handle: ({ req, resolve }) => resolve(GetFacetsToken).execute(parseListQuery(new URL(req.url).searchParams)),
 });

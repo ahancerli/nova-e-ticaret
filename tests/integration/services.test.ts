@@ -26,9 +26,31 @@ let pass = 0, fail = 0;
 async function t(name: string, fn: () => Promise<void>) { try { await fn(); pass++; console.log("PASS", name); } catch (e: any) { fail++; console.log("FAIL", name, "->", e?.code ?? "", e?.message ?? e); } }
 const assert = (c: any, m: string) => { if (!c) throw new Error(m); };
 
-const catalog = await S("server/services/catalog");
-const cart = await S("server/services/cart");
-const pricing = await S("server/services/pricing");
+// Storefront, cart and pricing now live in modules; these adapters keep the original scenarios unchanged.
+const app = await S("server/app");
+const storefront = await S("modules/storefront/index");
+const cartModule = await S("modules/cart/index");
+const pricingModule = await S("modules/pricing/index");
+const svc = (tok: any) => app.resolveService(tok);
+const catalog = {
+  getShellData: async () => (await svc(storefront.GetShellToken)).execute(),
+  getHomeData: async () => (await svc(storefront.GetHomeToken)).execute(),
+  listProducts: async (p: any) => (await svc(storefront.ListCatalogProductsToken)).execute(p),
+  getFacets: async (p: any) => (await svc(storefront.GetFacetsToken)).execute(p),
+  getProductBySlug: async (slug: string) => (await svc(storefront.GetProductDetailToken)).execute(slug),
+};
+const legacyCart = await S("server/services/cart");
+const cart = {
+  resolveCart: legacyCart.resolveCart,
+  cartCouponCode: legacyCart.cartCouponCode,
+  addItem: async (variantId: string, qty: number) => (await svc(cartModule.AddCartItemToken)).execute(variantId, qty),
+  updateItem: async (itemId: string, qty: number) => (await svc(cartModule.UpdateCartItemToken)).execute(itemId, qty),
+  attachCoupon: async (cartId: string, couponId: string) => d1.raw.prepare("INSERT OR REPLACE INTO cart_coupons (cart_id, coupon_id) VALUES (?, ?)").run(cartId, couponId),
+};
+const pricing = {
+  buildQuote: (await S("server/services/pricing")).buildQuote,
+  findUsableCoupon: async (code: string) => (await svc(pricingModule.FindUsableCouponToken)).execute(code),
+};
 const checkout = await S("server/services/checkout");
 const admin = await S("server/services/admin-orders");
 const auth = await S("server/auth");
@@ -120,7 +142,6 @@ await t("login + RBAC + admin order grid", async () => {
   d1.raw.exec(`INSERT INTO users (id,email_normalized,display_name) VALUES ('u_admin','admin@nova.test','Admin');
                INSERT INTO auth_credentials (user_id,password_hash) VALUES ('u_admin','$2b$12$correct-horse');
                INSERT INTO staff_profiles (user_id) VALUES ('u_admin'); INSERT INTO user_roles (user_id,role_id) VALUES ('u_admin','role_order');`);
-  const app = await S("server/app");
   const identity = await S("modules/identity/index");
   const login = async (email: string, password: string, audience: string) =>
     (await app.resolveService(identity.LoginToken)).execute({ email, password, audience, req: new Request("https://nova.test/api/x", { headers: { "cf-connecting-ip": "10.0.0.1" } }) });

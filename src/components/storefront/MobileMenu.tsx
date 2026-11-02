@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import type { NavItem } from "@/server/services/catalog";
+import type { NavItem } from "@/modules/storefront";
 import { CloseIcon, MenuIcon } from "@/components/icons";
 
 export function MobileMenu({ nav }: { nav: NavItem[] }) {

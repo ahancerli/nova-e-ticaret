@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getProductBySlug } from "@/server/services/catalog";
-import { sanitizeRichHtml } from "@/server/security";
+import { GetProductDetailToken } from "@/modules/storefront";
+import { resolveService } from "@/server/app";
+import { sanitizeRichHtml } from "@/core";
 import { VariantPicker } from "@/components/storefront/VariantPicker";
 import { ProductCard } from "@/components/storefront/ProductCard";
+
+const getProductBySlug = async (slug: string) => (await resolveService(GetProductDetailToken)).execute(slug);
 
 type Props = { params: Promise<{ slug: string }> };
 

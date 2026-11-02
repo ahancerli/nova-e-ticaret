@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import type { NavItem } from "@/server/services/catalog";
+import type { NavItem } from "@/modules/storefront";
 import { CartButton } from "@/components/cart/CartButton";
 import { SearchBox } from "./SearchBox";
 import { MobileMenu } from "./MobileMenu";

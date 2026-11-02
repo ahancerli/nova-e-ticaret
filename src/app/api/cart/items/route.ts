@@ -1,15 +1,12 @@
-import { handler, ok, readJson } from "@/server/http";
-import { assertSameOrigin } from "@/server/security";
-import { addItem, cartCouponCode } from "@/server/services/cart";
-import { buildQuote } from "@/server/services/pricing";
-import { addCartItemSchema } from "@/server/validation";
+import { reply } from "@/core";
+import { AddCartItemToken, addCartItemSchema } from "@/modules/cart";
+import { route } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
 /** POST /api/cart/items {variantId, quantity} — no redirect; client refreshes header count and opens the drawer. */
-export const POST = handler(async (req) => {
-  await assertSameOrigin(req);
-  const body = addCartItemSchema.parse(await readJson(req));
-  const cartId = await addItem(body.variantId, body.quantity);
-  return ok(req, await buildQuote(cartId, await cartCouponCode(cartId)), {}, 201);
+export const POST = route({
+  auth: { audience: "storefront" },
+  body: addCartItemSchema,
+  handle: async ({ body, resolve }) => reply.created(await resolve(AddCartItemToken).execute(body.variantId, body.quantity)),
 });

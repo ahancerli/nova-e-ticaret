@@ -29,7 +29,7 @@ Seed'deki `admin@nova.local` kullanıcısının parolası dokümante değildir; 
 |---|---|
 | `npm run dev` / `dev:remote` | Local D1 (varsayılan) / Cloudflare D1'e bağlı geliştirme |
 | `npm run typecheck` · `npm run lint` | `tsc --noEmit` · ESLint |
-| `npm test` | `db:test` (41 şema, python3) + `test:core` (14) + `test:catalog` (18) + `test:identity` (9: giriş, kilit, CSRF, idempotency, yönlendirme) + `test:services` (23 eski servis) — Node ≥ 22.13 |
+| `npm test` | `db:test` (41 şema, python3) + `test:core` (14) + `test:catalog` (18) + `test:identity` (9) + `test:storefront` (10: fiyat motoru, sepet, kupon, vitrin) + `test:services` (23 uçtan uca senaryo) — Node ≥ 22.13 |
 | `npm run db:{schema,seed,reset}:{local,remote}` | Şema / seed / sil-kur-seed |
 | `npm run db:query[:local] -- "SQL"` | Tek SQL (remote varsayılan, `:local` ile local) |
 | `npm run admin:create[:local] -- email "Ad"` | Admin oluştur / parolasını sıfırla (remote / local) |
@@ -84,11 +84,12 @@ src/
     admin/                Panel bileşenleri (aşağıda katalog)
     storefront/ cart/ checkout/   Vitrin bileşenleri
   core/                   Çatıdan bağımsız temel (ayrıntı §4.1): errors, di, db, logging, runtime, http, security (crypto, HTML sanitizer)
-  modules/                İş modülleri (ayrıntı §4.2): platform (CSRF, rate limit, idempotency), identity (giriş, oturum, RBAC), audit, media, catalog (kategori, marka, ürün); diğerleri henüz src/server/services'te
+  modules/                İş modülleri (ayrıntı §4.2): platform (CSRF, rate limit, idempotency), identity (giriş, oturum, RBAC), audit, media,
+                          catalog (admin: kategori, marka, ürün), storefront (vitrin okuma), pricing (fiyat motoru), cart (sepet, kupon)
   lib/                    İstemci+sunucu ortak: api-client, toast, motion, money, slug, ids, types, order-rules, product-rules
   proxy.ts                Sayfa CSP'si (istek başına script nonce)
   server/                 Yalnız sunucu ("server-only"): app (composition root, route, resolveService, currentPrincipal, requireAdminPage), db; auth/security/idempotency/http/crypto = taşınmamış kod için ince cepheler
-    services/             Henüz modüle taşınmamış iş mantığı: catalog (vitrin), cart, pricing, checkout, iyzico, admin-orders, shipping, outbox
+    services/             Henüz modüle taşınmamış iş mantığı: checkout, iyzico, admin-orders, shipping, outbox (cart.ts / pricing.ts = checkout için ince cepheler)
 ```
 
 ## 4. Mimari kurallar (tüm yeni kod bunlara uyar)
@@ -100,7 +101,7 @@ src/
 5. **Yetki:** API route'ları `route({ auth: { audience: "admin", permission: "<kod>" } })` (401/403), admin sayfaları `await requireAdminPage("<kod>")` (oturum yok → `/admin/giris`, yetki yok → `/admin/yetkisiz`). UI gizlemek yetki değildir. Nesne/durum kuralları serviste ayrıca kontrol edilir. Eski `requirePermission` yalnız henüz taşınmamış sipariş API'lerinde.
 6. **CSRF:** cookie ile yazan her uç `assertSameOrigin(req)` (Origin/Referer + JSON içerik tipi; yükleme uçları `{multipart:true}`).
 7. **Idempotency:** `Idempotency-Key` başlığı checkout confirm, sipariş işlemleri ve toplu işlemlerde zorunlu (`withIdempotency`); aynı anahtar + farklı gövde → 409, tekrar → kayıtlı yanıt.
-8. **Fiyat her zaman sunucuda** (`pricing.buildQuote`); quote hash'i saklanır, confirm'de farklıysa 409.
+8. **Fiyat her zaman sunucuda** (`modules/pricing`: `BuildQuote` veriyi yükler, saf `priceCart` hesaplar; her kampanya türü `CAMPAIGN_RULES`'ta bir Strategy — yeni tür = bir sınıf + bir satır). Quote hash'i saklanır, confirm'de farklıysa 409. Sepet yazmaları göreli (`quantity = quantity + n`, üst sınırlı) ve sürüm kontrolü batch içinde guard'lıdır.
 9. **Validasyon:** tüm girdiler Zod 4 şemalarından geçer (modüllerde `modules/<m>/http/schemas.ts`, eskiler `src/server/validation.ts`); Zod mesajları Türkçe (`modules/shared/schemas.ts`). Slug alanları serbest metin alır, servis `slugify` ile normalize eder (Türkçe karakter çevrilir: "Yaşam" → `yasam`).
 10. **Audit:** admin yazma işlemleri `audit_logs`'a yazılır (sözlük: db/README.md §5). Modüllerde audit satırı, değişikliğin **aynı UnitOfWork'üne** `AuditLog.recordStatement()` ile eklenir (ya ikisi ya hiçbiri); eski servisler hâlâ `audit()` kullanır.
 11. **Rate limit / kaba kuvvet:** login için IP başına dakikada 5 hata; ayrıca (hesap, IP) başına 15 dakikada 10 hata yalnız **o IP'yi o hesap için** kapatır — hesap global kilitlenmez (saldırgan admini dışarıda bırakamaz). Kupon: IP başına dakikada 5 hata. `?next=` yönlendirmeleri `safeInternalPath` (`lib/safe-redirect.ts`) ile süzülür.
@@ -211,7 +212,7 @@ Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf b
 | Uç | Metot | Yetki / koruma |
 |---|---|---|
 | `/api/home`, `/api/catalog/products`, `/api/catalog/facets`, `/api/products/:slug`, `/api/health` | GET | Herkese açık (`health` yalnız `{status}` döner; katalog filtresi ≤ 8 özellik / 40 değer) |
-| `/api/cart` · `/api/cart/items` · `/api/cart/items/:id` · `/api/cart/coupons` | GET · POST · PATCH/DELETE · POST/DELETE | Sepet çerezi/oturum, CSRF, kupon rate limit |
+| `/api/cart` · `/api/cart/items` · `/api/cart/items/:id` · `/api/cart/coupons` | GET · POST · PATCH/DELETE · POST/DELETE | Sepet çerezi/oturum, CSRF, `Cache-Control: no-store`; PATCH `version` ile (eski sekme → 409); kupon: IP başına dakikada 5 **hatalı** deneme |
 | `/api/checkout/quote` · `/api/checkout/confirm` | POST | CSRF; confirm Idempotency-Key |
 | `/api/storefront/auth/login|logout` (+ eski `/api/auth/*`) | POST | CSRF, IP + (hesap, IP) limiti; girişte misafir sepeti birleşir |
 | `/api/admin/auth/login|logout` | POST | CSRF, IP + (hesap, IP) limiti, yalnız `staff_profiles` |
@@ -230,7 +231,7 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 
 ## 9. Testler
 
-- `npm test` → **41/41** şema + **14/14** çekirdek + **18/18** katalog + **9/9** identity + **23/23** servis testi (Node ≥ 22.13; `--experimental-transform-types`).
+- `npm test` → **41/41** şema + **14/14** çekirdek + **18/18** katalog + **9/9** identity + **10/10** storefront + **23/23** servis testi (Node ≥ 22.13; `--experimental-transform-types`).
 - Servis testleri gerçek servis kodunu çalıştırır; `tests/integration/hooks.mjs` şunları taklit eder: `server-only`, `@opennextjs/cloudflare` (env = `globalThis.__ENV`), `next/headers` (çerez kavanozu), `next/server`, `bcryptjs` (`$2b$12$<parola>`). Zod gerçek paketle çalışır. D1 taklidi: `tests/integration/d1-sqlite.mjs` (node:sqlite, `batch` = transaction).
 - Admin modülleri (kategori, marka, ürün, sipariş, iade, toplu işlem, outbox, kargo webhook, route'lar) geliştirme sırasında aynı altyapıyla senaryo testlerinden geçirildi; bu senaryolar henüz `tests/integration/`'a taşınmadı (yol haritası).
 

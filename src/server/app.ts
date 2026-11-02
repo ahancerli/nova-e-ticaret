@@ -19,10 +19,13 @@ import {
   type Token,
 } from "@/core";
 import { registerAudit } from "@/modules/audit/audit-log";
+import { registerCart } from "@/modules/cart";
 import { registerCatalog } from "@/modules/catalog";
-import { GetCurrentPrincipalToken, addLoginListener, registerIdentity } from "@/modules/identity";
+import { GetCurrentPrincipalToken, registerIdentity } from "@/modules/identity";
 import { registerMedia } from "@/modules/media";
 import { registerPlatform } from "@/modules/platform/module";
+import { registerPricing } from "@/modules/pricing";
+import { registerStorefront } from "@/modules/storefront";
 import { getEnv } from "./db";
 
 /**
@@ -46,16 +49,9 @@ registerIdentity(container);
 registerAudit(container);
 registerMedia(container);
 registerCatalog(container);
-
-// Storefront login merges the guest cart into the customer's cart. Loaded lazily: the cart service
-// still lives in src/server/services and imports this file.
-addLoginListener(() => ({
-  onLogin: async ({ userId, audience }) => {
-    if (audience !== "storefront") return;
-    const { mergeGuestCartInto } = await import("./services/cart");
-    await mergeGuestCartInto(userId);
-  },
-}));
+registerStorefront(container);
+registerPricing(container);
+registerCart(container); // also subscribes the guest-cart merge to storefront logins
 
 /** Fills a request scope with per-request values. getEnv() adds local .env fallbacks for secrets. */
 async function prepareScope(scope: Container): Promise<void> {

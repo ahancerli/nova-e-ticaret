@@ -6,18 +6,6 @@ const id = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/, "Geçersiz kimlik
 const phone = z.string().trim().regex(/^\+?[1-9]\d{9,14}$/, "Telefon +905xxxxxxxxx biçiminde olmalı");
 const text = (max: number) => z.string().trim().min(1).max(max);
 
-export const addCartItemSchema = z.object({
-  variantId: id,
-  quantity: z.number().int().min(1).max(20),
-}).strict();
-
-export const updateCartItemSchema = z.object({
-  quantity: z.number().int().min(1).max(20),
-  version: z.number().int().min(0).optional(),
-}).strict();
-
-export const couponSchema = z.object({ code: z.string().trim().min(3).max(40) }).strict();
-
 const address = z.object({
   recipientName: text(120),
   phone,
@@ -40,48 +28,6 @@ export const confirmSchema = z.object({
   note: z.string().trim().max(1000).optional(),
   acceptedTermsVersion: text(32),
 }).strict();
-
-export const loginSchema = z.object({
-  email: z.email().max(254),
-  password: z.string().min(1).max(200),
-}).strict();
-
-const csv = (v: string | null) => (v ? v.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 20) : []);
-
-const MAX_ATTR_FILTERS = 8;
-const MAX_ATTR_VALUES = 40;
-
-/** Parses /api/catalog/products query string. Unknown attr codes are ignored server-side. */
-export function parseListQuery(sp: URLSearchParams) {
-  const num = (k: string) => {
-    const v = sp.get(k);
-    if (v == null || v === "") return undefined;
-    const n = Number(v);
-    return Number.isFinite(n) && n >= 0 ? Math.round(n) : undefined;
-  };
-  // Bounded so the generated SQL stays under D1's 100 bound parameters per statement.
-  const attrs: Record<string, string[]> = {};
-  let budget = MAX_ATTR_VALUES;
-  for (const [k, v] of sp.entries()) {
-    if (Object.keys(attrs).length >= MAX_ATTR_FILTERS || budget <= 0) break;
-    if (!k.startsWith("a.") || !/^a\.[a-z0-9_]{1,40}$/.test(k)) continue;
-    const values = csv(v).slice(0, budget);
-    if (!values.length) continue;
-    attrs[k.slice(2)] = values;
-    budget -= values.length;
-  }
-  return {
-    category: sp.get("category")?.slice(0, 100) || undefined,
-    brand: sp.get("brand")?.slice(0, 100) || undefined,
-    q: sp.get("q")?.trim().slice(0, 100) || undefined,
-    minPrice: num("minPrice"),
-    maxPrice: num("maxPrice"),
-    inStock: sp.get("inStock") === "1",
-    sort: sp.get("sort") ?? "newest",
-    page: Math.min(Math.max(num("page") ?? 1, 1), 500),
-    attrs,
-  };
-}
 
 const ORDER_STATUSES = ["pending_payment", "awaiting_transfer", "paid", "preparing", "shipped", "delivered", "completed", "cancelled", "refunded", "partially_refunded"] as const;
 const PAYMENT_STATUSES = ["unpaid", "pending", "paid", "failed", "refunded", "partially_refunded"] as const;

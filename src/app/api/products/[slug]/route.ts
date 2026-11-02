@@ -1,11 +1,16 @@
-import { ApiError, handler, ok } from "@/server/http";
-import { getProductBySlug } from "@/server/services/catalog";
+import { z } from "zod";
+import { NotFoundError } from "@/core";
+import { GetProductDetailToken } from "@/modules/storefront";
+import { slugInput } from "@/modules/shared/schemas";
+import { route } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
-export const GET = handler(async (req, ctx: { params: Promise<{ slug: string }> }) => {
-  const { slug } = await ctx.params;
-  const product = await getProductBySlug(slug);
-  if (!product) throw new ApiError(404, "not_found", "Ürün bulunamadı.");
-  return ok(req, product);
+export const GET = route({
+  params: z.object({ slug: slugInput }),
+  handle: async ({ params, resolve }) => {
+    const product = await resolve(GetProductDetailToken).execute(params.slug);
+    if (!product) throw new NotFoundError("not_found", "Ürün bulunamadı.");
+    return product;
+  },
 });

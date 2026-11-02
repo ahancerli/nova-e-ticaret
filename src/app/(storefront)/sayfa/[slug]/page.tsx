@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { queryFirst } from "@/server/db";
-import { sanitizeRichHtml } from "@/server/security";
+import { sanitizeRichHtml } from "@/core";
 
 type Props = { params: Promise<{ slug: string }> };
 
