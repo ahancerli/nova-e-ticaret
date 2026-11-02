@@ -66,6 +66,8 @@ DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS coupons;
 DROP TABLE IF EXISTS content_page_revisions;
 DROP TABLE IF EXISTS content_pages;
+DROP TABLE IF EXISTS home_section_categories;
+DROP TABLE IF EXISTS home_section_brands;
 DROP TABLE IF EXISTS home_sections;
 DROP TABLE IF EXISTS stories;
 DROP TABLE IF EXISTS navigation_menus;

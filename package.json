@@ -32,7 +32,7 @@
 		"admin:create": "D1_MODE=remote node scripts/create-admin.mjs",
 		"admin:create:local": "D1_MODE=local node scripts/create-admin.mjs",
 		"deps:latest": "npx --yes npm-check-updates@latest -u && npm install",
-		"test": "npm run db:test && npm run test:core && npm run test:catalog && npm run test:identity && npm run test:storefront && npm run test:orders && npm run test:integrations && npm run test:reporting && npm run test:content && npm run test:accounts && npm run test:services",
+		"test": "npm run db:test && npm run test:core && npm run test:catalog && npm run test:identity && npm run test:storefront && npm run test:orders && npm run test:integrations && npm run test:reporting && npm run test:content && npm run test:accounts && npm run test:campaigns && npm run test:showcase && npm run test:services",
 		"test:services": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/services.test.ts",
 		"test:core": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/unit/core.test.ts",
 		"test:catalog": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/catalog.test.ts",
@@ -43,6 +43,8 @@
 		"test:reporting": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/reporting.test.ts",
 		"test:content": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/content.test.ts",
 		"test:accounts": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/accounts.test.ts",
+		"test:campaigns": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/campaigns.test.ts",
+		"test:showcase": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/showcase.test.ts",
 		"test:e2e": "playwright test"
 	},
 	"dependencies": {

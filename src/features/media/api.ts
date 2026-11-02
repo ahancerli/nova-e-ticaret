@@ -3,7 +3,7 @@
 import { uploadFile } from "@/lib/api-client";
 import type { UploadedImage as ServerUploadedImage } from "@/modules/media";
 
-export type MediaFolder = "categories" | "brands" | "products" | "branding";
+export type MediaFolder = "categories" | "brands" | "products" | "branding" | "showcase";
 
 /** Multipart image upload to R2 with progress. */
 export function uploadImage(file: File, folder: MediaFolder, opts: { onProgress?: (fraction: number) => void; signal?: AbortSignal } = {}) {

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /** Who may upload into which folder: catalog images vs. site branding (logo, favicon, share image). */
 const FOLDER_PERMISSION: Record<MediaFolder, string> = {
-  categories: "catalog.write", brands: "catalog.write", products: "catalog.write", branding: "settings.write",
+  categories: "catalog.write", brands: "catalog.write", products: "catalog.write", branding: "settings.write", showcase: "storefront.write",
 };
 
 /** Multipart overhead allowance on top of the image limit. */

@@ -49,20 +49,80 @@ export function HomeClient() {
   );
 }
 
-function Section({ s }: { s: HomeSection }) {
-  if (s.type === "story_strip") return <StoryStrip title={s.title} stories={s.stories} />;
-  if (s.type === "hero_slider") return <HeroSlider slides={s.slides} />;
+function SectionHeading({ id, title, subtitle, moreHref }: { id: string; title: string; subtitle: string | null; moreHref?: string }) {
   return (
-    <section aria-labelledby={`sec-${s.id}`}>
-      <div className="mb-4 flex items-end justify-between">
-        <div><p className="eyebrow">Sana özel vitrin</p><h2 id={`sec-${s.id}`} className="text-xl font-bold">{s.title}</h2></div>
-        <Link href="/ara" className="text-sm font-semibold hover:text-brand">Tümünü gör →</Link>
-      </div>
-      <div className={s.layout === "grid" ? "grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5" : "no-scrollbar grid auto-cols-[46%] grid-flow-col gap-3 overflow-x-auto sm:auto-cols-[31%] md:auto-cols-[23%] lg:auto-cols-[19%]"}>
-        {s.products.map((p) => <ProductCard key={p.id} p={p} />)}
-      </div>
-    </section>
+    <div className="mb-4 flex items-end justify-between gap-4">
+      <div>{subtitle && <p className="eyebrow">{subtitle}</p>}<h2 id={id} className="text-xl font-bold">{title}</h2></div>
+      {moreHref && <Link href={moreHref} className="flex-none text-sm font-semibold hover:text-brand">Tümünü gör →</Link>}
+    </div>
   );
+}
+
+function Section({ s }: { s: HomeSection }) {
+  switch (s.type) {
+    case "story_strip": return <StoryStrip title={s.title} stories={s.stories} />;
+    case "hero_slider": return <HeroSlider slides={s.slides} />;
+    case "banner": return <Banner s={s} />;
+    case "category_tiles":
+      return (
+        <section aria-labelledby={`sec-${s.id}`}>
+          <SectionHeading id={`sec-${s.id}`} title={s.title} subtitle={s.subtitle} moreHref="/kategoriler" />
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {s.categories.map((c) => (
+              <li key={c.id}>
+                <Link href={c.href} className="group flex items-center gap-3 rounded-2xl border border-line bg-white p-3 transition hover:border-brand hover:shadow-sm">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {c.imageUrl ? <img src={c.imageUrl} alt="" loading="lazy" className="size-14 flex-none rounded-xl bg-ground object-cover" /> : <span className="grid size-14 flex-none place-items-center rounded-xl bg-brand-soft text-lg font-bold text-brand">{c.name.slice(0, 1)}</span>}
+                  <span className="font-semibold group-hover:text-brand">{c.name}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      );
+    case "brand_strip":
+      return (
+        <section aria-labelledby={`sec-${s.id}`}>
+          <SectionHeading id={`sec-${s.id}`} title={s.title} subtitle={s.subtitle} moreHref="/markalar" />
+          <ul className="no-scrollbar flex gap-3 overflow-x-auto pb-1">
+            {s.brands.map((b) => (
+              <li key={b.id} className="flex-none">
+                <Link href={b.href} className="flex h-20 w-40 items-center justify-center rounded-2xl border border-line bg-white px-4 text-center font-semibold transition hover:border-brand hover:text-brand">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {b.logoUrl ? <img src={b.logoUrl} alt={b.name} loading="lazy" className="max-h-12 max-w-full object-contain" /> : b.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      );
+    case "products":
+      return (
+        <section aria-labelledby={`sec-${s.id}`}>
+          <SectionHeading id={`sec-${s.id}`} title={s.title} subtitle={s.subtitle} moreHref={s.moreHref} />
+          <div className={s.layout === "grid" ? "grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5" : "no-scrollbar grid auto-cols-[46%] grid-flow-col gap-3 overflow-x-auto sm:auto-cols-[31%] md:auto-cols-[23%] lg:auto-cols-[19%]"}>
+            {s.products.map((p) => <ProductCard key={p.id} p={p} />)}
+          </div>
+        </section>
+      );
+  }
+}
+
+function Banner({ s }: { s: Extract<HomeSection, { type: "banner" }> }) {
+  const body = (
+    <div className="relative overflow-hidden rounded-2xl bg-navy text-white">
+      <picture className="block">
+        {s.mobileImageUrl && <source media="(max-width: 767px)" srcSet={s.mobileImageUrl} />}
+        <img src={s.imageUrl} alt={s.alt} loading="lazy" className="h-48 w-full object-cover opacity-80 md:h-64" />
+      </picture>
+      <div className="absolute inset-0 flex flex-col justify-center gap-2 bg-gradient-to-r from-navy/85 via-navy/40 to-transparent p-6 md:p-10">
+        <h2 className="max-w-lg text-2xl font-extrabold md:text-3xl">{s.title}</h2>
+        {s.subtitle && <p className="max-w-md text-white/85">{s.subtitle}</p>}
+        {s.href && s.ctaLabel && <span className="btn mt-2 w-fit bg-white text-navy">{s.ctaLabel} →</span>}
+      </div>
+    </div>
+  );
+  return <section aria-label={s.title}>{s.href ? <Link href={s.href} className="block">{body}</Link> : body}</section>;
 }
 
 function StoryStrip({ title, stories }: { title: string; stories: Extract<HomeSection, { type: "story_strip" }>["stories"] }) {

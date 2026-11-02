@@ -65,6 +65,22 @@ await t("engine: free shipping threshold applies after discount; VAT included in
   assert(pricing.CAMPAIGN_RULES.percentage && pricing.CAMPAIGN_RULES.buy_x_pay_y, "strategies registered");
 });
 
+await t("engine: free-shipping campaign waives the fee (minimum after discounts, needs an eligible line) and records a shipping adjustment", () => {
+  const lines = [line("a", 30000, 1)];
+  const ship = { shipping: { feeMinor: 4990, freeAboveMinor: 100000 } };
+  const free = campaign({ id: "fs", kind: "free_shipping", minSubtotalMinor: 25000 });
+  const q = price(lines, [free], ship);
+  assert(q.shippingMinor === 0 && q.totalMinor === 30000 && q.discountMinor === 0, JSON.stringify(q));
+  const adj = q.adjustments.find((a: any) => a.target === "shipping");
+  assert(adj && adj.amountMinor === 4990 && adj.campaignId === "fs" && adj.lineVariantId === null, JSON.stringify(q.adjustments));
+  // 20% off brings the cart under the minimum → fee charged again
+  const under = price(lines, [free, campaign({ id: "p20", percentageBps: 2000, stackPolicy: "combinable" })], ship);
+  assert(under.shippingMinor === 4990 && !under.adjustments.some((a: any) => a.target === "shipping"), JSON.stringify(under));
+  // not targeting any cart product → no effect
+  const off = pricing.priceCart({ lines, campaigns: [free], eligibility: new Map(), coupon: null, couponInvalid: false, ...ship });
+  assert(off.shippingMinor === 4990, String(off.shippingMinor));
+});
+
 // --- container --------------------------------------------------------------------------------------
 const d1 = makeD1([`${ROOT}/db/schema.sql`, `${ROOT}/db/seed.sql`]);
 d1.raw.exec("DELETE FROM cart_coupons; DELETE FROM cart_items; UPDATE carts SET status = 'abandoned'");

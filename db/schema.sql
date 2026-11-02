@@ -490,20 +490,46 @@ CREATE TABLE IF NOT EXISTS slides (
   CHECK (ends_at IS NULL OR starts_at IS NULL OR ends_at > starts_at)
 ) STRICT;
 
+-- Home page layout: ordered sections, each of one type. Type-specific data: slider / story collection,
+-- product selection (home_section_products or selection_mode), category / brand lists (tables below) and
+-- banner image + link. Managed in Panel → Vitrin (src/modules/showcase).
 CREATE TABLE IF NOT EXISTS home_sections (
   id                  TEXT PRIMARY KEY,
-  title               TEXT NOT NULL,
+  title               TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 120),
+  subtitle            TEXT CHECK (subtitle IS NULL OR length(subtitle) <= 160),
   section_type        TEXT NOT NULL CHECK (section_type IN ('hero_slider','story_strip','product_carousel','product_grid','category_tiles','brand_strip','banner','recently_viewed')),
-  slider_id           TEXT REFERENCES sliders(id) ON DELETE SET NULL,
-  story_collection_id TEXT REFERENCES story_collections(id) ON DELETE SET NULL,
+  slider_id           TEXT REFERENCES sliders(id) ON DELETE RESTRICT,
+  story_collection_id TEXT REFERENCES story_collections(id) ON DELETE RESTRICT,
   selection_mode      TEXT NOT NULL DEFAULT 'manual' CHECK (selection_mode IN ('manual','popular','new','discounted','rule')),
+  item_limit          INTEGER NOT NULL DEFAULT 12 CHECK (item_limit BETWEEN 1 AND 48),
+  media_id            TEXT REFERENCES media_assets(id) ON DELETE SET NULL,
+  mobile_media_id     TEXT REFERENCES media_assets(id) ON DELETE SET NULL,
+  target_url          TEXT CHECK (target_url IS NULL OR target_url GLOB '/*' OR target_url GLOB 'https://*'),
+  cta_label           TEXT CHECK (cta_label IS NULL OR length(cta_label) <= 40),
   settings_json       TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(settings_json)),
   sort_order          INTEGER NOT NULL DEFAULT 0,
   is_active           INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
   starts_at           TEXT,
   ends_at             TEXT,
+  updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   CHECK (section_type <> 'hero_slider' OR slider_id IS NOT NULL),
-  CHECK (section_type <> 'story_strip' OR story_collection_id IS NOT NULL)
+  CHECK (section_type <> 'story_strip' OR story_collection_id IS NOT NULL),
+  CHECK (section_type <> 'banner' OR media_id IS NOT NULL OR is_active = 0),
+  CHECK (ends_at IS NULL OR starts_at IS NULL OR ends_at > starts_at)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS home_section_categories (
+  section_id  TEXT NOT NULL REFERENCES home_sections(id) ON DELETE CASCADE,
+  category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (section_id, category_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS home_section_brands (
+  section_id TEXT NOT NULL REFERENCES home_sections(id) ON DELETE CASCADE,
+  brand_id   TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (section_id, brand_id)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS home_section_products (

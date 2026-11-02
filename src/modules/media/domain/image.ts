@@ -3,7 +3,7 @@
  * Bytes live in object storage under "<folder>/<uuid>.<ext>"; the DB stores the key and its public path.
  */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-export const MEDIA_FOLDERS = ["categories", "brands", "products", "branding"] as const;
+export const MEDIA_FOLDERS = ["categories", "brands", "products", "branding", "showcase"] as const;
 export type MediaFolder = (typeof MEDIA_FOLDERS)[number];
 export const ASSET_PREFIX = "/assets/";
 

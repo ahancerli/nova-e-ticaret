@@ -19,6 +19,7 @@ import {
   type Token,
 } from "@/core";
 import { registerAudit } from "@/modules/audit/audit-log";
+import { registerCampaigns } from "@/modules/campaigns";
 import { registerCart } from "@/modules/cart";
 import { registerCatalog } from "@/modules/catalog";
 import { registerCheckout } from "@/modules/checkout";
@@ -36,6 +37,7 @@ import { registerPricing } from "@/modules/pricing";
 import { registerReporting } from "@/modules/reporting";
 import { registerSettings } from "@/modules/settings";
 import { registerShipping } from "@/modules/shipping";
+import { registerShowcase } from "@/modules/showcase";
 import { registerStaff } from "@/modules/staff";
 import { registerStorefront } from "@/modules/storefront";
 import { getEnv } from "./env";
@@ -69,6 +71,8 @@ registerCustomers(container); // members + storefront sign-up (consent versions 
 registerCatalog(container);
 registerStorefront(container);
 registerPricing(container);
+registerCampaigns(container);
+registerShowcase(container);
 registerCart(container); // also subscribes the guest-cart merge to storefront logins
 registerCheckout(container);
 registerOrders(container);

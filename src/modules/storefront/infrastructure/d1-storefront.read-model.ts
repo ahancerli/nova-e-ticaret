@@ -63,10 +63,13 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
   // --- home ------------------------------------------------------------------------------------------
   async home(now: string): Promise<HomeData> {
     const sections = await this.db.all<HomeSectionRow>(
-      `SELECT id, title, section_type, slider_id, story_collection_id, selection_mode, settings_json
-         FROM home_sections
-        WHERE is_active = 1 AND (starts_at IS NULL OR starts_at <= ?) AND (ends_at IS NULL OR ends_at > ?)
-        ORDER BY sort_order`,
+      `SELECT h.id, h.title, h.subtitle, h.section_type, h.slider_id, h.story_collection_id, h.selection_mode, h.item_limit, h.target_url, h.cta_label,
+              m.public_url AS media_url, m.alt_text AS media_alt, mm.public_url AS mobile_media_url
+         FROM home_sections h
+         LEFT JOIN media_assets m ON m.id = h.media_id
+         LEFT JOIN media_assets mm ON mm.id = h.mobile_media_id
+        WHERE h.is_active = 1 AND (h.starts_at IS NULL OR h.starts_at <= ?) AND (h.ends_at IS NULL OR h.ends_at > ?)
+        ORDER BY h.sort_order, h.id`,
       now, now,
     );
     const loaded = await Promise.all(sections.map((s) => HOME_SECTION_LOADERS[s.section_type]?.load(this.db, s, now) ?? Promise.resolve(null)));

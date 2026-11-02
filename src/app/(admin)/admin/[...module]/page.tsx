@@ -4,8 +4,6 @@ import { AdminBadge, AdminCard, AdminCardTitle, AdminPageHeader } from "@/compon
 import { currentPrincipal } from "@/server/app";
 
 const MODULES: Record<string, { title: string; tables: string; api: string }> = {
-  kampanyalar: { title: "Kampanyalar ve kuponlar", tables: "campaigns, campaign_products/brands/categories, coupons", api: "/api/admin/campaigns" },
-  vitrin: { title: "Vitrin", tables: "sliders, slides, story_collections, stories, story_frames, home_sections", api: "/api/admin/home" },
   odemeler: { title: "Ödeme sistemleri", tables: "payment_configs, bank_accounts, integration_secrets, bank_transfers", api: "/api/admin/payments" },
   entegrasyonlar: { title: "Entegrasyonlar", tables: "integrations, integration_secrets, shipping_methods", api: "/api/admin/integrations" },
   denetim: { title: "Denetim kayıtları", tables: "audit_logs", api: "/api/admin/audit" },

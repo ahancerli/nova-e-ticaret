@@ -201,10 +201,18 @@ INSERT OR IGNORE INTO sliders (id, code, name) VALUES ('sl_home','home_hero','An
 INSERT OR IGNORE INTO slides (id, slider_id, title, subtitle, desktop_media_id, cta_label, target_url, sort_order) VALUES
  ('sd_1','sl_home','İyi hissettiren küçük keşifler.','Stiline, evine ve gününe ilham veren favoriler tek bir yerde.','m_hero1','Seçkiyi keşfet','/kampanyalar',1);
 
-INSERT OR IGNORE INTO home_sections (id, title, section_type, slider_id, story_collection_id, selection_mode, sort_order) VALUES
- ('hs_stories','Markaları keşfet','story_strip',NULL,'sc_home','manual',1),
- ('hs_hero','Hero','hero_slider','sl_home',NULL,'manual',2),
- ('hs_popular','Popüler ürünlerden seçtik','product_carousel',NULL,NULL,'manual',3);
+INSERT OR IGNORE INTO home_sections (id, title, subtitle, section_type, slider_id, story_collection_id, selection_mode, item_limit, media_id, target_url, cta_label, sort_order) VALUES
+ ('hs_stories','Markaları keşfet',NULL,'story_strip',NULL,'sc_home','manual',12,NULL,NULL,NULL,1),
+ ('hs_hero','Hero',NULL,'hero_slider','sl_home',NULL,'manual',12,NULL,NULL,NULL,2),
+ ('hs_categories','Kategorilere göz at','Aradığını hızlıca bul','category_tiles',NULL,NULL,'manual',8,NULL,NULL,NULL,3),
+ ('hs_popular','Popüler ürünlerden seçtik','Sana özel vitrin','product_carousel',NULL,NULL,'manual',12,NULL,NULL,NULL,4),
+ ('hs_banner','Ev & Yaşam haftası','Seçili ev ürünlerinde özel fiyatlar','banner',NULL,NULL,'manual',12,'m_hero1','/kategori/ev-yasam','Ürünleri gör',5),
+ ('hs_new','Yeni gelenler','Bu hafta eklenenler','product_grid',NULL,NULL,'new',10,NULL,NULL,NULL,6),
+ ('hs_brands','Markalarımız',NULL,'brand_strip',NULL,NULL,'manual',12,NULL,NULL,NULL,7);
+INSERT OR IGNORE INTO home_section_categories (section_id, category_id, sort_order) VALUES
+ ('hs_categories','c_elektronik',1),('hs_categories','c_moda',2),('hs_categories','c_evyasam',3),('hs_categories','c_kitap',4);
+INSERT OR IGNORE INTO home_section_brands (section_id, brand_id, sort_order) VALUES
+ ('hs_brands','b_atelier',1),('hs_brands','b_linen',2),('hs_brands','b_sound',3),('hs_brands','b_daily',4),('hs_brands','b_kitap',5);
 INSERT OR IGNORE INTO home_section_products (section_id, product_id, sort_order) VALUES
  ('hs_popular','p_knit',1),('hs_popular','p_bed',2),('hs_popular','p_speaker',3),('hs_popular','p_pan',4),('hs_popular','p_atlas',5);
 

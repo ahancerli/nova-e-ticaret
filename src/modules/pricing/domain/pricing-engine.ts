@@ -98,13 +98,15 @@ export function priceCart(input: PricingInput): Quote {
     }
   };
 
+  // Item campaigns discount units; free-shipping campaigns only waive the shipping fee (handled below).
+  const itemCampaigns = input.campaigns.filter((c) => c.kind !== "free_shipping");
   // Exclusive campaigns, best first: priority, then the discount they would give on their own, then id.
-  const ranked = input.campaigns
+  const ranked = itemCampaigns
     .filter((c) => c.stackPolicy === "exclusive")
     .map((c) => ({ c, value: [...evaluateCampaign(c, units.filter((u) => eligible(u, c))).values()].reduce((a, b) => a + b, 0) }))
     .sort((a, b) => b.c.priority - a.c.priority || b.value - a.value || a.c.id.localeCompare(b.c.id));
   for (const { c } of ranked) apply(c, units.filter((u) => !u.claimedBy && eligible(u, c)));
-  for (const c of input.campaigns.filter((c) => c.stackPolicy === "combinable")) apply(c, units.filter((u) => eligible(u, c)));
+  for (const c of itemCampaigns.filter((c) => c.stackPolicy === "combinable")) apply(c, units.filter((u) => eligible(u, c)));
 
   for (const [idx, l] of lines.entries()) {
     l.discountMinor = units.filter((u) => u.lineIdx === idx).reduce((a, u) => a + u.discount, 0);
@@ -116,7 +118,20 @@ export function priceCart(input: PricingInput): Quote {
   const afterDiscount = subtotal - discount;
 
   const method = input.shipping;
-  const shipping = !lines.length || !method ? 0 : method.freeAboveMinor != null && afterDiscount >= method.freeAboveMinor ? 0 : method.feeMinor;
+  let shipping = !lines.length || !method ? 0 : method.freeAboveMinor != null && afterDiscount >= method.freeAboveMinor ? 0 : method.feeMinor;
+  // Free shipping: the best (priority, then id) campaign whose minimum is met and that targets at least one line.
+  if (shipping > 0) {
+    const free = input.campaigns
+      .filter((c) => c.kind === "free_shipping" && afterDiscount >= c.minSubtotalMinor && units.some((u) => eligible(u, c)))
+      .sort((a, b) => b.priority - a.priority || a.id.localeCompare(b.id))[0];
+    if (free) {
+      adjustments.push({
+        campaignId: free.id, couponId: coupon && coupon.campaignId === free.id ? coupon.id : null, label: free.name, amountMinor: shipping,
+        target: "shipping", lineVariantId: null, units: 0, rule: { kind: free.kind, version: free.ruleVersion },
+      });
+      shipping = 0;
+    }
+  }
   const tax = lines.reduce((a, l) => a + l.taxMinor, 0) + includedTaxMinor(shipping, SHIPPING_TAX_BPS);
 
   if (coupon && !adjustments.some((a) => a.couponId === coupon.id)) {
