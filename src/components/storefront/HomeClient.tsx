@@ -91,7 +91,6 @@ function HeroSlider({ slides }: { slides: Extract<HomeSection, { type: "hero_sli
         </div>
         <picture className="block">
           {s.mobileUrl && <source media="(max-width: 767px)" srcSet={s.mobileUrl} />}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={s.desktopUrl} alt={s.alt} className="mx-auto max-h-72 w-full rounded-xl object-contain" />
         </picture>
       </div>

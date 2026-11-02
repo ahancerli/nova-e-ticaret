@@ -42,8 +42,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Initial load after hydration; the shell itself is server-rendered and cart-agnostic (cache-safe).
-    void refresh();
-  }, [refresh]);
+    let cancelled = false;
+    api<Quote>("/api/cart").then(
+      (r) => {
+        if (cancelled) return;
+        setCart(r.data);
+        setVersion(Number(r.meta.version ?? 0));
+      },
+      () => { /* header still renders with 0 */ },
+    );
+    return () => { cancelled = true; };
+  }, []);
 
   const run = useCallback(async (fn: () => Promise<{ data: Quote }>) => {
     setBusy(true);

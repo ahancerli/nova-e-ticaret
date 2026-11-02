@@ -36,7 +36,7 @@ if (!block.test(src)) {
 }
 const next = src.replace(
 	block,
-	(_m, a, oldName, b, _oldId, c, _oldRemote) =>
+	(_m, a, oldName, b, _oldId, c) =>
 		`${a}${name || oldName}${b}${id}${c}${String(remote)}`,
 )
 const servicesBlock = /"services"\s*:\s*\[[\s\S]*?\],/

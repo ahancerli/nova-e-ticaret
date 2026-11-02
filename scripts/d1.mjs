@@ -43,9 +43,11 @@ switch (action) {
 		const args = ["d1", "execute", db, remote ? "--remote" : "--local", "--yes"]
 		for (let i = 0; i < rest.length; i++) {
 			const a = rest[i]
-			if (a === "--command")
-				(args.push("--command", rest.slice(i + 1).join(" ")), (i = rest.length))
-			else args.push(a)
+			if (a === "--command") {
+				args.push("--command", rest.slice(i + 1).join(" "))
+				break
+			}
+			args.push(a)
 		}
 		wrangler(args)
 		break

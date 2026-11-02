@@ -13,7 +13,7 @@ Tek satıcılı mağaza: müşteri vitrini (`/`) ve yönetim paneli (`/admin`) a
 ## 1. Hızlı başlangıç (local)
 
 ```bash
-nvm use 22                       # Node ≥ 22 zorunlu (makinedeki varsayılan v18 → tsc/next/testler bozulur)
+nvm use 25                       # Node ≥ 22.13 zorunlu (v18 / v22.9 → tsc/next/servis testleri bozulur)
 npm install
 npm run db:schema:local          # local SQLite-D1: 87 tablo · 47 indeks · 23 trigger
 npm run db:seed:local            # roller/izinler + demo katalog + demo sipariş
@@ -189,12 +189,11 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 
 ## 10. Bilinen tuzaklar
 
-- **Node sürümü:** makinede varsayılan Node 18 olabilir; `nvm use 22` olmadan `tsc`, `next dev` ve servis testleri çalışmaz.
+- **Node sürümü:** makinede varsayılan Node 18 olabilir; Node ≥ 22.13 olmadan `tsc`, `next dev` ve servis testleri çalışmaz.
 - **Dev sunucusu bayat modül:** `src/server/validation.ts` veya `security.ts` gibi paylaşılan sunucu modülleri değiştiğinde çalışan `next dev` eski kopyayı tutabiliyor (belirti: `Cannot read properties of undefined (reading 'parse')`, "Beklenmeyen bir hata"). Çözüm: dev sunucusunu yeniden başlat.
 - **SQLite ≥ 3.51:** ilişkili alt sorgunun `ORDER BY`'ında dış kolon kullanılamaz (`no such column: v.id`). Dış referansı `WHERE`'de tut.
 - **Migration yok:** `schema.sql` mevcut tabloya kolon eklemez → `ALTER TABLE` veya local reset (db/README.md §7).
-- **ESLint:** vitrin dosyalarında önceden kalan 1 hata + 2 uyarı var (`CartProvider` setState-in-effect, `CheckoutClient` `window.location.assign`, `HomeClient` gereksiz disable). Panel kodu temiz.
-- `src/app/(admin-auth)/admin/giris/page 2.tsx`: eski giriş tasarımının macOS kopyası, rotaya bağlı değil; silinebilir.
+- **ESLint / build:** `npm run lint` ve `next build` hatasız ve uyarısız olmalı; yeni kod bu durumu bozmamalı. `tests/**` için yalnız `no-explicit-any` kapalı (dinamik import).
 - iyzico: iade ucu `/v2/payment/refund` ve webhook V3 imza doğrulaması **sandbox'ta denenmedi**; canlı öncesi güncel dokümanla doğrulanmalı. iyzico `identityNumber` sabit yer tutucu (TCKN toplama işletme kararı).
 - Fiyat motoru: "X al Y bedava" hesaplanır ama hediye satırı otomatik eklenmez. Kargo KDV'si %20 varsayılır.
 - Saat dilimi: tarih filtreleri UTC gün sınırlarıyla çalışır (gösterim Europe/Istanbul).

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useCart } from "@/components/cart/CartProvider";
 import { api, ClientApiError, newIdempotencyKey } from "@/lib/api-client";
@@ -14,6 +15,7 @@ type ConfirmResult = { orderNumber: string; totalMinor: number; paymentMethod: "
 /** Guest checkout (no account required, spec R13). All amounts come from the server. */
 export function CheckoutClient() {
   const { cart, refresh } = useCart();
+  const router = useRouter();
   const [method, setMethod] = useState<"iyzico" | "bank_transfer">("iyzico");
   const [sameBilling, setSameBilling] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -61,7 +63,7 @@ export function CheckoutClient() {
       if (res.data.payment?.paymentPageUrl) {
         window.location.assign(res.data.payment.paymentPageUrl);
       } else {
-        window.location.assign(`/siparis/sonuc?durum=havale&no=${encodeURIComponent(res.data.orderNumber)}`);
+        router.push(`/siparis/sonuc?durum=havale&no=${encodeURIComponent(res.data.orderNumber)}`);
       }
     } catch (err) {
       if (err instanceof ClientApiError) {
