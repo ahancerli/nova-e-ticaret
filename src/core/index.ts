@@ -13,3 +13,5 @@ export * from "./runtime/ids";
 export * from "./runtime/config";
 export * from "./http";
 export * from "./tokens";
+export * from "./security/crypto";
+export * from "./security/sanitize-html";

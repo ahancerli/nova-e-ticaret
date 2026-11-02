@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { currentAdminUser } from "@/server/auth";
 import { notFound } from "next/navigation";
 import { AdminBadge, AdminCard, AdminCardTitle, AdminPageHeader } from "@/components/admin/ui";
+import { currentPrincipal } from "@/server/app";
 
 const MODULES: Record<string, { title: string; tables: string; api: string }> = {
   kampanyalar: { title: "Kampanyalar ve kuponlar", tables: "campaigns, campaign_products/brands/categories, coupons", api: "/api/admin/campaigns" },
@@ -17,7 +17,7 @@ const MODULES: Record<string, { title: string; tables: string; api: string }> = 
 export default async function AdminModulePlaceholder({ params }: { params: Promise<{ module: string[] }> }) {
   const { module } = await params;
   const m = MODULES[module[0] ?? ""];
-  const user = await currentAdminUser();
+  const user = await currentPrincipal("admin");
   if (!m || !user?.isStaff) notFound();
   return (
     <div className="space-y-6">

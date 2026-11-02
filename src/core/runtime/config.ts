@@ -25,7 +25,9 @@ export function buildConfig(env: Partial<CloudflareEnv>, processEnv: Record<stri
     const fromEnv = (env as Record<string, unknown>)[key];
     return (typeof fromEnv === "string" && fromEnv) || processEnv[key] || "";
   };
-  const appEnvRaw = pick("APP_ENV") || "development";
+  // APP_ENV: the process env (.env.local in dev) wins over the Worker var, because wrangler.jsonc ships
+  // APP_ENV=production as a var that local `next dev` also sees. In production both say "production".
+  const appEnvRaw = processEnv.APP_ENV || pick("APP_ENV") || "development";
   const appEnv = (["development", "preview", "production"].includes(appEnvRaw) ? appEnvRaw : "development") as AppConfig["appEnv"];
   const config: AppConfig = {
     appEnv,

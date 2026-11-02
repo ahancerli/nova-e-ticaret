@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
-import { currentAdminUser } from "@/server/auth";
 import { getEnv, queryAll } from "@/server/db";
 import { AdminShell } from "@/components/admin/AdminShell";
 import type { SidebarEntry, SidebarGroup } from "@/components/admin/AdminSidebar";
+import { currentPrincipal } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: { default: "Yönetim", template: "%s | nova. yönetim" }, robots: { index: false, follow: false } };
@@ -63,7 +63,7 @@ const NAV: Array<{ title: string; items: NavEntry[] }> = [
 
 /** Every admin page is gated on the server. UI hiding below is convenience only; APIs re-check permissions. */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const user = await currentAdminUser();
+  const user = await currentPrincipal("admin");
   if (!user) redirect("/admin/giris?next=/admin");
   if (!user.isStaff) redirect("/");
 

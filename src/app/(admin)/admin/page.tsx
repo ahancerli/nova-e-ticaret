@@ -1,17 +1,17 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { requirePermission } from "@/server/auth";
 import { getDb } from "@/server/db";
 import { formatMinor } from "@/lib/money";
 import { AdminBadge, AdminCard, AdminTable } from "@/components/admin/ui";
 import { BadgeCheck, CircleAlert, Clock3, CreditCard, ReceiptText, WalletCards } from "lucide-react";
+import { requireAdminPage } from "@/server/app";
 
 export const metadata = { title: "Gösterge paneli" };
 
 const dateFmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" });
 
 export default async function AdminDashboard() {
-  await requirePermission("orders.read");
+  await requireAdminPage("orders.read");
   const db = await getDb();
   const [kpi, recent, low] = await db.batch([
     db.prepare(`SELECT COUNT(*) AS orders,

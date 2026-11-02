@@ -109,11 +109,12 @@ cron expire: süresi dolan rezervasyonlu ödenmemiş sipariş ──► cancelle
 | `inventory_movements.kind` / `reference_type` | `receipt` (ilk stok, ref `product`), `adjustment` (panel, ref `product`), `reserve` (checkout, ref `order`), `commit` (ödeme), `release` (iptal/expire, ref `order`/`checkout`), `return` (iade stoğa alma, ref **`order_item`** — kalem bazlı iade sayımı bu satırlardan yapılır) |
 | `outbox_events.event_type` → payload | `order.placed {orderNumber,paymentMethod}`, `order.paid {}`, `order.shipped {shipmentId,trackingNumber}`, `order.delivered {}`, `order.cancelled {reason}`, `refund.process {refundId,orderId}`, `refund.succeeded {refundId,amountMinor,full}`; `dedupe_key = "<tip>:<id>"` |
 | `idempotency_keys.scope` | `checkout.confirm`, `order.action:<orderId>`, `order.bulk` (24 saat) |
-| `rate_limit_buckets.bucket_key` | `login-fail:<ipHash>`, `storefront-login-fail:…`, `admin-login-fail:…`, `coupon-fail:…` (dakikada 5 hata), `iyzico-callback:…` (dakikada 30 istek), `iyzico-webhook:…` (dakikada 300 istek) |
+| `rate_limit_buckets.bucket_key` | `login-fail:<ipHash>`, `storefront-login-fail:…`, `admin-login-fail:…`, `coupon-fail:…` (dakikada 5 hata), `login-account-fail:<userId>:<ipHash>` (15 dakikada 10 hata, yalnız o IP), `iyzico-callback:…` (dakikada 30 istek), `iyzico-webhook:…` (dakikada 300 istek) |
 | `audit_logs.action` | `category.create/update/delete`, `brand.*`, `product.*`, `media.upload`, `order.<action>`, `order.bulk.<action>` |
 | `media_assets` (yüklenen) | `storage_key = "<klasör>/<uuid>.<png|jpg|webp|avif>"`, klasör ∈ `categories · brands · products`; `public_url = "/assets/<storage_key>"` (R2'den sunulur); `alt_text` = orijinal dosya adı; `sha256`, `width/height` dolu |
 | `integration_secrets.secret_name` | iyzico (`payment_config_id`): `api_key`, `secret_key`; kargo (`integration_id`): `webhook_secret`. AES-256-GCM, anahtar `SECRETS_MASTER_KEY` |
 | `site_settings.key` | `site.name`, `site.tagline`, `site.announcement`, `contact.email`, `contact.phone`, `seo.default_*`, `checkout.reservation_minutes`, `checkout.bank_transfer_hours`, `shipping.free_above_minor` |
+| `auth_credentials` | `failed_attempts` yalnız görünürlük içindir (başarılı girişte sıfırlanır); `locked_until` artık kilit için **kullanılmaz** (global hesap kilidi DoS'a açıktı) ve girişte temizlenir |
 | `price_lists` / `warehouses` | Uygulama yalnız `pl_retail` (TRY) ve `wh_main` kullanır (sabit) |
 
 ## 6. Seed içeriği

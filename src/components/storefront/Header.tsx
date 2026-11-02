@@ -5,11 +5,11 @@ import { CartButton } from "@/components/cart/CartButton";
 import { SearchBox } from "./SearchBox";
 import { MobileMenu } from "./MobileMenu";
 import { UserIcon } from "@/components/icons";
-import { currentStorefrontUser } from "@/server/auth";
+import { currentPrincipal } from "@/server/app";
 
 /** Server component: menu/public settings from D1, account CTA from storefront session cookie. */
 export async function Header({ nav, announcement }: { nav: NavItem[]; announcement?: { text: string; href?: string } }) {
-  const user = await currentStorefrontUser();
+  const user = await currentPrincipal("storefront");
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-white/95 backdrop-blur">
       {announcement?.text && (

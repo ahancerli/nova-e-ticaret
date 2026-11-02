@@ -219,7 +219,7 @@ export type OrderDetail = NonNullable<Awaited<ReturnType<typeof getOrderDetail>>
 // ---------------------------------------------------------------------------
 // Actions (state machine in lib/order-rules.ts; every write is guarded by the expected status)
 // ---------------------------------------------------------------------------
-export async function runOrderAction(orderId: string, input: OrderActionInput, actor: { id: string; permissions: Set<string> }) {
+export async function runOrderAction(orderId: string, input: OrderActionInput, actor: { id: string; permissions: ReadonlySet<string> }) {
   const db = await getDb();
   const order = await db
     .prepare("SELECT id, order_number, status, checkout_id, total_minor FROM orders WHERE id = ?")
@@ -472,7 +472,7 @@ export async function settleRefund(refundId: string, r: { ok: boolean; providerR
 export type BulkResult = { id: string; orderNumber: string | null; ok: boolean; status?: string; code?: string; message?: string };
 
 /** Applies one action to many orders; every order goes through the same per-order rules and guards. */
-export async function bulkOrderAction(orderIds: string[], action: OrderActionInput, actor: { id: string; permissions: Set<string> }): Promise<BulkResult[]> {
+export async function bulkOrderAction(orderIds: string[], action: OrderActionInput, actor: { id: string; permissions: ReadonlySet<string> }): Promise<BulkResult[]> {
   const db = await getDb();
   const ids = [...new Set(orderIds)];
   const numbers = new Map<string, string>();

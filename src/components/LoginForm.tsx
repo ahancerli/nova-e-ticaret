@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { api, ClientApiError } from "@/lib/api-client";
+import { safeInternalPath } from "@/lib/safe-redirect";
 
 interface LoginFormProps {
   endpoint: string;
@@ -31,8 +32,7 @@ export function LoginForm({
   const next = useSearchParams().get("next");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Only allow local redirects (open-redirect protection).
-  const target = next && next.startsWith("/") && !next.startsWith("//") ? next : fallbackTarget;
+  const target = safeInternalPath(next, fallbackTarget);
   const formBase = card ? "card space-y-4 p-6" : "space-y-4";
   const inputBase = inputClassName ?? "input";
   const buttonBase = buttonClassName ?? "btn btn-primary w-full";

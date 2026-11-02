@@ -1,11 +1,11 @@
-import { handler, ok } from "@/server/http";
-import { assertSameOrigin } from "@/server/security";
-import { logout } from "@/server/auth";
+import { LogoutToken } from "@/modules/identity";
+import { route } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
-export const POST = handler(async (req) => {
-  await assertSameOrigin(req);
-  await logout("admin");
-  return ok(req, { loggedOut: true, audience: "admin" });
+export const POST = route({
+  handle: async ({ resolve }) => {
+    await resolve(LogoutToken).execute("admin");
+    return { loggedOut: true, audience: "admin" };
+  },
 });

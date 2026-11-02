@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
-import { currentAdminUser } from "@/server/auth";
 import { AdminBadge, AdminCard, AdminCardTitle, AdminPageHeader } from "@/components/admin/ui";
+import { currentPrincipal } from "@/server/app";
 
 export const metadata = { title: "Profilim" };
 
 export default async function AdminProfilePage() {
-  const user = await currentAdminUser();
+  const user = await currentPrincipal("admin");
   if (!user) redirect("/admin/giris?next=/admin/profil");
 
   return (

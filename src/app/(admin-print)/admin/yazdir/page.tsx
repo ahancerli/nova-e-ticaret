@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
-import { currentAdminUser } from "@/server/auth";
 import { queryAll } from "@/server/db";
 import { getOrderDetail, type OrderDetail } from "@/server/services/admin-orders";
 import { formatMinor, includedTaxMinor } from "@/lib/money";
 import { orderStatusMeta, PROVIDER_LABEL } from "@/lib/order-rules";
 import { PrintToolbar } from "@/components/admin/PrintToolbar";
+import { currentPrincipal } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Belge yazdır", robots: { index: false, follow: false } };
@@ -18,7 +18,7 @@ const dtShort = new Intl.DateTimeFormat("tr-TR", { dateStyle: "short", timeStyle
  * /admin/yazdir?belge=fatura|irsaliye&ids=<orderId>,<orderId>…   (max 50 per print)
  */
 export default async function PrintPage({ searchParams }: { searchParams: Promise<{ belge?: string; ids?: string }> }) {
-  const user = await currentAdminUser();
+  const user = await currentPrincipal("admin");
   if (!user) redirect("/admin/giris?next=/admin/siparisler");
   if (!user.isStaff || !user.permissions.has("orders.read")) redirect("/admin");
 

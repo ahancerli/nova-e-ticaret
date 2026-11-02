@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { currentStorefrontUser } from "@/server/auth";
 import { queryFirst } from "@/server/db";
+import { currentPrincipal } from "@/server/app";
 
 export const metadata = { title: "Hesabım", robots: { index: false } };
 
 export default async function AccountPage() {
-  const user = await currentStorefrontUser();
+  const user = await currentPrincipal("storefront");
   if (!user) redirect("/giris?next=/hesabim");
 
   const profile = await queryFirst<{ first_name: string; last_name: string; locale: string }>(

@@ -120,8 +120,12 @@ await t("login + RBAC + admin order grid", async () => {
   d1.raw.exec(`INSERT INTO users (id,email_normalized,display_name) VALUES ('u_admin','admin@nova.test','Admin');
                INSERT INTO auth_credentials (user_id,password_hash) VALUES ('u_admin','$2b$12$correct-horse');
                INSERT INTO staff_profiles (user_id) VALUES ('u_admin'); INSERT INTO user_roles (user_id,role_id) VALUES ('u_admin','role_order');`);
-  let bad = false; try { await auth.login("admin@nova.test", "wrong", "ip"); } catch (e: any) { bad = e.code === "invalid_credentials"; } assert(bad, "bad pw");
-  const s = await auth.login("ADMIN@nova.test ", "correct-horse", "ip", "admin"); await auth.setSessionCookie(s.token, s.expiresAt, "admin");
+  const app = await S("server/app");
+  const identity = await S("modules/identity/index");
+  const login = async (email: string, password: string, audience: string) =>
+    (await app.resolveService(identity.LoginToken)).execute({ email, password, audience, req: new Request("https://nova.test/api/x", { headers: { "cf-connecting-ip": "10.0.0.1" } }) });
+  let bad = false; try { await login("admin@nova.test", "wrong", "storefront"); } catch (e: any) { bad = e.code === "invalid_credentials"; } assert(bad, "bad pw");
+  await login("ADMIN@nova.test ", "correct-horse", "admin");
   const u = await auth.requirePermission("orders.read"); assert(u.isStaff, "staff");
   let forb = false; try { await auth.requirePermission("users.manage"); } catch (e: any) { forb = e.code === "forbidden"; } assert(forb, "forbidden");
   const res = await admin.listOrders({ sort: "total_minor", dir: "desc", page: 1, pageSize: 25, q: "ayşe" } as any, { canSeeCustomer: false });

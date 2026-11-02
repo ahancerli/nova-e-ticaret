@@ -17,7 +17,8 @@ export async function getEnv(): Promise<CloudflareEnv> {
 	const e = env as Partial<CloudflareEnv>
 	return {
 		...e,
-		APP_ENV: e.APP_ENV ?? ((process.env.APP_ENV as CloudflareEnv["APP_ENV"]) || "development"),
+		// .env.local wins over the wrangler.jsonc var (which says "production" even for local dev).
+		APP_ENV: (process.env.APP_ENV as CloudflareEnv["APP_ENV"]) || e.APP_ENV || "development",
 		PUBLIC_SITE_URL: e.PUBLIC_SITE_URL || process.env.PUBLIC_SITE_URL || "http://localhost:3000",
 		SESSION_SECRET: e.SESSION_SECRET || process.env.SESSION_SECRET || "",
 		SECRETS_MASTER_KEY: e.SECRETS_MASTER_KEY || process.env.SECRETS_MASTER_KEY || "",

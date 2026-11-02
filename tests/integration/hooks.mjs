@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 const SRC = new URL("../../src", import.meta.url).pathname;
 const M = new URL("./mocks/", import.meta.url).href;
-const map = { "server-only": M + "empty.mjs", "@opennextjs/cloudflare": M + "cf.mjs", "next/headers": M + "headers.mjs", "next/server": M + "server.mjs", "bcryptjs": M + "bcrypt.mjs" };
+const map = { "server-only": M + "empty.mjs", "@opennextjs/cloudflare": M + "cf.mjs", "next/headers": M + "headers.mjs", "next/server": M + "server.mjs", "next/navigation": M + "navigation.mjs", "bcryptjs": M + "bcrypt.mjs" };
 export async function resolve(spec, ctx, next) {
   if (map[spec]) return { url: map[spec], shortCircuit: true };
   let s = spec;

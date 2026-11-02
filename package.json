@@ -32,10 +32,11 @@
 		"admin:create": "D1_MODE=remote node scripts/create-admin.mjs",
 		"admin:create:local": "D1_MODE=local node scripts/create-admin.mjs",
 		"deps:latest": "npx --yes npm-check-updates@latest -u && npm install",
-		"test": "npm run db:test && npm run test:core && npm run test:catalog && npm run test:services",
+		"test": "npm run db:test && npm run test:core && npm run test:catalog && npm run test:identity && npm run test:services",
 		"test:services": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/services.test.ts",
 		"test:core": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/unit/core.test.ts",
-		"test:catalog": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/catalog.test.ts"
+		"test:catalog": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/catalog.test.ts",
+		"test:identity": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/identity.test.ts"
 	},
 	"dependencies": {
 		"@ag-grid-community/locale": "^36.2.0",

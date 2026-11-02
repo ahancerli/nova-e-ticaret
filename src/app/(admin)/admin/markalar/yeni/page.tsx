@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { requirePermission } from "@/server/auth";
 import { AdminCard, AdminPageHeader } from "@/components/admin/ui";
 import { BrandCreateForm } from "@/components/admin/BrandCreateForm";
+import { requireAdminPage } from "@/server/app";
 
 export const metadata = { title: "Marka ekle" };
 export const dynamic = "force-dynamic";
 
 export default async function NewBrandPage() {
-  await requirePermission("catalog.write");
+  await requireAdminPage("catalog.write");
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <AdminPageHeader
