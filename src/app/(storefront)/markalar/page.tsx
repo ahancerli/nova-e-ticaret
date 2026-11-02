@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { queryAll } from "@/server/db";
+import { ListActiveBrandsToken } from "@/modules/storefront";
+import { resolveService } from "@/server/app";
 
 export const metadata = { title: "Markalar" };
 
 export default async function BrandsPage() {
-  const brands = await queryAll<{ slug: string; name: string }>("SELECT slug, name FROM brands WHERE is_active = 1 ORDER BY name COLLATE NOCASE");
+  const brands = await (await resolveService(ListActiveBrandsToken)).execute();
   return (
     <div className="container-page py-8">
       <h1 className="mb-6 text-2xl font-bold">Markalar</h1>

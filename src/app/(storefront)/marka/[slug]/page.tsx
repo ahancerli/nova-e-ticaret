@@ -2,12 +2,13 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { ListingClient } from "@/components/storefront/ListingClient";
-import { queryFirst } from "@/server/db";
+import { GetBrandPageToken } from "@/modules/storefront";
+import { resolveService } from "@/server/app";
 
 type Props = { params: Promise<{ slug: string }> };
 
 const load = (slug: string) =>
-  queryFirst<{ name: string; description: string | null }>("SELECT name, description FROM brands WHERE slug = ? AND is_active = 1", slug);
+  resolveService(GetBrandPageToken).then((q) => q.execute(slug));
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const b = await load((await params).slug);

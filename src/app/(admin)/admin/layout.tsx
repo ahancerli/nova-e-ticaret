@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
-import { getEnv, queryAll } from "@/server/db";
 import { AdminShell } from "@/components/admin/AdminShell";
 import type { SidebarEntry, SidebarGroup } from "@/components/admin/AdminSidebar";
-import { currentPrincipal } from "@/server/app";
+import { ConfigToken } from "@/core";
+import { GetStaffRolesToken } from "@/modules/identity";
+import { currentPrincipal, resolveService } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: { default: "Yönetim", template: "%s | nova. yönetim" }, robots: { index: false, follow: false } };
@@ -80,18 +81,18 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     return { title: group.title, items };
   }).filter((g) => g.items.length > 0);
 
-  const [roles, env] = await Promise.all([
-    queryAll<{ name: string }>("SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ? ORDER BY r.is_system DESC, r.name", user.id),
-    getEnv(),
+  const [roles, config] = await Promise.all([
+    resolveService(GetStaffRolesToken).then((q) => q.execute(user.id)),
+    resolveService(ConfigToken),
   ]);
   const can = (p: string) => user.permissions.has(p);
 
   return (
     <AdminShell
-      user={{ displayName: user.displayName, email: user.email, roles: roles.map((r) => r.name) }}
+      user={{ displayName: user.displayName, email: user.email, roles }}
       groups={groups}
       quickCreate={{ product: can("catalog.write"), category: can("catalog.write"), brand: can("catalog.write") }}
-      env={env.APP_ENV === "production" ? "production" : "development"}
+      env={config.isProduction ? "production" : "development"}
     >
       {children}
     </AdminShell>

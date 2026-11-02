@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ConfigToken } from "@/core";
 import { assertCronRequest } from "@/modules/platform/cron";
 import { route } from "@/server/app";
-import { processOutbox } from "@/server/services/outbox";
+import { ProcessOutboxToken } from "@/modules/outbox";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +15,6 @@ export const POST = route({
   query: z.object({ limit: z.coerce.number().int().min(1).max(100).default(25) }),
   handle: async ({ req, query, resolve }) => {
     assertCronRequest(req, resolve(ConfigToken).cronSecret);
-    return processOutbox(query.limit);
+    return resolve(ProcessOutboxToken).execute(query.limit);
   },
 });

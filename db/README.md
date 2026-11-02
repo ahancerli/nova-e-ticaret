@@ -67,7 +67,7 @@ DataGrip/TablePlus ile bu dosyaya bağlanılabilir (WAL modunda; açık araçta 
 
 Önemli CHECK'ler: `orders.total = subtotal - discount + shipping`, `order_items.subtotal = qty × unit`, `variant_prices.compare_at > unit_price`, `bank_transfers` `matched` ise `received = expected` + onaylayan + zaman, `carts` sahibi user **xor** guest, `inventory_balances.on_hand ≥ reserved ≥ 0`, slug'lar `[a-z0-9-]`.
 
-### Servis katmanı (src/server/services) — DB'nin bilmediği kurallar
+### Uygulama katmanı (src/modules/*/application) — DB'nin bilmediği kurallar
 - SKU ve barkod katalog genelinde benzersiz (payload içinde + diğer ürünler); varyant kombinasyonu ürün içinde benzersiz; eksensiz ürün tek varyant.
 - **Satılmış/hareketli varyant** (sipariş satırı, stok hareketi veya rezervasyonu olan) SKU/kombinasyon değiştiremez; kaldırılırsa silinmez, `is_active = 0` olur.
 - Ürün: en az 1 kategori; `published` için en az 1 görsel ve `catalog.publish` izni; kategorinin (üst kategoriler dahil) `category_attributes.is_required` özellikleri dolu olmalı (varyant ekseni olarak seçilmişse sağlanmış sayılır).

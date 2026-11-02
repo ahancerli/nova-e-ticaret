@@ -24,11 +24,16 @@ import { registerCatalog } from "@/modules/catalog";
 import { registerCheckout } from "@/modules/checkout";
 import { GetCurrentPrincipalToken, registerIdentity } from "@/modules/identity";
 import { registerMedia } from "@/modules/media";
+import { registerNotifications } from "@/modules/notifications/notifications";
 import { registerOrders } from "@/modules/orders";
+import { registerOutbox } from "@/modules/outbox";
+import { registerPayments } from "@/modules/payments";
 import { registerPlatform } from "@/modules/platform/module";
+import { registerSecrets } from "@/modules/platform/secrets";
 import { registerPricing } from "@/modules/pricing";
+import { registerShipping } from "@/modules/shipping";
 import { registerStorefront } from "@/modules/storefront";
-import { getEnv } from "./db";
+import { getEnv } from "./env";
 
 /**
  * Composition root: the only place that knows concrete implementations.
@@ -47,6 +52,8 @@ container.scoped(DatabaseToken, (c) => new D1DatabaseAdapter(c.resolve(EnvToken)
 
 // --- modules -------------------------------------------------------------------------------------
 registerPlatform(container);
+registerSecrets(container);
+registerOutbox(container);
 registerIdentity(container);
 registerAudit(container);
 registerMedia(container);
@@ -56,6 +63,9 @@ registerPricing(container);
 registerCart(container); // also subscribes the guest-cart merge to storefront logins
 registerCheckout(container);
 registerOrders(container);
+registerPayments(container); // + outbox handler refund.process
+registerShipping(container); // + outbox handler order.shipped
+registerNotifications(); // + customer / staff notification handlers
 
 /** Fills a request scope with per-request values. getEnv() adds local .env fallbacks for secrets. */
 async function prepareScope(scope: Container): Promise<void> {

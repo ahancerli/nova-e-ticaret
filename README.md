@@ -29,7 +29,7 @@ Seed'deki `admin@nova.local` kullanıcısının parolası dokümante değildir; 
 |---|---|
 | `npm run dev` / `dev:remote` | Local D1 (varsayılan) / Cloudflare D1'e bağlı geliştirme |
 | `npm run typecheck` · `npm run lint` | `tsc --noEmit` · ESLint |
-| `npm test` | `db:test` (41 şema, python3) + `test:core` (14) + `test:catalog` (18) + `test:identity` (9) + `test:storefront` (10) + `test:orders` (8: checkout, ödeme, durum makinesi yarışları) + `test:services` (23 uçtan uca senaryo) — Node ≥ 22.13 |
+| `npm test` | `db:test` (41 şema, python3) + `test:core` (14) + `test:catalog` (18) + `test:identity` (9) + `test:storefront` (10) + `test:orders` (8) + `test:integrations` (6: kart ödemesi, outbox, kargo webhook) + `test:services` (23 uçtan uca senaryo) — Node ≥ 22.13 |
 | `npm run db:{schema,seed,reset}:{local,remote}` | Şema / seed / sil-kur-seed |
 | `npm run db:query[:local] -- "SQL"` | Tek SQL (remote varsayılan, `:local` ile local) |
 | `npm run admin:create[:local] -- email "Ad"` | Admin oluştur / parolasını sıfırla (remote / local) |
@@ -86,27 +86,27 @@ src/
   core/                   Çatıdan bağımsız temel (ayrıntı §4.1): errors, di, db, logging, runtime, http, security (crypto, HTML sanitizer)
   modules/                İş modülleri (ayrıntı §4.2): platform (CSRF, rate limit, idempotency), identity (giriş, oturum, RBAC), audit, media,
                           catalog (admin: kategori, marka, ürün), storefront (vitrin okuma), pricing (fiyat motoru), cart (sepet, kupon),
-                          checkout (teklif, sipariş, ödeme sonuçlandırma, süre aşımı), orders (sipariş ekranları, durum makinesi, iade)
+                          checkout (teklif, sipariş, ödeme sonuçlandırma, süre aşımı), orders (sipariş ekranları, durum makinesi, iade, dashboard),
+                          payments (iyzico gateway), shipping (kargo adaptörleri + webhook), outbox (worker + işleyici kaydı), notifications
   lib/                    İstemci+sunucu ortak: api-client, toast, motion, money, slug, ids, types, order-rules, product-rules
   proxy.ts                Sayfa CSP'si (istek başına script nonce)
-  server/                 Yalnız sunucu ("server-only"): app (composition root, route, resolveService, currentPrincipal, requireAdminPage), db; auth/security/idempotency/http/crypto = taşınmamış kod için ince cepheler
-    services/             Henüz modüle taşınmamış: iyzico, shipping, outbox. cart / pricing / checkout / admin-orders.ts = bu üçü için ince cepheler
+  server/                 Yalnız sunucu ("server-only"): app.ts = composition root (DI kayıtları, `route`, `resolveService`, `currentPrincipal`, `requireAdminPage`); env.ts = Worker binding + local .env
 ```
 
 ## 4. Mimari kurallar (tüm yeni kod bunlara uyar)
 
 1. **Veri erişimi yalnız sunucuda** (`src/server`, `import "server-only"`). Parametreli sorgu (`?`); sıralama/kolon adları allowlist'ten. D1 sınırı: ifade başına ≤ 100 parametre → `IN` listeleri 80'lik parçalara bölünür (`placeholders()`).
 2. **Atomiklik:** çok adımlı yazma = tek `UnitOfWork` (D1 batch). Durum geçişleri `WHERE status = <beklenen>` + `uow.expectChanges(1, () => new ConflictError(…))`: koşul tutmazsa **batch'in tamamı veritabanında geri alınır** (`batch_guards` trigger'ı). Bir batch'te birden çok guard olabilir; hangisi tetiklenirse onun hatası atılır. Batch bittikten sonra `changes` kontrol etmek yetersizdir (diğer ifadeler yazılmış olur). Sınır kontrolleri de (iade toplamı ≤ tahsilat, gönderilen ≤ sipariş adedi, stoğa alınan ≤ satılan) `INSERT … SELECT … WHERE <koşul>` + guard ile batch içinde yapılır. Dış ağ çağrıları (iyzico, kargo) **batch dışında**, mümkünse outbox üzerinden.
-3. **API sözleşmesi:** başarı `{data, meta, requestId}`, hata `{error:{code,message,fieldErrors}, requestId}`. Yeni route'lar `route({...})` ile yazılır (§4.1); eski `handler()` da aynı hata hattını kullanır. Hatalar `AppError` alt sınıflarıyla atılır; Zod ve DB trigger/constraint hataları `toAppError` ile tek yerde eşlenir (`src/core/errors/translate.ts`). 5xx'te istemci genel mesaj alır, ayrıntı `requestId` ile JSON log'a gider.
+3. **API sözleşmesi:** başarı `{data, meta, requestId}`, hata `{error:{code,message,fieldErrors}, requestId}`. Bütün JSON route'lar `route({...})` ile yazılır (§4.1); yalnız yönlendirme dönen iyzico callback'i, sağlayıcıya özel yanıt dönen iyzico webhook'u ve görsel akışı yapan `/assets` düz route'tur (aynı modülleri kullanır). Hatalar `AppError` alt sınıflarıyla atılır; Zod ve DB trigger/constraint hataları `toAppError` ile tek yerde eşlenir (`src/core/errors/translate.ts`). 5xx'te istemci genel mesaj alır, ayrıntı `requestId` ile JSON log'a gider.
 4. **Kimlik:** yalnız oturum çerezinden (`modules/identity`). Mağaza `__Host-nova_store_session` (`SameSite=Lax`, 7 gün), panel `__Host-nova_admin_session` (ayrı; `SameSite=Strict`, 8 saat). Token'ın kendisi değil HMAC'i saklanır; çıkış oturumu sunucuda iptal eder. Body'deki userId asla yetki değildir. Giriş sonrası işler (misafir sepeti birleştirme) `addLoginListener` ile bağlanır (Observer).
-5. **Yetki:** API route'ları `route({ auth: { audience: "admin", permission: "<kod>" } })` (401/403), admin sayfaları `await requireAdminPage("<kod>")` (oturum yok → `/admin/giris`, yetki yok → `/admin/yetkisiz`). UI gizlemek yetki değildir. Nesne/durum kuralları serviste ayrıca kontrol edilir. Eski `requirePermission` yalnız henüz taşınmamış sipariş API'lerinde.
-6. **CSRF:** cookie ile yazan her uç `assertSameOrigin(req)` (Origin/Referer + JSON içerik tipi; yükleme uçları `{multipart:true}`).
-7. **Idempotency:** `Idempotency-Key` başlığı checkout confirm, sipariş işlemleri ve toplu işlemlerde zorunlu (`withIdempotency`); aynı anahtar + farklı gövde → 409, tekrar → kayıtlı yanıt.
+5. **Yetki:** API route'ları `route({ auth: { audience: "admin", permission: "<kod>" } })` (401/403), admin sayfaları `await requireAdminPage("<kod>")` (oturum yok → `/admin/giris`, yetki yok → `/admin/yetkisiz`). UI gizlemek yetki değildir. Nesne/durum kuralları use case'te ayrıca kontrol edilir (ör. sipariş işlemleri: her işlemin kendi izni, `assertActionAllowed`).
+6. **CSRF:** `route()` yazan her uçta varsayılan olarak Origin/Referer + JSON içerik tipini doğrular (`SameOriginGuard`); yükleme uçları `csrf: "multipart"`, çerezsiz makine uçları (cron, kargo webhook) `csrf: "none"` + kendi doğrulamaları.
+7. **Idempotency:** `Idempotency-Key` başlığı checkout confirm, sipariş işlemleri ve toplu işlemlerde zorunlu (`route({ idempotency })`, `D1IdempotencyStore`); aynı anahtar + farklı gövde → 409, tekrar → kayıtlı yanıt + `idempotent-replayed: true` başlığı.
 8. **Fiyat her zaman sunucuda** (`modules/pricing`: `BuildQuote` veriyi yükler, saf `priceCart` hesaplar; her kampanya türü `CAMPAIGN_RULES`'ta bir Strategy — yeni tür = bir sınıf + bir satır). Quote hash'i saklanır, confirm'de farklıysa 409. Sepet yazmaları göreli (`quantity = quantity + n`, üst sınırlı) ve sürüm kontrolü batch içinde guard'lıdır.
 9. **Validasyon:** tüm girdiler Zod 4 şemalarından geçer (`modules/<m>/http/schemas.ts`); Zod mesajları Türkçe (`modules/shared/schemas.ts`). Slug alanları serbest metin alır, servis `slugify` ile normalize eder (Türkçe karakter çevrilir: "Yaşam" → `yasam`).
-10. **Audit:** admin yazma işlemleri `audit_logs`'a yazılır (sözlük: db/README.md §5). Modüllerde audit satırı, değişikliğin **aynı UnitOfWork'üne** `AuditLog.recordStatement()` ile eklenir (ya ikisi ya hiçbiri); eski servisler hâlâ `audit()` kullanır.
+10. **Audit:** admin yazma işlemleri `audit_logs`'a yazılır (sözlük: db/README.md §5). Modüllerde audit satırı, değişikliğin **aynı UnitOfWork'üne** `AuditLog.recordStatement()` ile eklenir (ya ikisi ya hiçbiri).
 11. **Rate limit / kaba kuvvet:** login için IP başına dakikada 5 hata; ayrıca (hesap, IP) başına 15 dakikada 10 hata yalnız **o IP'yi o hesap için** kapatır — hesap global kilitlenmez (saldırgan admini dışarıda bırakamaz). Kupon: IP başına dakikada 5 hata. `?next=` yönlendirmeleri `safeInternalPath` (`lib/safe-redirect.ts`) ile süzülür.
-12. **HTML:** admin'in yazdığı açıklamalar vitrinde `sanitizeRichHtml` (tokenizer tabanlı allowlist; yalnız `https://` veya site içi `/yol` bağlantıları) üzerinden geçer; kullanıcı içeriği asla HTML olarak basılmaz. Yeni XSS bulgusu = `tests/integration/services.test.ts` içindeki payload listesine bir satır.
+12. **HTML:** admin'in yazdığı açıklamalar vitrinde `sanitizeRichHtml` (tokenizer tabanlı allowlist; yalnız `https://` veya site içi `/yol` bağlantıları) üzerinden geçer; kullanıcı içeriği asla HTML olarak basılmaz. Temizleyici `src/core/security/sanitize-html.ts`; yeni XSS bulgusu = `tests/integration/services.test.ts` içindeki payload listesine bir satır.
 13. **Sırlar** `integration_secrets`'ta AES-256-GCM; ana anahtar Worker secret. Panel sırları geri göstermez.
 14. **CSP:** sayfa CSP'si `src/proxy.ts`'te her istekte üretilen **script nonce** ile kurulur (`'unsafe-inline'` script yok, `'strict-dynamic'`). Bu yüzden root layout `connection()` ile tüm sayfaları dinamik render eder. Inline `<script>` yazılmaz; gerekiyorsa `headers().get("x-nonce")` ile `nonce` verilir. API ve `public/demo` yanıtları `next.config.ts`'te `default-src 'none'` alır. Harici script/iframe eklemek = `src/proxy.ts`'te ilgili direktife kaynak eklemek.
 
@@ -196,7 +196,7 @@ Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf b
 
 ## 7. İş akışları
 
-**Checkout:** `POST /api/checkout/quote` (sunucu fiyatı + 15 dk oturum) → `POST /api/checkout/confirm` (Idempotency-Key): tek batch'te sipariş + adres/ürün snapshot + stok rezervasyonu (trigger kontrollü) + kampanya/kupon tahsisi + ödeme kaydı (+ havale talimatı) + olay + outbox. iyzico formu batch'ten sonra başlatılır; sonuç **callback/webhook'tan değil** iyzico detail API'sinden doğrulanır (tutar/para birimi/basketId) → `markPaymentPaid` (stok `committed`).
+**Checkout:** `POST /api/checkout/quote` (sunucu fiyatı + 15 dk oturum) → `POST /api/checkout/confirm` (Idempotency-Key): tek batch'te sipariş + adres/ürün snapshot + stok rezervasyonu (trigger kontrollü) + kampanya/kupon tahsisi + ödeme kaydı (+ havale talimatı) + olay + outbox. iyzico formu batch'ten sonra başlatılır; sonuç **callback/webhook'tan değil** iyzico detail API'sinden doğrulanır (tutar/para birimi/basketId) → `VerifyCardPayment` → `SettlePayment` (stok `committed`). iyzico `PaymentGateway` port'unun arkasındadır (`modules/payments`); anahtarlar `SecretVault` ile çözülür.
 
 **Sipariş durum makinesi** (ayrıntı db/README.md §4): `reconcile` (havale onayı, `payments.reconcile` izni; havale eşleşmesi + ödeme + stok taahhüdü tek batch) · `prepare` · `ship` (kısmi destekli) · `deliver` · `complete` · `cancel` (yalnız ödenmemiş; stok/kupon/kampanya serbest) · `refund` (tahsilatı olan; kısmi/tam; iptal edilmiş siparişte geç gelen ödeme için de) · `note`. Her biri `order_events`'e yazılır; ship/deliver/cancel/refund outbox olayı üretir. Tanım `src/lib/order-rules.ts` (`ORDER_ACTIONS`, `PRIMARY_ACTION`, `BULK_ACTIONS`, `ORDER_TABS`) — **yeni işlem = `ORDER_ACTIONS`'a kayıt + `modules/orders/application/actions` altında bir `OrderAction` sınıfı + `orders/module.ts`'te listeye ekleme + `orders/http/schemas.ts`'te şema**.
 
@@ -204,9 +204,9 @@ Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf b
 
 **Toplu işlem:** `POST /api/admin/orders/bulk {orderIds, action}` — prepare/ship(tüm kalan)/deliver/complete/cancel/note; her sipariş ayrı kural kontrolü, sonuç sipariş bazında.
 
-**Outbox worker** (`src/server/services/outbox.ts`): `refund.process` → iyzico iade; `order.shipped` → kargo adaptörü `book()`; `order.* / refund.succeeded` → müşteri bildirimi (sağlayıcı yoksa `skipped`). Yeni olay = `HANDLERS`'a bir işleyici (idempotent olmalı).
+**Outbox worker** (`modules/outbox`): olayı kilitleyerek alır, işleyicileri çalıştırır, hata → üstel geri çekilme (1, 2, 4 … 60 dk), 8 deneme ya da işleyicisi olmayan olay → `dead`; kilidi başkasına geçmiş olayı işaretlemez. İşleyiciler modüllerden `addOutboxHandler(tip, factory)` ile kaydolur: `refund.process` → `ProcessCardRefund` (payments), `order.shipped` → `BookShipment` (shipping) + müşteri bildirimi, `order.* / refund.succeeded` → `NotifyCustomer` (sağlayıcı yoksa `skipped`), `order.payment_after_cancel` → personel uyarısı (log). Yeni olay = ilgili modülde bir işleyici (idempotent olmalı).
 
-**Kargo** (`src/server/services/shipping.ts`): aktif `integrations(kind='shipping')` satırının `provider_code`'u adaptörü seçer (yoksa `manual`). Webhook `POST /api/webhooks/shipping/:provider`: başlıklar `x-nova-timestamp` (unix sn, ±5 dk) ve `x-nova-signature = hex(HMAC-SHA256(webhook_secret, "<ts>.<rawBody>"))`; gövde `{events:[{eventId, trackingNumber, status: in_transit|delivered|returned|lost, occurredAt}]}`. Tekrarlar tekilleştirilir; tüm koliler teslim → sipariş `delivered`.
+**Kargo** (`modules/shipping`): aktif `integrations(kind='shipping')` satırının `provider_code`'u `CARRIERS` içinden adaptörü seçer (Strategy; yoksa `manual`). Webhook `POST /api/webhooks/shipping/:provider`: başlıklar `x-nova-timestamp` (unix sn, ±5 dk) ve `x-nova-signature = hex(HMAC-SHA256(webhook_secret, "<ts>.<rawBody>"))`; gövde `{events:[{eventId, trackingNumber, status: in_transit|delivered|returned|lost, occurredAt}]}`. Her olay tek batch'te işlenir (olay kaydı + gönderi durumu + gerekirse sipariş `delivered` + olay notu + outbox); tekrarlar tekilleştirilir, terminal gönderi durumları yeniden açılmaz.
 
 **Medya:** `POST /api/admin/media` (multipart, `file` + `folder` ∈ categories|brands|products, ≤ 5 MB, JPG/PNG/WebP/AVIF; tür ilk baytlardan doğrulanır, **SVG kabul edilmez**) → R2 `ASSETS_BUCKET` + `media_assets` satırı → `/assets/<folder>/<uuid>.<ext>` uzun önbellekle sunulur. Kullanılmayan yüklemeler kayıt güncellenince/silinince temizlenir.
 
@@ -234,13 +234,13 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 
 ## 9. Testler
 
-- `npm test` → **41/41** şema + **14/14** çekirdek + **18/18** katalog + **9/9** identity + **10/10** storefront + **8/8** orders + **23/23** servis testi (Node ≥ 22.13; `--experimental-transform-types`).
+- `npm test` → **41/41** şema + **14/14** çekirdek + **18/18** katalog + **9/9** identity + **10/10** storefront + **8/8** orders + **6/6** integrations + **23/23** senaryo testi (Node ≥ 22.13; `--experimental-transform-types`).
 - Servis testleri gerçek servis kodunu çalıştırır; `tests/integration/hooks.mjs` şunları taklit eder: `server-only`, `@opennextjs/cloudflare` (env = `globalThis.__ENV`), `next/headers` (çerez kavanozu), `next/server`, `bcryptjs` (`$2b$12$<parola>`). Zod gerçek paketle çalışır. D1 taklidi: `tests/integration/d1-sqlite.mjs` (node:sqlite, `batch` = transaction).
 - Admin modülleri (kategori, marka, ürün, sipariş, iade, toplu işlem, outbox, kargo webhook, route'lar) geliştirme sırasında aynı altyapıyla senaryo testlerinden geçirildi; bu senaryolar henüz `tests/integration/`'a taşınmadı (yol haritası).
 
 ## 10. Bilinen tuzaklar
 
-- **APP_ENV:** `wrangler.jsonc` `APP_ENV=production` var'ını local `next dev`'e de verir; bu yüzden `.env.local`'deki `APP_ENV` önceliklidir (`buildConfig`, `getEnv`). Canlıda (`APP_ENV=production`) `SESSION_SECRET` (≥ 32 karakter), `SECRETS_MASTER_KEY`, `CRON_SECRET` yoksa istekler başlangıçta `ConfigError` ile durur — deploy öncesi `wrangler secret list` ile kontrol edin.
+- **APP_ENV / PUBLIC_SITE_URL:** `wrangler.jsonc` bu `vars`'ları canlı değerleriyle local `next dev`'e de verir; bu yüzden `.env.local`'deki değerler önceliklidir (`buildConfig`, `src/server/env.ts`). Canlıda (`APP_ENV=production`) `SESSION_SECRET` (≥ 32 karakter), `SECRETS_MASTER_KEY`, `CRON_SECRET` yoksa istekler başlangıçta `ConfigError` ile durur — deploy öncesi `wrangler secret list` ile kontrol edin.
 
 - **iCloud:** proje iCloud ile eşitlenen Masaüstü'ndeyse iCloud `.next/` ve `.git/` içinde `… 2`, `… 3` kopyaları üretir (tsc'yi bozar, git'i riske atar). `tsconfig` `.next/**/* ?.ts` kopyalarını yok sayar; kalıcı çözüm projeyi iCloud dışına taşımaktır.
 
@@ -252,7 +252,7 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 - iyzico: iade ucu `/v2/payment/refund` ve webhook V3 imza doğrulaması **sandbox'ta denenmedi**; canlı öncesi güncel dokümanla doğrulanmalı. iyzico `identityNumber` sabit yer tutucu (TCKN toplama işletme kararı).
 - Fiyat motoru: "X al Y bedava" hesaplanır ama hediye satırı otomatik eklenmez. Kargo KDV'si %20 varsayılır.
 - Saat dilimi: tarih filtreleri UTC gün sınırlarıyla çalışır (gösterim Europe/Istanbul).
-- Dashboard (`/admin/page.tsx`) henüz eski tasarımda: "Refunded" kartı gerçek veri değil (`sipariş × 0.02`), metinler kısmen İngilizce. Sipariş ekranındaki KPI'lar gerçektir.
+- Dashboard (`/admin/page.tsx`) görsel olarak eski tasarımda (Aşama 4); verileri gerçektir (`GetDashboard`) ve müşteri bilgisi `customers.read` olmadan maskelenir.
 - Vitrin footer/checkout linkleri `/hesabim/siparisler`, `/sayfa/iade`, `/sayfa/on-bilgilendirme`, `/sayfa/mesafeli-satis` henüz 404; `gizlilik` sayfası yayında değil.
 
 ## 11. Yol haritası

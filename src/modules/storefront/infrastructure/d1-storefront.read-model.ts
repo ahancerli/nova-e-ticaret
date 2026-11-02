@@ -8,6 +8,41 @@ import { CARD_SELECT, PAGE_SIZE, SORTS, toCard, type CardRow } from "./product-c
 const rows = <T>(r: D1Result | undefined) => (r?.results ?? []) as T[];
 
 export class D1StorefrontReadModel extends Repository implements StorefrontReadModel {
+  // --- simple pages ----------------------------------------------------------------------------------
+  brandPage(slug: string) {
+    return this.db.first<{ name: string; description: string | null }>("SELECT name, description FROM brands WHERE slug = ? AND is_active = 1", slug);
+  }
+
+  async categoryPage(slug: string) {
+    const r = await this.db.first<{ name: string; meta_title: string | null; meta_description: string | null; noindex: number | null }>(
+      `SELECT c.name, s.meta_title, s.meta_description, s.noindex FROM categories c
+         LEFT JOIN seo_documents s ON s.category_id = c.id WHERE c.slug = ? AND c.is_active = 1`, slug,
+    );
+    return r ? { name: r.name, metaTitle: r.meta_title, metaDescription: r.meta_description, noindex: r.noindex === 1 } : null;
+  }
+
+  async contentPage(slug: string) {
+    const r = await this.db.first<{ title: string; body_html: string }>("SELECT title, body_html FROM content_pages WHERE slug = ? AND is_published = 1", slug);
+    return r ? { title: r.title, bodyHtml: r.body_html } : null;
+  }
+
+  activeBrands() {
+    return this.db.all<{ slug: string; name: string }>("SELECT slug, name FROM brands WHERE is_active = 1 ORDER BY name COLLATE NOCASE");
+  }
+
+  async activeCategories() {
+    const rows = await this.db.all<{ id: string; parent_id: string | null; slug: string; name: string }>(
+      "SELECT id, parent_id, slug, name FROM categories WHERE is_active = 1 ORDER BY sort_order, name",
+    );
+    return rows.map((r) => ({ id: r.id, parentId: r.parent_id, slug: r.slug, name: r.name }));
+  }
+
+  async settings(keys: string[]): Promise<Record<string, unknown>> {
+    if (!keys.length) return {};
+    const rows = await this.db.all<{ key: string; value_json: string }>(`SELECT key, value_json FROM site_settings WHERE key IN (${placeholders(keys.length)})`, ...keys);
+    return Object.fromEntries(rows.map((r) => [r.key, JSON.parse(r.value_json)]));
+  }
+
   // --- shell (SSR header / footer) ---------------------------------------------------------------
   async shell(): Promise<ShellData> {
     const [settings, nav] = await this.db.batch([

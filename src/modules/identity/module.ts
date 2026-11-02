@@ -1,5 +1,6 @@
 import { AuthenticatorToken, ClockToken, ConfigToken, DatabaseToken, IdGeneratorToken, LoggerToken, RateLimiterToken, token, type Container, type Resolver } from "@/core";
 import type { CredentialRepository, LoginListener, PasswordHasher, PermissionRepository, SessionCookies, SessionRepository, TokenService } from "./application/ports";
+import { D1AccountReadModel, GetCustomerProfile, GetStaffRoles } from "./application/account-queries";
 import { GetCurrentPrincipal, Login, Logout } from "./application/session-use-cases";
 import { BcryptPasswordHasher, HmacTokenService, NextSessionCookies } from "./infrastructure/adapters";
 import { D1CredentialRepository, D1PermissionRepository, D1SessionRepository } from "./infrastructure/d1-identity.repositories";
@@ -16,6 +17,8 @@ export const LoginListenersToken = token<LoginListener[]>("LoginListeners");
 export const GetCurrentPrincipalToken = token<GetCurrentPrincipal>("GetCurrentPrincipal");
 export const LoginToken = token<Login>("Login");
 export const LogoutToken = token<Logout>("Logout");
+export const GetStaffRolesToken = token<GetStaffRoles>("GetStaffRoles");
+export const GetCustomerProfileToken = token<GetCustomerProfile>("GetCustomerProfile");
 
 const listeners: ((r: Resolver) => LoginListener)[] = [];
 
@@ -51,5 +54,7 @@ export function registerIdentity(c: Container): void {
     ids: r.resolve(IdGeneratorToken),
     logger: r.resolve(LoggerToken),
   }));
+  c.scoped(GetStaffRolesToken, (r) => new GetStaffRoles(new D1AccountReadModel(r.resolve(DatabaseToken))));
+  c.scoped(GetCustomerProfileToken, (r) => new GetCustomerProfile(new D1AccountReadModel(r.resolve(DatabaseToken))));
   c.scoped(LogoutToken, (r) => new Logout(r.resolve(SessionRepositoryToken), r.resolve(SessionCookiesToken), r.resolve(TokenServiceToken), r.resolve(ClockToken)));
 }

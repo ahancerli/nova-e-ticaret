@@ -25,14 +25,15 @@ export function buildConfig(env: Partial<CloudflareEnv>, processEnv: Record<stri
     const fromEnv = (env as Record<string, unknown>)[key];
     return (typeof fromEnv === "string" && fromEnv) || processEnv[key] || "";
   };
-  // APP_ENV: the process env (.env.local in dev) wins over the Worker var, because wrangler.jsonc ships
-  // APP_ENV=production as a var that local `next dev` also sees. In production both say "production".
-  const appEnvRaw = processEnv.APP_ENV || pick("APP_ENV") || "development";
+  // wrangler.jsonc `vars` (APP_ENV, PUBLIC_SITE_URL) ship production values that local `next dev` also sees,
+  // so for these the process env (.env.local) wins. In production both sources carry the same value.
+  const pickVar = (key: string): string => processEnv[key] || pick(key);
+  const appEnvRaw = pickVar("APP_ENV") || "development";
   const appEnv = (["development", "preview", "production"].includes(appEnvRaw) ? appEnvRaw : "development") as AppConfig["appEnv"];
   const config: AppConfig = {
     appEnv,
     isProduction: appEnv === "production",
-    publicSiteUrl: (pick("PUBLIC_SITE_URL") || "http://localhost:3000").replace(/\/$/, ""),
+    publicSiteUrl: (pickVar("PUBLIC_SITE_URL") || "http://localhost:3000").replace(/\/$/, ""),
     sessionSecret: pick("SESSION_SECRET"),
     secretsMasterKey: pick("SECRETS_MASTER_KEY"),
     secretsKeyVersion: pick("SECRETS_KEY_VERSION") || "v1",

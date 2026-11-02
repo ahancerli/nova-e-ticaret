@@ -37,7 +37,8 @@ const ordersModule = await S("modules/orders/index");
 const checkout = {
   createQuote: async () => (await svc(checkoutModule.CreateCheckoutQuoteToken)).execute(),
   confirmCheckout: async (input: any) => (await svc(checkoutModule.ConfirmCheckoutToken)).execute(input),
-  markPaymentPaid: (await S("server/services/checkout")).markPaymentPaid,
+  markPaymentPaid: async (paymentId: string, providerPaymentId: string | null, actorId: string | null) =>
+    (await svc(checkoutModule.SettlePaymentToken)).execute(paymentId, { providerPaymentId, actorId, allowLate: true }),
   expireStaleCheckouts: async () => (await svc(checkoutModule.ExpireStaleCheckoutsToken)).execute(),
 };
 const admin = {
@@ -50,21 +51,36 @@ const catalog = {
   getFacets: async (p: any) => (await svc(storefront.GetFacetsToken)).execute(p),
   getProductBySlug: async (slug: string) => (await svc(storefront.GetProductDetailToken)).execute(slug),
 };
-const legacyCart = await S("server/services/cart");
 const cart = {
-  resolveCart: legacyCart.resolveCart,
-  cartCouponCode: legacyCart.cartCouponCode,
+  resolveCart: async (opts: { create: boolean }) => (await svc(cartModule.CartLocatorToken)).locate(opts),
+  cartCouponCode: async (cartId: string) => (await svc(cartModule.CartRepositoryToken)).couponCode(cartId),
   addItem: async (variantId: string, qty: number) => (await svc(cartModule.AddCartItemToken)).execute(variantId, qty),
   updateItem: async (itemId: string, qty: number) => (await svc(cartModule.UpdateCartItemToken)).execute(itemId, qty),
   attachCoupon: async (cartId: string, couponId: string) => d1.raw.prepare("INSERT OR REPLACE INTO cart_coupons (cart_id, coupon_id) VALUES (?, ?)").run(cartId, couponId),
 };
 const pricing = {
-  buildQuote: (await S("server/services/pricing")).buildQuote,
+  buildQuote: async (cartId: string, code: string | null) => (await svc(pricingModule.BuildQuoteToken)).execute(cartId, code),
   findUsableCoupon: async (code: string) => (await svc(pricingModule.FindUsableCouponToken)).execute(code),
 };
 
-const auth = await S("server/auth");
-const sec = await S("server/security");
+// Former server/auth + server/security facades, now served by the identity / platform modules and core.
+const coreModule = await S("core/index");
+const auth = {
+  requirePermission: async (code: string) => {
+    const user = await app.currentPrincipal("admin");
+    if (!user) throw new coreModule.UnauthorizedError();
+    if (!user.isStaff || !user.permissions.has(code)) throw new coreModule.ForbiddenError();
+    return user;
+  },
+};
+const sec = {
+  rateLimit: async (o: { key: string; limit: number; windowSec: number; record?: boolean }) => {
+    const limiter = await svc(coreModule.RateLimiterToken);
+    return o.record === false ? limiter.check(o.key, o.limit, o.windowSec) : limiter.hit(o.key, o.limit, o.windowSec);
+  },
+  assertSameOrigin: async (req: Request) => (await svc(coreModule.OriginGuardToken)).assert(req, "json"),
+  sanitizeRichHtml: coreModule.sanitizeRichHtml,
+};
 const money = await S("lib/money");
 
 await t("shell data (header/footer tree)", async () => { const s = await catalog.getShellData(); assert(s.header.length === 5 && s.footer[0].children.length === 2 && s.settings["site.name"] === "nova.", JSON.stringify(s).slice(0, 200)); });
@@ -199,7 +215,7 @@ await t("sanitizer: XSS payload corpus", async () => {
   assert(link.startsWith(`<a href="/urun/x?a=1&amp;b=2" rel="noopener noreferrer nofollow"`), link);
 });
 await t("money allocate sums exactly", async () => { const a = money.allocate(100, [1, 1, 1]); assert(a.reduce((x: number, y: number) => x + y, 0) === 100, String(a)); });
-const crypto2 = await S("server/crypto");
+const crypto2 = coreModule;
 await t("AES-GCM secret roundtrip", async () => { const k = (globalThis as any).__ENV.SECRETS_MASTER_KEY; const e = await crypto2.encryptSecret(k, "api-secret"); assert((await crypto2.decryptSecret(k, e)) === "api-secret", "roundtrip"); });
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

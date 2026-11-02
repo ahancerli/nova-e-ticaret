@@ -1,28 +1,26 @@
 import { NextResponse } from "next/server";
-import { verifyAndSettle } from "@/server/services/iyzico";
-import { getEnv } from "@/server/db";
-import { ipHash, rateLimit } from "@/server/security";
+import { ConfigToken, LoggerToken, RateLimitError, RateLimiterToken } from "@/core";
+import { VerifyCardPaymentToken } from "@/modules/payments";
+import { container, resolveService } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
 /**
- * iyzico redirects the buyer's browser here (form POST with `token`).
- * Protected by provider verification (server-to-server detail call), not by cookies.
- * The browser only ever sees a status page; PII is never put in the URL.
+ * iyzico redirects the buyer's browser here (form POST with `token`). Not a JSON route: it always answers
+ * with a redirect to the result page. Trust comes from the server-to-server verification, not from cookies;
+ * PII never goes into the URL. Calls are rate-limited per IP.
  */
 export async function POST(req: Request) {
-  const env = await getEnv();
-  const base = env.PUBLIC_SITE_URL.replace(/\/$/, "");
+  const base = (await resolveService(ConfigToken)).publicSiteUrl;
+  const result = (q: Record<string, string>) => NextResponse.redirect(`${base}/siparis/sonuc?${new URLSearchParams(q)}`, 303);
   try {
-    await rateLimit({ key: `iyzico-callback:${await ipHash(req)}`, limit: 30, windowSec: 60 });
-    const form = await req.formData();
-    const token = String(form.get("token") ?? "");
-    if (!/^[A-Za-z0-9-]{10,100}$/.test(token)) return NextResponse.redirect(`${base}/siparis/sonuc?durum=hata`, 303);
-    const r = await verifyAndSettle(token, "callback");
-    const q = new URLSearchParams({ durum: r.status === "paid" ? "basarili" : "hata", ...(r.orderNumber ? { no: r.orderNumber } : {}) });
-    return NextResponse.redirect(`${base}/siparis/sonuc?${q}`, 303);
+    const limiter = await resolveService(RateLimiterToken);
+    await limiter.hit(`iyzico-callback:${await limiter.clientKey(req)}`, 30, 60);
+    const token = String((await req.formData()).get("token") ?? "");
+    const r = await (await resolveService(VerifyCardPaymentToken)).execute(token, "callback");
+    return result({ durum: r.status === "paid" ? "basarili" : "hata", ...(r.orderNumber ? { no: r.orderNumber } : {}) });
   } catch (err) {
-    console.error(JSON.stringify({ level: "error", where: "iyzico.callback", message: err instanceof Error ? err.message : String(err) }));
-    return NextResponse.redirect(`${base}/siparis/sonuc?durum=hata`, 303);
+    if (!(err instanceof RateLimitError)) container.resolve(LoggerToken).error("iyzico callback failed", { error: err instanceof Error ? err.message : String(err) });
+    return result({ durum: "hata" });
   }
 }

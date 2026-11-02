@@ -37,8 +37,22 @@ export interface ProductPage {
   pages: number;
 }
 
+export interface CategoryPageData {
+  name: string;
+  metaTitle: string | null;
+  metaDescription: string | null;
+  noindex: boolean;
+}
+
 /** Read side of the storefront (CQRS): only published / active data, already shaped for the UI. */
 export interface StorefrontReadModel {
+  brandPage(slug: string): Promise<{ name: string; description: string | null } | null>;
+  categoryPage(slug: string): Promise<CategoryPageData | null>;
+  contentPage(slug: string): Promise<{ title: string; bodyHtml: string } | null>;
+  activeBrands(): Promise<{ slug: string; name: string }[]>;
+  activeCategories(): Promise<{ id: string; parentId: string | null; slug: string; name: string }[]>;
+  /** Selected site_settings values (JSON-decoded). */
+  settings(keys: string[]): Promise<Record<string, unknown>>;
   shell(): Promise<ShellData>;
   home(now: string): Promise<HomeData>;
   listProducts(p: ListParams): Promise<ProductPage>;

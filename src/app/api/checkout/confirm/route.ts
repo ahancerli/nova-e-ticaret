@@ -1,8 +1,8 @@
 import { reply } from "@/core";
 import { ConfirmCheckoutToken, confirmSchema } from "@/modules/checkout";
 import { clientIp } from "@/modules/platform/module";
+import { StartCardPaymentToken } from "@/modules/payments";
 import { route } from "@/server/app";
-import { startCheckoutForm } from "@/server/services/iyzico";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +20,7 @@ export const POST = route({
     let payment: { paymentPageUrl: string | null } | null = null;
     if (order.paymentMethod === "iyzico") {
       // Network call happens AFTER the order transaction committed.
-      const started = await startCheckoutForm(order.paymentId, clientIp(req));
+      const started = await resolve(StartCardPaymentToken).execute(order.paymentId, clientIp(req));
       payment = { paymentPageUrl: started.paymentPageUrl };
     }
     return reply.created({ orderNumber: order.orderNumber, totalMinor: order.totalMinor, paymentMethod: order.paymentMethod, payment });
