@@ -1,22 +1,20 @@
-import { handler, ok, readJson, requestId } from "@/server/http";
-import { audit, requirePermission } from "@/server/auth";
-import { assertSameOrigin } from "@/server/security";
-import { adminCategoryCreateSchema } from "@/server/validation";
-import { createCategory, listCategoryTree } from "@/server/services/admin-categories";
+import { reply } from "@/core";
+import { CreateCategoryToken, ListCategoryTreeToken, categoryCreateSchema } from "@/modules/catalog";
+import { actorOf } from "@/modules/shared/actor";
+import { route } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
-export const GET = handler(async (req) => {
-  await requirePermission("catalog.read");
-  const result = await listCategoryTree();
-  return ok(req, result, { total: result.flat.length });
+export const GET = route({
+  auth: { audience: "admin", permission: "catalog.read" },
+  handle: async ({ resolve }) => {
+    const result = await resolve(ListCategoryTreeToken).execute();
+    return reply.ok(result, { total: result.flat.length });
+  },
 });
 
-export const POST = handler(async (req) => {
-  await assertSameOrigin(req);
-  const user = await requirePermission("catalog.write");
-  const input = adminCategoryCreateSchema.parse(await readJson(req));
-  const created = await createCategory(input);
-  await audit(user.id, "category.create", "category", created.id, { ...input, slug: created.slug }, requestId(req));
-  return ok(req, created, {}, 201);
+export const POST = route({
+  auth: { audience: "admin", permission: "catalog.write" },
+  body: categoryCreateSchema,
+  handle: async (ctx) => reply.created(await ctx.resolve(CreateCategoryToken).execute(ctx.body, actorOf(ctx))),
 });

@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, ClientApiError } from "@/lib/api-client";
 import { slugify } from "@/lib/slug";
 import { notify } from "@/lib/toast";
-import type { BrandRow } from "@/server/services/admin-brands";
+import type { BrandRow } from "@/modules/catalog";
 import { ImageUpload, type UploadedImage } from "./ImageUpload";
 
 type FormState = {

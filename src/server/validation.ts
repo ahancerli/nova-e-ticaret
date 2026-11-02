@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { slugInput as slug } from "@/modules/shared/schemas";
 
 const id = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/, "Geçersiz kimlik");
 const phone = z.string().trim().regex(/^\+?[1-9]\d{9,14}$/, "Telefon +905xxxxxxxxx biçiminde olmalı");
@@ -144,33 +145,7 @@ export const adminOrderBulkSchema = z.object({
   ]),
 }).strict();
 
-// Free text here; services run slugify() ("Bahçe Ürünleri" → "bahce-urunleri") and validate the result.
-const slug = z.string().trim().min(1).max(160);
 
-export const adminCategoryCreateSchema = z.object({
-  name: z.string().trim().min(2).max(160),
-  slug: slug.optional(),
-  parentId: id.optional().nullable(),
-  description: z.string().trim().max(1000).optional().nullable(),
-  imageMediaId: id.optional().nullable(),
-  menuMediaId: id.optional().nullable(),
-  sortOrder: z.coerce.number().int().min(-100000).max(100000).default(0),
-  isActive: z.boolean().default(true),
-}).strict();
-
-export const adminCategoryUpdateSchema = z
-  .object({
-    name: z.string().trim().min(2).max(160).optional(),
-    slug: slug.optional(),
-    parentId: id.optional().nullable(),
-    description: z.string().trim().max(1000).optional().nullable(),
-    imageMediaId: id.optional().nullable(),
-    menuMediaId: id.optional().nullable(),
-    sortOrder: z.coerce.number().int().min(-100000).max(100000).optional(),
-    isActive: z.boolean().optional(),
-  })
-  .strict()
-  .refine((v) => Object.keys(v).length > 0, "En az bir alan güncellenmelidir.");
 
 // ---------------------------------------------------------------------------
 // Products: the editor saves the whole aggregate (product + categories + media + variants
@@ -227,33 +202,4 @@ export const adminProductSchema = z
   })
   .strict();
 
-// brands.website_url CHECK: GLOB 'http*://*' → only absolute http(s) URLs.
-const websiteUrl = z
-  .string()
-  .trim()
-  .max(500)
-  .refine((v) => {
-    try {
-      const u = new URL(v);
-      return (u.protocol === "https:" || u.protocol === "http:") && !!u.hostname.includes(".");
-    } catch {
-      return false;
-    }
-  }, "Geçerli bir web adresi girin (https://…).");
 
-const brandFields = {
-  name: z.string().trim().min(1).max(160),
-  slug: slug.optional(),
-  description: z.string().trim().max(2000).optional().nullable(),
-  logoMediaId: id.optional().nullable(),
-  bannerMediaId: id.optional().nullable(),
-  websiteUrl: websiteUrl.optional().nullable(),
-  isActive: z.boolean(),
-};
-
-export const adminBrandCreateSchema = z.object({ ...brandFields, isActive: brandFields.isActive.default(true) }).strict();
-
-export const adminBrandUpdateSchema = z
-  .object({ ...brandFields, name: brandFields.name.optional(), isActive: brandFields.isActive.optional() })
-  .strict()
-  .refine((v) => Object.keys(v).length > 0, "En az bir alan güncellenmelidir.");

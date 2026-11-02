@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AdminBadge, AdminCard, AdminCardTitle, AdminPageHeader, AdminTable } from "@/components/admin/ui";
 import { requirePermission } from "@/server/auth";
-import { getCategoryDetail } from "@/server/services/admin-categories";
+import { GetCategoryDetailToken } from "@/modules/catalog";
+import { resolveService } from "@/server/app";
 
 export const metadata = { title: "Kategori detayı" };
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function CategoryDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requirePermission("catalog.read");
   const { id } = await params;
-  const detail = await getCategoryDetail(id);
+  const detail = await (await resolveService(GetCategoryDetailToken)).execute(id);
   if (!detail) notFound();
 
   const c = detail.category;

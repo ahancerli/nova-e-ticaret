@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronRight, FolderTree, Plus, Save, Trash2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { notify } from "@/lib/toast";
-import type { CategoryNode } from "@/server/services/admin-categories";
+import type { CategoryNode } from "@/modules/catalog";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { AdminBadge, AdminCard, AdminPageHeader } from "./ui";
 import { AdminDrawer } from "./AdminDrawer";

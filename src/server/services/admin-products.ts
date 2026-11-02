@@ -7,8 +7,13 @@ import { slugify } from "@/lib/slug";
 import { requiredAttributeIds } from "@/lib/product-rules";
 import type { adminProductSchema } from "../validation";
 import { DEFAULT_PRICE_LIST } from "./catalog";
-import { listCategoryTree } from "./admin-categories";
-import { releaseMedia } from "./media";
+import { ListCategoryTreeToken } from "@/modules/catalog";
+import { MediaLibraryToken } from "@/modules/media";
+import { resolveService } from "../app";
+
+// Bridges to the new modules until products move to src/modules (Phase 3, step 2).
+const listCategoryTree = async () => (await resolveService(ListCategoryTreeToken)).execute();
+const releaseMedia = async (id: string | null | undefined) => (await resolveService(MediaLibraryToken)).release(id);
 
 export type ProductInput = z.infer<typeof adminProductSchema>;
 

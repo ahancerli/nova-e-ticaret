@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requirePermission } from "@/server/auth";
-import { listCategoryTree } from "@/server/services/admin-categories";
+import { ListCategoryTreeToken } from "@/modules/catalog";
+import { resolveService } from "@/server/app";
 import { AdminCard, AdminPageHeader } from "@/components/admin/ui";
 import { CategoryCreateForm } from "@/components/admin/CategoryCreateForm";
 
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function NewCategoryPage() {
   await requirePermission("catalog.write");
-  const { flat } = await listCategoryTree();
+  const { flat } = await (await resolveService(ListCategoryTreeToken)).execute();
   const parents = flat.map((c) => ({ id: c.id, name: c.name, depth: c.depth }));
   return (
     <div className="mx-auto max-w-3xl space-y-6">

@@ -29,7 +29,7 @@ Seed'deki `admin@nova.local` kullanıcısının parolası dokümante değildir; 
 |---|---|
 | `npm run dev` / `dev:remote` | Local D1 (varsayılan) / Cloudflare D1'e bağlı geliştirme |
 | `npm run typecheck` · `npm run lint` | `tsc --noEmit` · ESLint |
-| `npm test` | `db:test` (41 şema testi, python3) + `test:core` (13 çekirdek birim testi) + `test:services` (23 servis testi) — Node ≥ 22.13 |
+| `npm test` | `db:test` (41 şema, python3) + `test:core` (13 çekirdek) + `test:catalog` (9 katalog/medya modülü) + `test:services` (23 eski servis) — Node ≥ 22.13 |
 | `npm run db:{schema,seed,reset}:{local,remote}` | Şema / seed / sil-kur-seed |
 | `npm run db:query[:local] -- "SQL"` | Tek SQL (remote varsayılan, `:local` ile local) |
 | `npm run admin:create[:local] -- email "Ad"` | Admin oluştur / parolasını sıfırla (remote / local) |
@@ -84,10 +84,11 @@ src/
     admin/                Panel bileşenleri (aşağıda katalog)
     storefront/ cart/ checkout/   Vitrin bileşenleri
   core/                   Çatıdan bağımsız temel (ayrıntı §4.1): errors, di, db, logging, runtime, http
+  modules/                İş modülleri (ayrıntı §4.2): audit, media, catalog (taşınanlar; diğerleri src/server/services'te)
   lib/                    İstemci+sunucu ortak: api-client, toast, motion, money, slug, ids, types, order-rules, product-rules
   proxy.ts                Sayfa CSP'si (istek başına script nonce)
   server/                 Yalnız sunucu ("server-only"): app (composition root + route), db, auth, http, security, validation, idempotency, crypto
-    services/             İş mantığı: catalog, cart, pricing, checkout, iyzico, admin-*, media, shipping, outbox
+    services/             Henüz modüle taşınmamış iş mantığı: catalog (vitrin), cart, pricing, checkout, iyzico, admin-products, admin-orders, shipping, outbox
 ```
 
 ## 4. Mimari kurallar (tüm yeni kod bunlara uyar)
@@ -100,8 +101,8 @@ src/
 6. **CSRF:** cookie ile yazan her uç `assertSameOrigin(req)` (Origin/Referer + JSON içerik tipi; yükleme uçları `{multipart:true}`).
 7. **Idempotency:** `Idempotency-Key` başlığı checkout confirm, sipariş işlemleri ve toplu işlemlerde zorunlu (`withIdempotency`); aynı anahtar + farklı gövde → 409, tekrar → kayıtlı yanıt.
 8. **Fiyat her zaman sunucuda** (`pricing.buildQuote`); quote hash'i saklanır, confirm'de farklıysa 409.
-9. **Validasyon:** tüm girdiler `src/server/validation.ts` (Zod 4). Slug alanları serbest metin alır, servis `slugify` ile normalize eder (Türkçe karakter çevrilir: "Yaşam" → `yasam`).
-10. **Audit:** admin yazma işlemleri `audit()` ile `audit_logs`'a (sözlük: db/README.md §5).
+9. **Validasyon:** tüm girdiler Zod 4 şemalarından geçer (modüllerde `modules/<m>/http/schemas.ts`, eskiler `src/server/validation.ts`); Zod mesajları Türkçe (`modules/shared/schemas.ts`). Slug alanları serbest metin alır, servis `slugify` ile normalize eder (Türkçe karakter çevrilir: "Yaşam" → `yasam`).
+10. **Audit:** admin yazma işlemleri `audit_logs`'a yazılır (sözlük: db/README.md §5). Modüllerde audit satırı, değişikliğin **aynı UnitOfWork'üne** `AuditLog.recordStatement()` ile eklenir (ya ikisi ya hiçbiri); eski servisler hâlâ `audit()` kullanır.
 11. **Rate limit:** login ve kupon için IP başına dakikada 5 hata (D1 üzerinde).
 12. **HTML:** admin'in yazdığı açıklamalar vitrinde `sanitizeRichHtml` (tokenizer tabanlı allowlist; yalnız `https://` veya site içi `/yol` bağlantıları) üzerinden geçer; kullanıcı içeriği asla HTML olarak basılmaz. Yeni XSS bulgusu = `tests/integration/services.test.ts` içindeki payload listesine bir satır.
 13. **Sırlar** `integration_secrets`'ta AES-256-GCM; ana anahtar Worker secret. Panel sırları geri göstermez.
@@ -131,6 +132,22 @@ export const PUT = route({
 });
 ```
 Handler yalnız doğrulanmış girdi alır, use case'i DI'dan çözer; düz veri döner (200) veya `reply.created(data, meta)`. Yanıtlar `Cache-Control: no-store` (public: `no-cache`).
+
+### 4.2 Modül yapısı (`src/modules/<modül>`)
+
+```
+domain/           Saf tipler ve kurallar (I/O yok): category.ts (buildTree, parentOptionsFor), errors.ts (hata kataloğu)
+application/      Use case sınıfları — her işlem ayrı sınıf: ListCategoryTree, GetCategoryDetail, CreateCategory, UpdateCategory, DeleteCategory
+                  ports.ts: ihtiyaç duyulan repository/servis arayüzleri (Dependency Inversion)
+infrastructure/   Port gerçeklemeleri: D1CategoryRepository, R2ObjectStorage … (SQL yalnız burada)
+http/             Zod girdi şemaları
+module.ts         Token'lar + DI kayıtları (registerX)
+index.ts          Modülün dışa açık yüzeyi — diğer kod yalnız buradan import eder
+```
+
+Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf bilmez. Yazmalar `UnitOfWork` ile; durum/varlık koşulları `expectChanges` ile batch içinde korunur (ör. "alt kategori yoksa sil" → `DELETE … AND NOT EXISTS (…)` + guard). Dış etkiler (R2 silme) commit'ten sonra. Sorgular (Query) yokluğu `null` ile döner, route 404'e çevirir. Sayfalar (server component) use case'i `resolveService(Token)` ile çözer; yetkiyi sayfa kontrol eder. Modüller arası bağımlılık arayüz üzerinden (catalog → `MediaLibrary`).
+
+**Yeni modül eklemek:** klasörü kur → `module.ts`'te `registerX(c)` → `src/server/app.ts`'te `registerX(container)` → route dosyaları `route({...})` → `tests/integration/<modül>.test.ts` (container testte kurulur, yalnız dış servisler sahte).
 
 ## 5. Modül durumu
 
@@ -212,7 +229,7 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 
 ## 9. Testler
 
-- `npm test` → **41/41** şema + **13/13** çekirdek + **23/23** servis testi (Node ≥ 22.13; `--experimental-transform-types`).
+- `npm test` → **41/41** şema + **13/13** çekirdek + **9/9** katalog modülü + **23/23** servis testi (Node ≥ 22.13; `--experimental-transform-types`).
 - Servis testleri gerçek servis kodunu çalıştırır; `tests/integration/hooks.mjs` şunları taklit eder: `server-only`, `@opennextjs/cloudflare` (env = `globalThis.__ENV`), `next/headers` (çerez kavanozu), `next/server`, `bcryptjs` (`$2b$12$<parola>`). Zod gerçek paketle çalışır. D1 taklidi: `tests/integration/d1-sqlite.mjs` (node:sqlite, `batch` = transaction).
 - Admin modülleri (kategori, marka, ürün, sipariş, iade, toplu işlem, outbox, kargo webhook, route'lar) geliştirme sırasında aynı altyapıyla senaryo testlerinden geçirildi; bu senaryolar henüz `tests/integration/`'a taşınmadı (yol haritası).
 

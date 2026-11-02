@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ExternalLink, Plus, Save, Tags, Trash2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { notify } from "@/lib/toast";
-import type { BrandRow } from "@/server/services/admin-brands";
+import type { BrandRow } from "@/modules/catalog";
 import { DataGrid, type GridColumn } from "@/components/ui/DataGrid";
 import { AdminBadge, AdminCard, AdminPageHeader } from "./ui";
 import { AdminDrawer } from "./AdminDrawer";

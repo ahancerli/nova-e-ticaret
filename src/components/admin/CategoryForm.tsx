@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, ClientApiError } from "@/lib/api-client";
 import { slugify } from "@/lib/slug";
 import { notify } from "@/lib/toast";
-import type { CategoryNode } from "@/server/services/admin-categories";
+import type { CategoryNode } from "@/modules/catalog";
 import { ImageUpload, type UploadedImage } from "./ImageUpload";
 
 export type ParentOption = { id: string; name: string; depth: number };

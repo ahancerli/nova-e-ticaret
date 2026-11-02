@@ -1,15 +1,16 @@
-import { readAsset } from "@/server/services/media";
+import { ReadAssetToken } from "@/modules/media";
+import { resolveService } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
-// Only keys we generate: "<folder>/<uuid>.<ext>". Anything else is a 404 (no traversal, no listing).
-const KEY = /^(categories|brands|products)\/[0-9a-f-]{36}\.(png|jpg|webp|avif)$/;
-
-/** GET /assets/<folder>/<file> — streams an uploaded image from R2 with long-lived caching. */
+/**
+ * GET /assets/<folder>/<file> — streams an uploaded image from R2 with long-lived caching.
+ * Only keys we generate ("<folder>/<uuid>.<ext>") are served; anything else is a 404 (no traversal, no listing).
+ * Not a JSON route, so it does not use the route() envelope.
+ */
 export async function GET(req: Request, ctx: { params: Promise<{ path: string[] }> }) {
   const key = (await ctx.params).path.join("/");
-  if (!KEY.test(key)) return new Response("Not found", { status: 404 });
-  const obj = await readAsset(key);
+  const obj = await (await resolveService(ReadAssetToken)).execute(key);
   if (!obj) return new Response("Not found", { status: 404 });
 
   const headers = new Headers();

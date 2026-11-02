@@ -1,35 +1,36 @@
-import { ApiError, handler, ok, readJson, requestId } from "@/server/http";
-import { audit, requirePermission } from "@/server/auth";
-import { assertSameOrigin } from "@/server/security";
-import { adminBrandUpdateSchema } from "@/server/validation";
-import { deleteBrand, getBrand, updateBrand } from "@/server/services/admin-brands";
+import { NotFoundError } from "@/core";
+import { DeleteBrandToken, GetBrandToken, UpdateBrandToken, brandUpdateSchema } from "@/modules/catalog";
+import { actorOf } from "@/modules/shared/actor";
+import { idParams } from "@/modules/shared/schemas";
+import { route } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
-type Ctx = { params: Promise<{ id: string }> };
-
-export const GET = handler(async (req, ctx: Ctx) => {
-  await requirePermission("catalog.read");
-  const brand = await getBrand((await ctx.params).id);
-  if (!brand) throw new ApiError(404, "brand_not_found", "Marka bulunamadı.");
-  return ok(req, brand);
+export const GET = route({
+  auth: { audience: "admin", permission: "catalog.read" },
+  params: idParams,
+  handle: async ({ params, resolve }) => {
+    const brand = await resolve(GetBrandToken).execute(params.id);
+    if (!brand) throw new NotFoundError("brand_not_found", "Marka bulunamadı.");
+    return brand;
+  },
 });
 
-export const PUT = handler(async (req, ctx: Ctx) => {
-  await assertSameOrigin(req);
-  const user = await requirePermission("catalog.write");
-  const { id } = await ctx.params;
-  const patch = adminBrandUpdateSchema.parse(await readJson(req));
-  await updateBrand(id, patch);
-  await audit(user.id, "brand.update", "brand", id, patch, requestId(req));
-  return ok(req, { updated: true });
+export const PUT = route({
+  auth: { audience: "admin", permission: "catalog.write" },
+  params: idParams,
+  body: brandUpdateSchema,
+  handle: async (ctx) => {
+    await ctx.resolve(UpdateBrandToken).execute(ctx.params.id, ctx.body, actorOf(ctx));
+    return { updated: true };
+  },
 });
 
-export const DELETE = handler(async (req, ctx: Ctx) => {
-  await assertSameOrigin(req);
-  const user = await requirePermission("catalog.write");
-  const { id } = await ctx.params;
-  const deleted = await deleteBrand(id);
-  await audit(user.id, "brand.delete", "brand", id, deleted, requestId(req));
-  return ok(req, { deleted: true });
+export const DELETE = route({
+  auth: { audience: "admin", permission: "catalog.write" },
+  params: idParams,
+  handle: async (ctx) => {
+    await ctx.resolve(DeleteBrandToken).execute(ctx.params.id, actorOf(ctx));
+    return { deleted: true };
+  },
 });

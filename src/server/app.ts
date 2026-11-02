@@ -21,7 +21,11 @@ import {
   type IdempotencyStore,
   type OriginGuard,
   type RateLimiter,
+  type Token,
 } from "@/core";
+import { registerAudit } from "@/modules/audit/audit-log";
+import { registerCatalog } from "@/modules/catalog";
+import { registerMedia } from "@/modules/media";
 import { currentUser } from "./auth";
 import { getEnv } from "./db";
 import { withIdempotency } from "./idempotency";
@@ -52,16 +56,26 @@ container.singleton(RateLimiterToken, (): RateLimiter => ({
 }));
 container.singleton(IdempotencyStoreToken, (): IdempotencyStore => ({ run: (req, scope, body, fn) => withIdempotency(req, scope, body, fn) }));
 
-/** Registers a module's bindings on the root container (called once at module load). */
-export function registerModule(register: (c: Container) => void): void {
-  register(container);
+// --- modules -------------------------------------------------------------------------------------
+registerAudit(container);
+registerMedia(container);
+registerCatalog(container);
+
+/** Fills a request scope with per-request values. getEnv() adds local .env fallbacks for secrets. */
+async function prepareScope(scope: Container): Promise<void> {
+  scope.provide(EnvToken, await getEnv());
 }
 
-export const route = createRouter({
-  root: container,
-  prepareScope: async (scope) => {
-    // getEnv() adds the local .env fallbacks for secrets on top of the Worker bindings.
-    scope.provide(EnvToken, await getEnv());
-  },
-  exposeStack: isDev,
-});
+/** HTTP routes: `export const GET = route({ ... })`. */
+export const route = createRouter({ root: container, prepareScope, exposeStack: isDev });
+
+/**
+ * Server components (pages/layouts) resolve queries through this; each call gets its own request scope.
+ * Authorization stays with the page (requirePermission) — queries do not check permissions.
+ */
+export async function resolveService<T>(t: Token<T>): Promise<T> {
+  const scope = container.createScope();
+  scope.provide(LoggerToken, container.resolve(LoggerToken));
+  await prepareScope(scope);
+  return scope.resolve(t);
+}
