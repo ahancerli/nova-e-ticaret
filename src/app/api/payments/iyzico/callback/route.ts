@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyAndSettle } from "@/server/services/iyzico";
 import { getEnv } from "@/server/db";
+import { ipHash, rateLimit } from "@/server/security";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export async function POST(req: Request) {
   const env = await getEnv();
   const base = env.PUBLIC_SITE_URL.replace(/\/$/, "");
   try {
+    await rateLimit({ key: `iyzico-callback:${await ipHash(req)}`, limit: 30, windowSec: 60 });
     const form = await req.formData();
     const token = String(form.get("token") ?? "");
     if (!/^[A-Za-z0-9-]{10,100}$/.test(token)) return NextResponse.redirect(`${base}/siparis/sonuc?durum=hata`, 303);

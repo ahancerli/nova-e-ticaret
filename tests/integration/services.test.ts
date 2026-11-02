@@ -141,6 +141,28 @@ await t("sanitizer strips scripts/handlers/js urls", async () => {
   const out = sec.sanitizeRichHtml(`<p onclick="x()">Hi<script>alert(1)</script><a href="javascript:alert(1)">a</a><a href="https://ok.test">b</a><img src=x onerror=alert(1)></p>`);
   assert(!/script|onclick|onerror|javascript|<img/i.test(out) && out.includes('href="https://ok.test"'), out);
 });
+await t("same-origin guard: malformed referer is 403, not 500", async () => {
+  let code = ""; try { await sec.assertSameOrigin(new Request("https://nova.test/api/x", { method: "POST", headers: { referer: "::not a url::", "content-type": "application/json" } })); } catch (e: any) { code = e.code; }
+  assert(code === "bad_origin", code);
+});
+await t("sanitizer: XSS payload corpus", async () => {
+  const cases: [string, string][] = [
+    [`<scr<script></script>ipt>alert(1)</script>`, "ipt&gt;alert(1)"],
+    [`<svg/onload=alert(1)><p>x</p>`, ""],
+    [`<p title="a>b" onmouseover=alert(1)>t</p>`, "<p>t</p>"],
+    [`<!--<script>alert(1)--><b>bold<i>x</b>`, "<b>bold<i>x</i></b>"],
+    [`<STYLE>x</STYLE ><p>after</p>`, "<p>after</p>"],
+    [`<img src=x onerror=alert(1)`, ""],
+    [`<math><mtext><table><mglyph><style><img src=x onerror=alert(1)>`, ""],
+    [`<textarea><p onclick=1></textarea>`, ""],
+    [`<p>unclosed <strong>tags`, "<p>unclosed <strong>tags</strong></p>"],
+    [`a < b && c &copy; &bogus`, "a &lt; b &amp;&amp; c &copy; &amp;bogus"],
+    [`<a href="/&#47;evil.test">x</a><a href="/\\evil.test">y</a><a href="//evil.test">z</a><a href="data:text/html,1">d</a>`, "<a>x</a><a>y</a><a>z</a><a>d</a>"],
+  ];
+  for (const [input, expected] of cases) { const out = sec.sanitizeRichHtml(input); assert(out === expected, `${input} → ${out}`); }
+  const link = sec.sanitizeRichHtml(`<a href="/urun/x?a=1&amp;b=2">ok</a>`);
+  assert(link.startsWith(`<a href="/urun/x?a=1&amp;b=2" rel="noopener noreferrer nofollow"`), link);
+});
 await t("money allocate sums exactly", async () => { const a = money.allocate(100, [1, 1, 1]); assert(a.reduce((x: number, y: number) => x + y, 0) === 100, String(a)); });
 const crypto2 = await S("server/crypto");
 await t("AES-GCM secret roundtrip", async () => { const k = (globalThis as any).__ENV.SECRETS_MASTER_KEY; const e = await crypto2.encryptSecret(k, "api-secret"); assert((await crypto2.decryptSecret(k, e)) === "api-secret", "roundtrip"); });

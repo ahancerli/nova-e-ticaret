@@ -99,7 +99,8 @@ export async function setSessionCookie(token: string, expiresAt: string, audienc
   (await cookies()).set(cookieName(audience), token, {
     httpOnly: true,
     secure: true,
-    sameSite: "lax",
+    // The admin cookie is never needed on cross-site navigations, so it gets the stricter mode.
+    sameSite: audience === "admin" ? "strict" : "lax",
     path: "/",
     expires: new Date(expiresAt),
   });

@@ -47,6 +47,9 @@ export const loginSchema = z.object({
 
 const csv = (v: string | null) => (v ? v.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 20) : []);
 
+const MAX_ATTR_FILTERS = 8;
+const MAX_ATTR_VALUES = 40;
+
 /** Parses /api/catalog/products query string. Unknown attr codes are ignored server-side. */
 export function parseListQuery(sp: URLSearchParams) {
   const num = (k: string) => {
@@ -55,9 +58,16 @@ export function parseListQuery(sp: URLSearchParams) {
     const n = Number(v);
     return Number.isFinite(n) && n >= 0 ? Math.round(n) : undefined;
   };
+  // Bounded so the generated SQL stays under D1's 100 bound parameters per statement.
   const attrs: Record<string, string[]> = {};
+  let budget = MAX_ATTR_VALUES;
   for (const [k, v] of sp.entries()) {
-    if (k.startsWith("a.") && /^a\.[a-z0-9_]{1,40}$/.test(k)) attrs[k.slice(2)] = csv(v);
+    if (Object.keys(attrs).length >= MAX_ATTR_FILTERS || budget <= 0) break;
+    if (!k.startsWith("a.") || !/^a\.[a-z0-9_]{1,40}$/.test(k)) continue;
+    const values = csv(v).slice(0, budget);
+    if (!values.length) continue;
+    attrs[k.slice(2)] = values;
+    budget -= values.length;
   }
   return {
     category: sp.get("category")?.slice(0, 100) || undefined,

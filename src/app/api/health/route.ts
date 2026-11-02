@@ -4,6 +4,7 @@ import { queryFirst } from "@/server/db";
 export const dynamic = "force-dynamic";
 
 export const GET = handler(async (req) => {
-  const row = await queryFirst<{ tables: number }>("SELECT COUNT(*) AS tables FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'");
-  return ok(req, { status: "ok", db: "d1", tables: row?.tables ?? 0 });
+  // Public endpoint: proves the DB answers without revealing anything about the schema.
+  await queryFirst<{ ok: number }>("SELECT 1 AS ok");
+  return ok(req, { status: "ok" });
 });

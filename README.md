@@ -29,7 +29,7 @@ Seed'deki `admin@nova.local` kullanıcısının parolası dokümante değildir; 
 |---|---|
 | `npm run dev` / `dev:remote` | Local D1 (varsayılan) / Cloudflare D1'e bağlı geliştirme |
 | `npm run typecheck` · `npm run lint` | `tsc --noEmit` · ESLint |
-| `npm test` | `db:test` (40 şema testi, python3) + `test:services` (21 servis testi, Node ≥ 22.13) |
+| `npm test` | `db:test` (40 şema testi, python3) + `test:services` (23 servis testi, Node ≥ 22.13) |
 | `npm run db:{schema,seed,reset}:{local,remote}` | Şema / seed / sil-kur-seed |
 | `npm run db:query[:local] -- "SQL"` | Tek SQL (remote varsayılan, `:local` ile local) |
 | `npm run admin:create[:local] -- email "Ad"` | Admin oluştur / parolasını sıfırla (remote / local) |
@@ -92,7 +92,7 @@ src/
 1. **Veri erişimi yalnız sunucuda** (`src/server`, `import "server-only"`). Parametreli sorgu (`?`); sıralama/kolon adları allowlist'ten. D1 sınırı: ifade başına ≤ 100 parametre → `IN` listeleri 80'lik parçalara bölünür (`placeholders()`).
 2. **Atomiklik:** çok adımlı yazma = tek `db.batch([...])`. Durum geçişleri `WHERE status = <beklenen>` ile; ilk ifadenin `changes` değeri kontrol edilir → yarışta 409. Dış ağ çağrıları (iyzico, kargo) **batch dışında**, mümkünse outbox üzerinden.
 3. **API sözleşmesi:** başarı `{data, meta, requestId}`, hata `{error:{code,message,fieldErrors}, requestId}`. Route'lar `handler()` ile sarılır; `ApiError`, `ZodError` ve trigger kodları otomatik HTTP koduna eşlenir (`src/server/http.ts`). Dev ortamında beklenmeyen hatalar route + stack ile loglanır.
-4. **Kimlik:** yalnız oturum çerezinden. Mağaza `__Host-nova_store_session`, panel `__Host-nova_admin_session` (ayrı; panel 8 saat). Token'ın kendisi değil HMAC'i saklanır. Body'deki userId asla yetki değildir.
+4. **Kimlik:** yalnız oturum çerezinden. Mağaza `__Host-nova_store_session` (`SameSite=Lax`), panel `__Host-nova_admin_session` (ayrı; `SameSite=Strict`, 8 saat). Token'ın kendisi değil HMAC'i saklanır. Body'deki userId asla yetki değildir.
 5. **Yetki:** her admin route/sayfa `requirePermission("<kod>")` çağırır; UI gizlemek yetki değildir. Nesne/durum kuralları serviste ayrıca kontrol edilir.
 6. **CSRF:** cookie ile yazan her uç `assertSameOrigin(req)` (Origin/Referer + JSON içerik tipi; yükleme uçları `{multipart:true}`).
 7. **Idempotency:** `Idempotency-Key` başlığı checkout confirm, sipariş işlemleri ve toplu işlemlerde zorunlu (`withIdempotency`); aynı anahtar + farklı gövde → 409, tekrar → kayıtlı yanıt.
@@ -100,8 +100,9 @@ src/
 9. **Validasyon:** tüm girdiler `src/server/validation.ts` (Zod 4). Slug alanları serbest metin alır, servis `slugify` ile normalize eder (Türkçe karakter çevrilir: "Yaşam" → `yasam`).
 10. **Audit:** admin yazma işlemleri `audit()` ile `audit_logs`'a (sözlük: db/README.md §5).
 11. **Rate limit:** login ve kupon için IP başına dakikada 5 hata (D1 üzerinde).
-12. **HTML:** admin'in yazdığı açıklamalar vitrinde `sanitizeRichHtml` allowlist'inden geçer; kullanıcı içeriği asla HTML olarak basılmaz.
+12. **HTML:** admin'in yazdığı açıklamalar vitrinde `sanitizeRichHtml` (tokenizer tabanlı allowlist; yalnız `https://` veya site içi `/yol` bağlantıları) üzerinden geçer; kullanıcı içeriği asla HTML olarak basılmaz. Yeni XSS bulgusu = `tests/integration/services.test.ts` içindeki payload listesine bir satır.
 13. **Sırlar** `integration_secrets`'ta AES-256-GCM; ana anahtar Worker secret. Panel sırları geri göstermez.
+14. **CSP:** sayfa CSP'si `src/proxy.ts`'te her istekte üretilen **script nonce** ile kurulur (`'unsafe-inline'` script yok, `'strict-dynamic'`). Bu yüzden root layout `connection()` ile tüm sayfaları dinamik render eder. Inline `<script>` yazılmaz; gerekiyorsa `headers().get("x-nonce")` ile `nonce` verilir. API ve `public/demo` yanıtları `next.config.ts`'te `default-src 'none'` alır. Harici script/iframe eklemek = `src/proxy.ts`'te ilgili direktife kaynak eklemek.
 
 ## 5. Modül durumu
 
@@ -163,7 +164,7 @@ src/
 
 | Uç | Metot | Yetki / koruma |
 |---|---|---|
-| `/api/home`, `/api/catalog/products`, `/api/catalog/facets`, `/api/products/:slug`, `/api/health` | GET | Herkese açık |
+| `/api/home`, `/api/catalog/products`, `/api/catalog/facets`, `/api/products/:slug`, `/api/health` | GET | Herkese açık (`health` yalnız `{status}` döner; katalog filtresi ≤ 8 özellik / 40 değer) |
 | `/api/cart` · `/api/cart/items` · `/api/cart/items/:id` · `/api/cart/coupons` | GET · POST · PATCH/DELETE · POST/DELETE | Sepet çerezi/oturum, CSRF, kupon rate limit |
 | `/api/checkout/quote` · `/api/checkout/confirm` | POST | CSRF; confirm Idempotency-Key |
 | `/api/storefront/auth/login|logout` (+ eski `/api/auth/*`) | POST | CSRF, rate limit; girişte misafir sepeti birleşir |
@@ -174,7 +175,7 @@ src/
 | `/api/admin/media` | POST multipart | catalog.write, CSRF, audit |
 | `/api/admin/orders` · `/api/admin/orders/:id` | GET | orders.read (müşteri verisi customers.read yoksa maskeli) |
 | `/api/admin/orders/:id/actions` · `/api/admin/orders/bulk` | POST | işleme göre orders.write / payments.reconcile, CSRF, Idempotency-Key, audit |
-| `/api/payments/iyzico/callback` · `/api/webhooks/iyzico` | POST | Sağlayıcı yeniden doğrulaması (çerez değil) |
+| `/api/payments/iyzico/callback` · `/api/webhooks/iyzico` | POST | Sağlayıcı yeniden doğrulaması (çerez değil), IP başına rate limit (30 / 300 dk) |
 | `/api/webhooks/shipping/:provider` | POST | HMAC imza + zaman damgası |
 | `/api/cron/expire` · `/api/cron/outbox` | POST | `Bearer CRON_SECRET` |
 | `/assets/*` | GET | Herkese açık, yalnız üretilmiş anahtar biçimi |
@@ -183,7 +184,7 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 
 ## 9. Testler
 
-- `npm test` → **40/40** şema + **21/21** servis testi (Node ≥ 22.13; `--experimental-transform-types`).
+- `npm test` → **40/40** şema + **23/23** servis testi (Node ≥ 22.13; `--experimental-transform-types`).
 - Servis testleri gerçek servis kodunu çalıştırır; `tests/integration/hooks.mjs` şunları taklit eder: `server-only`, `@opennextjs/cloudflare` (env = `globalThis.__ENV`), `next/headers` (çerez kavanozu), `next/server`, `bcryptjs` (`$2b$12$<parola>`), **`zod` (boş taklit — Zod şemasını test eden kod için kendi loader'ınızda bu eşlemeyi çıkarın)**. D1 taklidi: `tests/integration/d1-sqlite.mjs` (node:sqlite, `batch` = transaction).
 - Admin modülleri (kategori, marka, ürün, sipariş, iade, toplu işlem, outbox, kargo webhook, route'lar) geliştirme sırasında aynı altyapıyla senaryo testlerinden geçirildi; bu senaryolar henüz `tests/integration/`'a taşınmadı (yol haritası).
 

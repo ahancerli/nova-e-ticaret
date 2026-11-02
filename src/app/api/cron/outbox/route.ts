@@ -14,5 +14,5 @@ export const POST = handler(async (req) => {
   const auth = req.headers.get("authorization") ?? "";
   if (!env.CRON_SECRET || !safeEqual(auth, `Bearer ${env.CRON_SECRET}`)) throw new ApiError(401, "unauthorized", "Yetkisiz.");
   const limit = Number(new URL(req.url).searchParams.get("limit") ?? 25);
-  return ok(req, await processOutbox(Number.isFinite(limit) ? limit : 25));
+  return ok(req, await processOutbox(Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 25));
 });

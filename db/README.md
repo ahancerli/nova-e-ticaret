@@ -108,7 +108,7 @@ cron expire: süresi dolan rezervasyonlu ödenmemiş sipariş ──► cancelle
 | `inventory_movements.kind` / `reference_type` | `receipt` (ilk stok, ref `product`), `adjustment` (panel, ref `product`), `reserve` (checkout, ref `order`), `commit` (ödeme), `release` (iptal/expire, ref `order`/`checkout`), `return` (iade stoğa alma, ref **`order_item`** — kalem bazlı iade sayımı bu satırlardan yapılır) |
 | `outbox_events.event_type` → payload | `order.placed {orderNumber,paymentMethod}`, `order.paid {}`, `order.shipped {shipmentId,trackingNumber}`, `order.delivered {}`, `order.cancelled {reason}`, `refund.process {refundId,orderId}`, `refund.succeeded {refundId,amountMinor,full}`; `dedupe_key = "<tip>:<id>"` |
 | `idempotency_keys.scope` | `checkout.confirm`, `order.action:<orderId>`, `order.bulk` (24 saat) |
-| `rate_limit_buckets.bucket_key` | `login-fail:<ipHash>`, `storefront-login-fail:…`, `admin-login-fail:…`, `coupon-fail:…` (dakikada 5 hata) |
+| `rate_limit_buckets.bucket_key` | `login-fail:<ipHash>`, `storefront-login-fail:…`, `admin-login-fail:…`, `coupon-fail:…` (dakikada 5 hata), `iyzico-callback:…` (dakikada 30 istek), `iyzico-webhook:…` (dakikada 300 istek) |
 | `audit_logs.action` | `category.create/update/delete`, `brand.*`, `product.*`, `media.upload`, `order.<action>`, `order.bulk.<action>` |
 | `media_assets` (yüklenen) | `storage_key = "<klasör>/<uuid>.<png|jpg|webp|avif>"`, klasör ∈ `categories · brands · products`; `public_url = "/assets/<storage_key>"` (R2'den sunulur); `alt_text` = orijinal dosya adı; `sha256`, `width/height` dolu |
 | `integration_secrets.secret_name` | iyzico (`payment_config_id`): `api_key`, `secret_key`; kargo (`integration_id`): `webhook_secret`. AES-256-GCM, anahtar `SECRETS_MASTER_KEY` |
@@ -130,5 +130,5 @@ cron expire: süresi dolan rezervasyonlu ödenmemiş sipariş ──► cancelle
 2. **Var olan veritabanı için:** `CREATE TABLE IF NOT EXISTS` mevcut tabloya kolon **eklemez**. Ya `ALTER TABLE … ADD COLUMN …` komutunu ayrıca çalıştır (`db:query[:local]`), ya da local'de `npm run db:reset:local`. Remote'ta reset veri siler.
 3. Yeni tablo eklediysen `drop_all.sql` (FK sırası: önce çocuklar) ve `tests/test_schema.py` içindeki tablo sayısını güncelle.
 4. Trigger'lar her çalıştırmada drop + create edildiğinden değişiklikleri yeniden `db:schema:*` ile uygulanır.
-5. `npm test` (40 şema + 21 servis testi) yeşil olmalı. Seed'e eklenen veri `INSERT OR IGNORE` olmalı.
+5. `npm test` (40 şema + 23 servis testi) yeşil olmalı. Seed'e eklenen veri `INSERT OR IGNORE` olmalı.
 6. SQLite sürüm farkı: SQLite ≥ 3.51, ilişkili alt sorgunun **ORDER BY**'ında dış tablo kolonuna izin vermez (`no such column`). Dış referansı yalnız `WHERE`'de kullan (örnek: `pricing.ts` `image_url` için `COALESCE(alt sorgu1, alt sorgu2)`).

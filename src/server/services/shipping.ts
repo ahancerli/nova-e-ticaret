@@ -77,12 +77,13 @@ export async function verifyShippingWebhook(providerCode: string, rawBody: strin
                WHERE i.kind = 'shipping' AND i.provider_code = ? AND i.is_active = 1 AND s.secret_name = 'webhook_secret'`)
     .bind(providerCode)
     .first<{ ciphertext: string; nonce: string; auth_tag: string }>();
-  if (!secret) throw new ApiError(401, "unknown_provider", "Sağlayıcı yapılandırılmamış.");
+  if (!secret) throw new ApiError(401, "bad_signature", "İmza doğrulanamadı.");
   let key: string;
   try {
     key = await decryptSecret(env.SECRETS_MASTER_KEY, { ciphertext: secret.ciphertext, nonce: secret.nonce, authTag: secret.auth_tag });
   } catch {
-    throw new ApiError(401, "secret_unreadable", "Sağlayıcı sırrı çözülemedi.");
+    console.error(JSON.stringify({ level: "error", where: "shipping.webhook", message: "webhook secret could not be decrypted", provider: providerCode }));
+    throw new ApiError(401, "bad_signature", "İmza doğrulanamadı.");
   }
   const expected = await hmacHex(key, `${timestamp}.${rawBody}`);
   if (!safeEqual(expected, signature.toLowerCase())) throw new ApiError(401, "bad_signature", "İmza doğrulanamadı.");

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { connection } from "next/server";
 import "./globals.css";
 import { Toaster } from "@/components/ui/Toaster";
 
@@ -13,7 +14,9 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Pages carry a per-request CSP nonce (src/proxy.ts), which only works with dynamic rendering.
+  await connection();
   return (
     <html lang="tr">
       <body>
