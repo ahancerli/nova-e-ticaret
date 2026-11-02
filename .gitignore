@@ -13,3 +13,7 @@ next-env.d.ts
 .DS_Store
 npm-debug.log*
 db/tests/__pycache__/
+
+# Playwright
+/test-results/
+/playwright-report/

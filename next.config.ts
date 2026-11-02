@@ -41,4 +41,7 @@ const nextConfig: NextConfig = {
 export default nextConfig
 
 // Gives `next dev` access to the bindings in wrangler.jsonc (local or remote D1, see scripts/sync-wrangler.mjs).
-initOpenNextCloudflareForDev()
+// NOVA_PERSIST_DIR points local D1 / R2 at a separate state folder — the browser tests (npm run test:e2e) use
+// .wrangler/e2e so they never touch the developer's local database. Same meaning as `wrangler --persist-to`;
+// getPlatformProxy wants the versioned sub-folder itself (its default is ".wrangler/state/v3").
+initOpenNextCloudflareForDev(process.env.NOVA_PERSIST_DIR ? { persist: { path: `${process.env.NOVA_PERSIST_DIR}/v3` } } : undefined)

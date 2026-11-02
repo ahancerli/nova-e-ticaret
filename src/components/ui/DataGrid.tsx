@@ -250,7 +250,8 @@ export function DataGrid<T>({
           pagination
           paginationPageSize={pageSize}
           paginationPageSizeSelector={[10, 25, 50, 100]}
-          rowSelection={selectable ? { mode: "multiRow", checkboxes: true, headerCheckbox: true, enableClickSelection: false } : undefined}
+          // No "select all" header on server grids: AG Grid's infinite row model cannot select rows it has not loaded.
+          rowSelection={selectable ? { mode: "multiRow", checkboxes: true, headerCheckbox: !server, enableClickSelection: false } : undefined}
           onRowClicked={onRowClick ? (e) => e.data && onRowClick(e.data) : undefined}
           rowClassRules={rowClassRules}
           rowClass={onRowClick ? "cursor-pointer" : undefined}

@@ -31,6 +31,7 @@ import { registerPayments } from "@/modules/payments";
 import { registerPlatform } from "@/modules/platform/module";
 import { registerSecrets } from "@/modules/platform/secrets";
 import { registerPricing } from "@/modules/pricing";
+import { registerReporting } from "@/modules/reporting";
 import { registerShipping } from "@/modules/shipping";
 import { registerStorefront } from "@/modules/storefront";
 import { getEnv } from "./env";
@@ -65,6 +66,7 @@ registerCheckout(container);
 registerOrders(container);
 registerPayments(container); // + outbox handler refund.process
 registerShipping(container); // + outbox handler order.shipped
+registerReporting(container);
 registerNotifications(); // + customer / staff notification handlers
 
 /** Fills a request scope with per-request values. getEnv() adds local .env fallbacks for secrets. */

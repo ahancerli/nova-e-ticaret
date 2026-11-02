@@ -29,7 +29,8 @@ Seed'deki `admin@nova.local` kullanıcısının parolası dokümante değildir; 
 |---|---|
 | `npm run dev` / `dev:remote` | Local D1 (varsayılan) / Cloudflare D1'e bağlı geliştirme |
 | `npm run typecheck` · `npm run lint` | `tsc --noEmit` · ESLint |
-| `npm test` | `db:test` (41 şema, python3) + `test:core` (14) + `test:catalog` (18) + `test:identity` (9) + `test:storefront` (10) + `test:orders` (8) + `test:integrations` (6: kart ödemesi, outbox, kargo webhook) + `test:services` (23 uçtan uca senaryo) — Node ≥ 22.13 |
+| `npm test` | `db:test` (41 şema, python3) + `test:core` (14) + `test:catalog` (18) + `test:identity` (9) + `test:storefront` (10) + `test:orders` (8) + `test:integrations` (6: kart ödemesi, outbox, kargo webhook) + `test:reporting` (8: dönem sınırları, KPI, gösterge paneli) + `test:services` (23 uçtan uca senaryo) — Node ≥ 22.13 |
+| `npm run test:e2e` | Playwright tarayıcı testleri (7): ayrı bir local veritabanı kurar, `next dev`'i 3210 portunda açar, Chromium'da çalıştırır |
 | `npm run db:{schema,seed,reset}:{local,remote}` | Şema / seed / sil-kur-seed |
 | `npm run db:query[:local] -- "SQL"` | Tek SQL (remote varsayılan, `:local` ile local) |
 | `npm run admin:create[:local] -- email "Ad"` | Admin oluştur / parolasını sıfırla (remote / local) |
@@ -92,8 +93,8 @@ src/
   core/                   Çatıdan bağımsız temel (ayrıntı §4.1): errors, di, db, logging, runtime, http, security (crypto, HTML sanitizer)
   modules/                İş modülleri (ayrıntı §4.2): platform (CSRF, rate limit, idempotency), identity (giriş, oturum, RBAC), audit, media,
                           catalog (admin: kategori, marka, ürün), storefront (vitrin okuma), pricing (fiyat motoru), cart (sepet, kupon),
-                          checkout (teklif, sipariş, ödeme sonuçlandırma, süre aşımı), orders (sipariş ekranları, durum makinesi, iade, dashboard),
-                          payments (iyzico gateway), shipping (kargo adaptörleri + webhook), outbox (worker + işleyici kaydı), notifications
+                          checkout (teklif, sipariş, ödeme sonuçlandırma, süre aşımı), orders (sipariş ekranları, durum makinesi, iade),
+                          reporting (gösterge paneli: dönem, KPI, salt okunur), payments (iyzico gateway), shipping (kargo adaptörleri + webhook), outbox (worker + işleyici kaydı), notifications
   lib/                    İstemci+sunucu ortak: api-client, use-field-errors, error-reporting, toast, motion, money, slug, safe-redirect, ids, types, order-rules, product-rules
   proxy.ts                Sayfa CSP'si (istek başına script nonce)
   server/                 Yalnız sunucu ("server-only"): app.ts = composition root (DI kayıtları, `route`, `resolveService`, `currentPrincipal`, `requireAdminPage`); env.ts = Worker binding + local .env
@@ -172,7 +173,7 @@ Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf b
 |---|---|
 | **Vitrin** | Ana sayfa (hikaye şeridi, tek slider, vitrinler; client-side), kategori/marka listeleme + facet filtreler (aynı attribute OR, farklı AND, varyant eksenleri aynı SKU'da), arama, ürün detayı (SSR + JSON-LD, varyant seçici), sağ sepet çekmecesi, kupon, misafir checkout (iyzico / havale), sipariş sonuç sayfası, mağaza girişi, basit hesabım |
 | **Panel kabuğu** | Sidebar (yalnız seçili öğe mor, iç içe menü kayarak açılır, mobilde soldan drawer), üst bar (breadcrumb, ⌘K komut paleti, ortam rozeti, "Yeni" menüsü, bildirim paneli, kullanıcı menüsü/çıkış) |
-| **Dashboard** `/admin` | Son 30 gün KPI, son siparişler, düşük stok |
+| **Gösterge paneli** `/admin` | Dönem seçimi (`?donem=bugun\|7g\|30g\|90g`, İstanbul gün sınırları, önceki eşit dönemle "aynı saate kadar" karşılaştırma); bekleyen işler (havale onayı, hazırlanacak, kargoya verilecek, tükenen → filtreli listeye link, `/admin/siparisler?sekme=`); KPI kartları (ciro = tahsil edilen, sipariş, ortalama sepet, iade; değişim oku + sparkline); satış grafiği (ciro/sipariş, saatlik/günlük, klavye ile gezilebilir, tablo görünümü); sipariş durumları, ödeme yöntemi dağılımı, en çok satanlar, kritik stok, son siparişler. Müşteri bilgisi `customers.read`, stok `catalog.read` yoksa gizli |
 | **Kategoriler** `/admin/kategoriler` | Ağaç + sağ drawer'da güncelle/sil, `/yeni` sayfasında ekle; tüm kolonlar, görseller R2'ye yükleme |
 | **Markalar** `/admin/markalar` | DataGrid + sağ drawer'da güncelle/sil, `/yeni` sayfasında ekle; logo/banner yükleme |
 | **Ürünler** `/admin/urunler` | DataGrid; `/yeni` ve `/[id]` **adım adım sekmeli sayfa**: Genel · Marka&Kategori · Görseller · Varyant&Stok · Özellikler · SEO. Zorunlu alanlar dolmadan ileri geçilmez. Tüm ürün tek batch'te kaydedilir |
@@ -250,8 +251,13 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 
 ## 9. Testler
 
-- `npm test` → **41/41** şema + **14/14** çekirdek + **18/18** katalog + **9/9** identity + **10/10** storefront + **8/8** orders + **6/6** integrations + **23/23** senaryo testi (Node ≥ 22.13; `--experimental-transform-types`).
+- `npm test` → **41/41** şema + **14/14** çekirdek + **18/18** katalog + **9/9** identity + **10/10** storefront + **8/8** orders + **6/6** integrations + **8/8** reporting + **23/23** senaryo testi (Node ≥ 22.13; `--experimental-transform-types`).
 - Servis testleri gerçek servis kodunu çalıştırır; `tests/integration/hooks.mjs` şunları taklit eder: `server-only`, `@opennextjs/cloudflare` (env = `globalThis.__ENV`), `next/headers` (çerez kavanozu), `next/server`, `bcryptjs` (`$2b$12$<parola>`). Zod gerçek paketle çalışır. D1 taklidi: `tests/integration/d1-sqlite.mjs` (node:sqlite, `batch` = transaction).
+- `npm run test:e2e` → **7/7** Playwright testi (`tests/e2e/`): misafir sepet → havale ile checkout → sipariş numarası; personel girişi → siparişe not → havaleyi onayla → "Ödendi"; yanlış parola tek genel hata; Türkçe slug ile kategori oluşturma; panel içi "Kayıt bulunamadı"; işlem sırasında oturum düşerse `?next=` ile girişe dönüş; gösterge panelinde dönem değiştirme ve bekleyen işten filtreli sipariş listesine geçiş.
+  - **Ayrı veritabanı:** `scripts/e2e-setup.mjs` her koşuda `.wrangler/e2e`'yi silip `db/schema.sql` + `db/seed.sql` kurar, havaleyi aktif eder ve test admini ekler (`e2e-admin@nova.test`, yalnız bu klasörde). Dev sunucusu `NOVA_PERSIST_DIR=.wrangler/e2e` ile başlar (`next.config.ts` → `initOpenNextCloudflareForDev({ persist })`); geliştiricinin local D1'ine dokunulmaz.
+  - **Isınma:** `tests/e2e/global-setup.ts` test edilen sayfaları önceden bir kez ister; aksi hâlde `next dev` ilk derlemede tam sayfa yenileme gönderip testleri bozar.
+  - İlk kurulumda tarayıcı: `npx playwright install chromium`. Hata olursa iz/ekran görüntüsü `test-results/` altında (`npx playwright show-trace …`).
+  - Seçici kuralı: önce erişilebilir rol/etiket (`getByRole`, `getByLabel`); etiket birden çok alana uyuyorsa alan `id`'si (`#s_province`). Metinler arayüzle birebir aynı olmalı — buton metni değişirse test de değişir.
 - Admin modülleri (kategori, marka, ürün, sipariş, iade, toplu işlem, outbox, kargo webhook, route'lar) geliştirme sırasında aynı altyapıyla senaryo testlerinden geçirildi; bu senaryolar henüz `tests/integration/`'a taşınmadı (yol haritası).
 
 ## 10. Bilinen tuzaklar
@@ -268,7 +274,6 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 - iyzico: iade ucu `/v2/payment/refund` ve webhook V3 imza doğrulaması **sandbox'ta denenmedi**; canlı öncesi güncel dokümanla doğrulanmalı. iyzico `identityNumber` sabit yer tutucu (TCKN toplama işletme kararı).
 - Fiyat motoru: "X al Y bedava" hesaplanır ama hediye satırı otomatik eklenmez. Kargo KDV'si %20 varsayılır.
 - Saat dilimi: tarih filtreleri UTC gün sınırlarıyla çalışır (gösterim Europe/Istanbul).
-- Dashboard (`/admin/page.tsx`) görsel olarak eski tasarımda (Aşama 4); verileri gerçektir (`GetDashboard`) ve müşteri bilgisi `customers.read` olmadan maskelenir.
 - Vitrin footer/checkout linkleri `/hesabim/siparisler`, `/sayfa/iade`, `/sayfa/on-bilgilendirme`, `/sayfa/mesafeli-satis` henüz 404; `gizlilik` sayfası yayında değil.
 
 ## 11. Yol haritası
@@ -278,7 +283,7 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 3. Ürün editörüne: ilişkili ürünler, tedarikçi kodu/maliyet, varyanta özel görseller.
 4. Müşteri tarafı: üye kaydı, parola sıfırlama, hesabım sipariş geçmişi/takip, favoriler, karşılaştırma, yorumlar; havale bildirimi formu.
 5. Admin MFA (`ADMIN_MFA_ENFORCED`, `sessions.mfa_verified_at` hazır), e-Fatura/e-İrsaliye entegratörü, yasal metinler (KVKK, mesafeli satış, ön bilgilendirme sayfaları — checkout bunlara link veriyor, sayfalar yok).
-6. Senaryo testlerini `tests/integration/`'a taşımak; Playwright ile uçtan uca test.
+6. Senaryo testlerini `tests/integration/`'a taşımak; Playwright kapsamını genişletmek (ürün editörü, kart ödemesi sandbox, iade, toplu işlem).
 
 ## 12. Devir notu
 

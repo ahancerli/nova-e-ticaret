@@ -1111,6 +1111,7 @@ CREATE INDEX IF NOT EXISTS ix_cart_items_cart            ON cart_items(cart_id);
 CREATE INDEX IF NOT EXISTS ix_checkout_status_exp        ON checkout_sessions(status, expires_at);
 CREATE INDEX IF NOT EXISTS ix_orders_user_placed         ON orders(user_id, placed_at DESC);
 CREATE INDEX IF NOT EXISTS ix_orders_status_placed       ON orders(status, payment_status, placed_at DESC);
+CREATE INDEX IF NOT EXISTS ix_orders_placed              ON orders(placed_at);
 CREATE INDEX IF NOT EXISTS ix_orders_email               ON orders(customer_email);
 CREATE INDEX IF NOT EXISTS ix_order_items_order          ON order_items(order_id);
 CREATE INDEX IF NOT EXISTS ix_order_events_order         ON order_events(order_id, created_at);

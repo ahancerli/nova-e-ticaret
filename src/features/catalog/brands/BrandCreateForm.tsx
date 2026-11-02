@@ -21,7 +21,7 @@ export function BrandCreateForm() {
           <button type="submit" disabled={busy}
             className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#7367f0] px-4 text-sm font-semibold text-white hover:bg-[#6559df] disabled:opacity-60">
             <Save className="h-4 w-4" />
-            {busy ? "Bekleyin…" : "Markayı kaydet"}
+            {busy ? "Bekleyin…" : "Markayı oluştur"}
           </button>
         </div>
       )}

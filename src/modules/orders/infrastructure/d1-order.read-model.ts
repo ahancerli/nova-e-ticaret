@@ -21,35 +21,6 @@ export class D1OrderReadModel extends Repository {
     return this.db.all<{ id: string; name: string }>("SELECT id, name FROM shipping_methods WHERE is_active = 1 ORDER BY fee_minor, name");
   }
 
-  /** Admin dashboard: last-30-day KPIs, latest orders, low stock. All numbers are real (no estimates). */
-  async dashboard(opts: { canSeeCustomer: boolean; since: string }): Promise<Dashboard> {
-    const [kpi, recent, low] = await this.db.batch([
-      this.db.statement(`SELECT COUNT(*) AS orders,
-                                COALESCE(SUM(CASE WHEN payment_status = 'paid' THEN total_minor END), 0) AS revenue,
-                                COALESCE(SUM(status IN ('pending_payment','awaiting_transfer')), 0) AS waiting,
-                                COALESCE(SUM(payment_status = 'failed'), 0) AS failed,
-                                COALESCE(SUM(payment_status IN ('refunded','partially_refunded')), 0) AS refunded
-                           FROM orders WHERE placed_at >= ?`, opts.since),
-      this.db.statement(`SELECT o.id, o.order_number, o.placed_at, o.total_minor, o.payment_status, o.status, o.customer_email,
-                                (SELECT a.recipient_name FROM order_addresses a WHERE a.order_id = o.id AND a.kind = 'shipping') AS customer_name
-                           FROM orders o ORDER BY o.placed_at DESC LIMIT 8`),
-      this.db.statement(`SELECT v.sku, p.name, ib.on_hand - ib.reserved AS available
-                           FROM inventory_balances ib JOIN product_variants v ON v.id = ib.variant_id JOIN products p ON p.id = v.product_id
-                          WHERE v.is_active = 1 AND ib.on_hand - ib.reserved <= 3 ORDER BY available LIMIT 6`),
-    ]);
-    const k = (kpi?.results?.[0] ?? {}) as { orders?: number; revenue?: number; waiting?: number; failed?: number; refunded?: number };
-    type R = { id: string; order_number: string; placed_at: string; total_minor: number; payment_status: string; status: string; customer_email: string; customer_name: string | null };
-    return {
-      last30Days: { orders: k.orders ?? 0, revenueMinor: k.revenue ?? 0, waiting: k.waiting ?? 0, failed: k.failed ?? 0, refunded: k.refunded ?? 0 },
-      recent: ((recent?.results ?? []) as R[]).map((r) => ({
-        id: r.id, orderNumber: r.order_number, placedAt: r.placed_at, totalMinor: r.total_minor, paymentStatus: r.payment_status, status: r.status,
-        customerName: opts.canSeeCustomer ? r.customer_name : r.customer_name ? `${r.customer_name.slice(0, 1)}***` : null,
-        customerEmail: opts.canSeeCustomer ? r.customer_email : maskEmail(r.customer_email),
-      })),
-      lowStock: (low?.results ?? []) as Dashboard["lowStock"],
-    };
-  }
-
   async list(q: OrderQuery, opts: { canSeeCustomer: boolean }) {
     // Filters except status → also used for the per-status tab counters.
     const where: string[] = ["1 = 1"];
@@ -221,12 +192,6 @@ export class D1OrderReadModel extends Repository {
       shippingMethods: ((methodsQ!.results ?? []) as { id: string; name: string; fee_minor: number }[]).map((m) => ({ id: m.id, name: m.name })),
     };
   }
-}
-
-export interface Dashboard {
-  last30Days: { orders: number; revenueMinor: number; waiting: number; failed: number; refunded: number };
-  recent: { id: string; orderNumber: string; placedAt: string; totalMinor: number; paymentStatus: string; status: string; customerName: string | null; customerEmail: string }[];
-  lowStock: { sku: string; name: string; available: number }[];
 }
 
 export type OrderDetail = NonNullable<Awaited<ReturnType<D1OrderReadModel["detail"]>>>;

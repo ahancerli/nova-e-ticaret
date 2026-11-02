@@ -32,14 +32,16 @@
 		"admin:create": "D1_MODE=remote node scripts/create-admin.mjs",
 		"admin:create:local": "D1_MODE=local node scripts/create-admin.mjs",
 		"deps:latest": "npx --yes npm-check-updates@latest -u && npm install",
-		"test": "npm run db:test && npm run test:core && npm run test:catalog && npm run test:identity && npm run test:storefront && npm run test:orders && npm run test:integrations && npm run test:services",
+		"test": "npm run db:test && npm run test:core && npm run test:catalog && npm run test:identity && npm run test:storefront && npm run test:orders && npm run test:integrations && npm run test:reporting && npm run test:services",
 		"test:services": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/services.test.ts",
 		"test:core": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/unit/core.test.ts",
 		"test:catalog": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/catalog.test.ts",
 		"test:identity": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/identity.test.ts",
 		"test:storefront": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/storefront.test.ts",
 		"test:orders": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/orders.test.ts",
-		"test:integrations": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/integrations.test.ts"
+		"test:integrations": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/integrations.test.ts",
+		"test:reporting": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/reporting.test.ts",
+		"test:e2e": "playwright test"
 	},
 	"dependencies": {
 		"@ag-grid-community/locale": "^36.2.0",
@@ -56,6 +58,7 @@
 		"zod": "^4.6.7"
 	},
 	"devDependencies": {
+		"@playwright/test": "1.64.1",
 		"@tailwindcss/postcss": "^4.3.3",
 		"@types/node": "^26.6.6",
 		"@types/react": "^19.3.0",

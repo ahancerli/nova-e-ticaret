@@ -33,9 +33,9 @@ const BULK_ICON: Partial<Record<OrderActionId, ComponentType<{ className?: strin
   prepare: PackageOpen, ship: Truck, deliver: PackageCheck, complete: CheckCheck, note: MessageSquarePlus, cancel: Ban,
 };
 
-export function OrdersManager({ initialSearch = "", permissions, shippingMethods }: { initialSearch?: string; permissions: string[]; shippingMethods: { id: string; name: string }[] }) {
+export function OrdersManager({ initialTab = "all", initialSearch = "", permissions, shippingMethods }: { initialTab?: string; initialSearch?: string; permissions: string[]; shippingMethods: { id: string; name: string }[] }) {
   const router = useRouter();
-  const [tab, setTab] = useState("all");
+  const [tab, setTab] = useState(initialTab);
   const [selected, setSelected] = useState<Row[]>([]);
   const [refreshToken, setRefreshToken] = useState(0);
   const [bulk, setBulk] = useState<OrderActionId | null>(null);

@@ -5,13 +5,12 @@ import type { AuditLog } from "@/modules/audit/audit-log";
 import type { Actor } from "@/modules/shared/actor";
 import { OrderErrors, assertActionAllowed } from "../domain/orders";
 import type { BulkActionInput, OrderActionInput, OrderQuery } from "../http/schemas";
-import type { Dashboard, OrderDetail, OrderList } from "../infrastructure/d1-order.read-model";
+import type { OrderDetail, OrderList } from "../infrastructure/d1-order.read-model";
 import type { ActionResult, OrderAction, OrderActor, RefundSettler } from "./actions/order-action";
 import type { OrderRepository } from "./ports";
 
 export interface OrderReadModel {
   shippingMethods(): Promise<{ id: string; name: string }[]>;
-  dashboard(opts: { canSeeCustomer: boolean; since: string }): Promise<Dashboard>;
   list(q: OrderQuery, opts: { canSeeCustomer: boolean }): Promise<OrderList>;
   detail(orderId: string, opts: { canSeeCustomer: boolean }): Promise<OrderDetail | null>;
 }
@@ -22,15 +21,6 @@ export class ListShippingMethods {
 
   execute() {
     return this.read.shippingMethods();
-  }
-}
-
-/** Query: admin dashboard for the last 30 days (customer PII masked without customers.read). */
-export class GetDashboard {
-  constructor(private readonly read: OrderReadModel, private readonly clock: Clock) {}
-
-  execute(canSeeCustomer: boolean): Promise<Dashboard> {
-    return this.read.dashboard({ canSeeCustomer, since: this.clock.addMinutesIso(-30 * 24 * 60) });
   }
 }
 
