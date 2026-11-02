@@ -1,38 +1,39 @@
-import { ApiError, handler, ok, readJson, requestId } from "@/server/http";
-import { audit, requirePermission } from "@/server/auth";
-import { assertSameOrigin } from "@/server/security";
-import { adminProductSchema } from "@/server/validation";
-import { deleteProduct, getProductEditor, saveProduct } from "@/server/services/admin-products";
+import { NotFoundError } from "@/core";
+import { DeleteProductToken, GetProductEditorToken, UpdateProductToken, productSaveSchema } from "@/modules/catalog";
+import { actorOf } from "@/modules/shared/actor";
+import { idParams } from "@/modules/shared/schemas";
+import { route } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
-type Ctx = { params: Promise<{ id: string }> };
+const PRODUCT_BODY_LIMIT = 512 * 1024;
 
-export const GET = handler(async (req, ctx: Ctx) => {
-  await requirePermission("catalog.read");
-  const product = await getProductEditor((await ctx.params).id);
-  if (!product) throw new ApiError(404, "product_not_found", "Ürün bulunamadı.");
-  return ok(req, product);
+export const GET = route({
+  auth: { audience: "admin", permission: "catalog.read" },
+  params: idParams,
+  handle: async ({ params, resolve }) => {
+    const product = await resolve(GetProductEditorToken).execute(params.id);
+    if (!product) throw new NotFoundError("product_not_found", "Ürün bulunamadı.");
+    return product;
+  },
 });
 
-export const PUT = handler(async (req, ctx: Ctx) => {
-  await assertSameOrigin(req);
-  const user = await requirePermission("catalog.write");
-  const { id } = await ctx.params;
-  const input = adminProductSchema.parse(await readJson(req, 512 * 1024));
-  const saved = await saveProduct(id, input, { id: user.id, canPublish: user.permissions.has("catalog.publish") });
-  await audit(user.id, "product.update", "product", id, {
-    name: input.name, status: input.status, variants: input.variants.map((v) => v.sku),
-    archivedVariants: saved.archivedVariants, deletedVariants: saved.deletedVariants,
-  }, requestId(req));
-  return ok(req, saved);
+export const PUT = route({
+  auth: { audience: "admin", permission: "catalog.write" },
+  params: idParams,
+  body: productSaveSchema,
+  bodyLimit: PRODUCT_BODY_LIMIT,
+  handle: async (ctx) => {
+    const actor = { ...actorOf(ctx), canPublish: ctx.user!.permissions.has("catalog.publish") };
+    return ctx.resolve(UpdateProductToken).execute(ctx.params.id, ctx.body, actor);
+  },
 });
 
-export const DELETE = handler(async (req, ctx: Ctx) => {
-  await assertSameOrigin(req);
-  const user = await requirePermission("catalog.write");
-  const { id } = await ctx.params;
-  const deleted = await deleteProduct(id);
-  await audit(user.id, "product.delete", "product", id, deleted, requestId(req));
-  return ok(req, { deleted: true });
+export const DELETE = route({
+  auth: { audience: "admin", permission: "catalog.write" },
+  params: idParams,
+  handle: async (ctx) => {
+    await ctx.resolve(DeleteProductToken).execute(ctx.params.id, actorOf(ctx));
+    return { deleted: true };
+  },
 });

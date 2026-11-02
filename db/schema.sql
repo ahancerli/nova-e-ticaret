@@ -1063,8 +1063,11 @@ CREATE TABLE IF NOT EXISTS rate_limit_buckets (
 
 -- Optimistic-concurrency guard for multi-statement D1 batches (D1 has no BEGIN/COMMIT).
 -- core/db/unit-of-work.ts inserts `changes()` of the previous statement right after it; the triggers
--- below either skip the row (count as expected) or abort the WHOLE batch. The table always stays empty.
-CREATE TABLE IF NOT EXISTS batch_guards (
+-- below either skip the row (count as expected) or abort the WHOLE batch with 'batch_guard_failed:<guard>'
+-- so the caller knows which guard fired. The table always stays empty, so it is safely re-created here.
+DROP TABLE IF EXISTS batch_guards;
+CREATE TABLE batch_guards (
+  guard    INTEGER NOT NULL,
   actual   INTEGER NOT NULL,
   expected INTEGER NOT NULL
 ) STRICT;
@@ -1365,7 +1368,7 @@ CREATE TRIGGER trg_batch_guard_fail
 BEFORE INSERT ON batch_guards
 WHEN NEW.actual <> NEW.expected
 BEGIN
-  SELECT RAISE(ABORT, 'batch_guard_failed');
+  SELECT RAISE(ABORT, 'batch_guard_failed:' || NEW.guard);
 END;
 
 CREATE TRIGGER trg_batch_guard_pass

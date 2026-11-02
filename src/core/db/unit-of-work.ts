@@ -1,7 +1,8 @@
 import { AppError, ConflictError } from "../errors";
 import type { Database, Statement } from "./database";
 
-const GUARD_FAILED = "batch_guard_failed";
+const GUARD_FAILED = /batch_guard_failed:(\d+)/;
+const defaultConflict = () => new ConflictError("concurrent_modification", "Kayıt bu sırada değişti. Sayfayı yenileyip tekrar deneyin.");
 
 /**
  * Unit of Work over one D1 batch (D1 runs a batch as a single transaction).
@@ -15,6 +16,7 @@ const GUARD_FAILED = "batch_guard_failed";
  * `expectChanges` appends a guard statement (schema: batch_guards + triggers) right after the last added
  * statement. If that statement did not touch exactly `n` rows the database aborts the WHOLE batch, so
  * nothing after a lost race is written — unlike checking `changes` after the batch has committed.
+ * The abort message carries the guard number, so the error of exactly the guard that fired is thrown.
  */
 export class UnitOfWork {
   private readonly statements: Statement[] = [];
@@ -35,11 +37,12 @@ export class UnitOfWork {
   }
 
   /** Requires the most recently added statement to change exactly `n` rows, else the batch is rolled back. */
-  expectChanges(n: number, error: () => AppError = () => new ConflictError("concurrent_modification", "Kayıt bu sırada değişti. Sayfayı yenileyip tekrar deneyin.")): this {
+  expectChanges(n: number, error: () => AppError = defaultConflict): this {
     this.assertOpen();
     if (!this.statements.length) throw new Error("expectChanges() needs a statement before it");
+    const guard = this.guards.length;
     this.guards.push({ index: this.statements.length, error });
-    this.statements.push(this.db.statement("INSERT INTO batch_guards (actual, expected) VALUES (changes(), ?)", n));
+    this.statements.push(this.db.statement("INSERT INTO batch_guards (guard, actual, expected) VALUES (?, changes(), ?)", guard, n));
     return this;
   }
 
@@ -53,11 +56,8 @@ export class UnitOfWork {
       const guardIdx = new Set(this.guards.map((g) => g.index));
       return results.filter((_, i) => !guardIdx.has(i));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes(GUARD_FAILED)) {
-        // SQLite does not tell which guard fired; with one guard (the usual case) its error is exact.
-        throw this.guards.length === 1 ? this.guards[0]!.error() : new ConflictError("concurrent_modification", "Kayıt bu sırada değişti. Sayfayı yenileyip tekrar deneyin.");
-      }
+      const hit = GUARD_FAILED.exec(err instanceof Error ? err.message : String(err));
+      if (hit) throw (this.guards[Number(hit[1])]?.error ?? defaultConflict)();
       throw err;
     }
   }

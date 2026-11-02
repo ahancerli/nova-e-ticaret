@@ -63,7 +63,7 @@ DataGrip/TablePlus ile bu dosyaya bağlanılabilir (WAL modunda; açık araçta 
 | `trg_coupon_limits` | Kupon aktif + global + müşteri başı limit | `coupon_*` |
 | `trg_campaign_activate_targets` | `selected` kampanya hedefsiz aktif edilemez | `campaign_without_targets` |
 | `trg_payment_paid_terminal` | `paid` ödeme yalnız `refunded/partially_refunded` olabilir | `payment_paid_terminal` |
-| `trg_batch_guard_fail/pass` | `UnitOfWork.expectChanges`: `INSERT INTO batch_guards (actual, expected) VALUES (changes(), n)` — eşitse satır atlanır (tablo hep boş), değilse **tüm batch** geri alınır | `batch_guard_failed` |
+| `trg_batch_guard_fail/pass` | `UnitOfWork.expectChanges`: `INSERT INTO batch_guards (guard, actual, expected) VALUES (i, changes(), n)` — eşitse satır atlanır (tablo hep boş), değilse **tüm batch** geri alınır; mesajdaki `i` hangi guard'ın tetiklendiğini söyler | `batch_guard_failed:<i>` |
 
 Önemli CHECK'ler: `orders.total = subtotal - discount + shipping`, `order_items.subtotal = qty × unit`, `variant_prices.compare_at > unit_price`, `bank_transfers` `matched` ise `received = expected` + onaylayan + zaman, `carts` sahibi user **xor** guest, `inventory_balances.on_hand ≥ reserved ≥ 0`, slug'lar `[a-z0-9-]`.
 

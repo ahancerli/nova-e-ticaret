@@ -137,5 +137,123 @@ await t("media: /assets only serves generated keys", async () => {
   assert((await read.execute(img.storageKey)) !== null, "generated key served");
 });
 
+// --- products ------------------------------------------------------------------------------------
+const plan = await import(`${ROOT}/src/modules/catalog/application/products/plan-product-save.ts`);
+const productsModule = await import(`${ROOT}/src/modules/catalog/module.ts`);
+const admin = { ...actor, canPublish: true };
+const editorOf = (id: string) => resolve<any>(catalog.GetProductEditorToken).execute(id);
+/** Editor data → save payload (what ProductEditor.toPayload sends). */
+const inputFrom = (e: any, patch: Record<string, unknown> = {}) => ({
+  name: e.name, slug: e.slug, status: e.status, shortDescription: e.shortDescription, descriptionHtml: e.descriptionHtml,
+  taxRateBps: e.taxRateBps, warrantyMonths: e.warrantyMonths, countryOfOrigin: e.countryOfOrigin, accountingCode: e.accountingCode,
+  manufacturerCode: e.manufacturerCode, brandId: e.brandId, categories: e.categories, media: e.media.map((m: any) => m.mediaId),
+  primaryMediaId: e.primaryMediaId, axes: e.axes,
+  variants: e.variants.map((v: any) => ({ id: v.id, sku: v.sku, barcode: v.barcode, name: v.name, options: v.options, priceMinor: v.priceMinor,
+    compareAtMinor: v.compareAtMinor, stock: v.stock, expectedStock: v.stock, isActive: v.isActive, isDefault: v.isDefault, weightGrams: v.weightGrams,
+    widthMm: v.widthMm, heightMm: v.heightMm, depthMm: v.depthMm })),
+  attributes: e.attributes, seo: e.seo, expectedUpdatedAt: e.updatedAt, ...patch,
+});
+const onHand = (variantId: string) => Number((d1.raw.prepare("SELECT on_hand FROM inventory_balances WHERE variant_id = ?").get(variantId) as any)?.on_hand);
+const movements = (variantId: string) => Number((d1.raw.prepare("SELECT count(*) AS n FROM inventory_movements WHERE variant_id = ?").get(variantId) as any).n);
+
+await t("product plan (pure): locked SKU, duplicates, reserved floor, required attributes, publish permission", async () => {
+  const meta = await resolve<any>(catalog.GetProductMetaToken).execute();
+  const base = { name: "Kazak", status: "published", taxRateBps: 1000, categories: [{ id: "c_erkek_kazak", primary: true }], media: [], axes: ["a_color"],
+    attributes: [], seo: { noindex: false },
+    variants: [
+      { id: "v1", sku: "a-1", options: { a_color: "o_black" }, priceMinor: 100, stock: 1, isActive: true, isDefault: true },
+      { sku: "A-1", options: { a_color: "o_black" }, priceMinor: 100, stock: 1, isActive: true, isDefault: false },
+    ] };
+  const current = { status: "draft", publishedAt: null, updatedAt: "x", mediaIds: [], variants: [{ id: "v1", sku: "OLD-1", combinationKey: "color=black", onHand: 5, reserved: 3, hasBalance: true, locked: true }] };
+  const lookups = { slugTaken: false, brandExists: true, foundCategoryIds: new Set(["c_erkek_kazak"]), foundImageIds: new Set(), skusTakenElsewhere: new Set(), barcodesTakenElsewhere: new Set() };
+  const { errors, plan: p } = plan.planProductSave({ productId: "p1", input: { ...base, variants: base.variants.map((v, i) => i === 0 ? { ...v, stock: 2 } : v) }, current, meta, lookups, canPublish: false, now: "n", newId: () => "new" });
+  assert(p === null, "no plan with errors");
+  for (const key of ["status", "media", "variants.1.sku", "variants.1.options", "variants.0.sku", "variants.0.stock", "attributes.a_size"]) assert(errors[key], `missing error ${key}: ${JSON.stringify(errors)}`);
+});
+
+let createdId = "";
+await t("product create: whole aggregate + receipt movement + audit in one batch", async () => {
+  const r = await resolve<any>(catalog.CreateProductToken).execute({
+    name: "Test Kupa", status: "draft", taxRateBps: 2000, categories: [{ id: "c_mutfak", primary: true }], media: [], axes: [], attributes: [],
+    seo: { metaTitle: "Kupa", noindex: false }, variants: [{ sku: "tst-cup-1", options: {}, priceMinor: 9990, stock: 5, isActive: true, isDefault: true }],
+  }, admin);
+  createdId = r.id;
+  const e = await editorOf(createdId);
+  assert(r.slug === "test-kupa" && e.variants[0].sku === "TST-CUP-1" && e.variants[0].stock === 5 && e.seo.metaTitle === "Kupa", JSON.stringify(e));
+  assert(movements(e.variants[0].id) === 1 && auditCount("product.create", createdId) === 1, "receipt movement + audit");
+});
+await t("product update: stock adjustment writes balance + movement; stale editor version → 409, nothing written", async () => {
+  const e = await editorOf(createdId);
+  const vid = e.variants[0].id;
+  await resolve<any>(catalog.UpdateProductToken).execute(createdId, inputFrom(e, { variants: [{ ...inputFrom(e).variants[0], stock: 8 }] }), admin);
+  assert(onHand(vid) === 8 && movements(vid) === 2, `stock ${onHand(vid)} movements ${movements(vid)}`);
+  // e.updatedAt is now stale (clock is fixed, so make the stored version differ explicitly)
+  d1.raw.prepare("UPDATE products SET updated_at = '2026-11-01T11:00:00.000Z' WHERE id = ?").run(createdId);
+  await rejects(() => resolve<any>(catalog.UpdateProductToken).execute(createdId, inputFrom(e, { name: "Ezilen ad" }), admin), "product_changed", 409);
+  assert((await editorOf(createdId)).name === "Test Kupa" && movements(vid) === 2, "stale save wrote nothing");
+});
+await t("product update: a sale while the editor is open is kept when stock is untouched", async () => {
+  const e = await editorOf(createdId);
+  const vid = e.variants[0].id;
+  d1.raw.prepare("UPDATE inventory_balances SET on_hand = on_hand - 1 WHERE variant_id = ?").run(vid); // checkout committed meanwhile
+  await resolve<any>(catalog.UpdateProductToken).execute(createdId, inputFrom(e, { shortDescription: "Yeni açıklama" }), admin);
+  assert(onHand(vid) === e.variants[0].stock - 1 && movements(vid) === 2, `sale undone: on_hand ${onHand(vid)}`);
+  d1.raw.prepare("UPDATE inventory_balances SET on_hand = on_hand + 1 WHERE variant_id = ?").run(vid);
+});
+await t("product update: a sale between load and save → stock_changed, sale is not overwritten", async () => {
+  const e = await editorOf(createdId);
+  const vid = e.variants[0].id;
+  d1.raw.prepare("UPDATE inventory_balances SET on_hand = on_hand - 2 WHERE variant_id = ?").run(vid); // checkout committed meanwhile
+  const input = inputFrom(e);
+  input.variants[0].stock = 20;
+  input.name = "Yeni ad";
+  await rejects(() => resolve<any>(catalog.UpdateProductToken).execute(createdId, input, admin), "stock_changed", 409);
+  const after = await editorOf(createdId);
+  assert(onHand(vid) === 6 && after.name === "Test Kupa" && movements(vid) === 2, `on_hand ${onHand(vid)} name ${after.name}`);
+});
+await t("product update: removed variants — unused deleted, sold one archived", async () => {
+  const e = await editorOf("p_knit");
+  const keep = inputFrom(e).variants.filter((v: any) => v.id === "v_knit_nv_m");
+  const r = await resolve<any>(catalog.UpdateProductToken).execute("p_knit", inputFrom(e, { variants: keep }), admin);
+  assert(r.deletedVariants.join() === "ATL-KNT-BK-L" && r.archivedVariants.join() === "ATL-KNT-BK-M", JSON.stringify(r));
+  const after = await editorOf("p_knit");
+  const archived = after.variants.find((v: any) => v.id === "v_knit_bk_m");
+  assert(!after.variants.some((v: any) => v.id === "v_knit_bk_l") && archived && !archived.isActive && after.variants.find((v: any) => v.id === "v_knit_nv_m").isDefault, JSON.stringify(after.variants));
+});
+await t("product delete: history blocks (also when a sale lands between check and commit)", async () => {
+  await rejects(() => resolve<any>(catalog.DeleteProductToken).execute("p_knit", actor), "product_has_history", 409);
+  // A repository double that lets a stock movement land right after the delete use case read the product.
+  const racing = root.createScope().provide(EnvToken, { DB: d1, ASSETS_BUCKET: bucket });
+  const real = racing.resolve(productsModule.ProductRepositoryToken);
+  const e = await editorOf(createdId);
+  racing.provide(productsModule.ProductRepositoryToken, Object.assign(Object.create(Object.getPrototypeOf(real)), real, {
+    identity: async (id: string) => {
+      const out = await real.identity(id);
+      d1.raw.prepare("INSERT INTO inventory_movements (id, variant_id, warehouse_id, kind, on_hand_delta, reserved_delta, reference_type, reason, idempotency_key) VALUES ('im_race', ?, 'wh_main', 'adjustment', 1, 0, 'product', 'race', 'race-1')").run(e.variants[0].id);
+      return out;
+    },
+  }));
+  await rejects(() => racing.resolve(catalog.DeleteProductToken).execute(createdId, actor), "product_has_history", 409);
+  assert((await editorOf(createdId)) !== null && auditCount("product.delete", createdId) === 0, "not deleted, not audited");
+});
+await t("product delete: never-used product goes, its uploaded gallery image is released", async () => {
+  const img = await resolve<any>(media.UploadImageToken).execute({ bytes: PNG, fileName: "tava.png", folder: "products" }, actor);
+  const r = await resolve<any>(catalog.CreateProductToken).execute({
+    name: "Silinecek Tava", status: "draft", taxRateBps: 2000, categories: [{ id: "c_mutfak", primary: true }], media: [img.id], axes: [], attributes: [],
+    seo: { noindex: false }, variants: [{ sku: "DEL-PAN-1", options: {}, priceMinor: 100, stock: 0, isActive: true, isDefault: true }],
+  }, admin);
+  const deleted = await resolve<any>(catalog.DeleteProductToken).execute(r.id, actor);
+  assert(deleted.slug === "silinecek-tava" && (await editorOf(r.id)) === null && !objects.has(img.storageKey) && auditCount("product.delete", r.id) === 1, "deleted + released + audited");
+});
+await t("product publish needs catalog.publish; SKU used by another product is rejected", async () => {
+  const e = await editorOf(createdId);
+  const err = await rejects(() => resolve<any>(catalog.UpdateProductToken).execute(createdId, inputFrom(e, { status: "published" }), { ...actor, canPublish: false }), "validation_error", 422);
+  assert(err.fieldErrors.status && err.fieldErrors.media, JSON.stringify(err.fieldErrors));
+  const dup = inputFrom(e);
+  dup.variants[0].sku = "atl-knt-nv-m";
+  const err2 = await rejects(() => resolve<any>(catalog.UpdateProductToken).execute(createdId, dup, admin), "validation_error", 422);
+  assert(err2.fieldErrors["variants.0.sku"]?.[0]?.includes("başka bir üründe"), JSON.stringify(err2.fieldErrors));
+});
+
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

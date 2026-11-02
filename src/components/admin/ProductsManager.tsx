@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo } from "react";
 import { Package, Plus } from "lucide-react";
 import { formatMinor } from "@/lib/money";
-import type { ProductListRow } from "@/server/services/admin-products";
+import type { ProductListRow } from "@/modules/catalog";
 import { DataGrid, type GridColumn } from "@/components/ui/DataGrid";
 import { AdminBadge, AdminCard, AdminPageHeader } from "./ui";
 import { statusMeta } from "@/lib/product-rules";

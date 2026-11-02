@@ -11,7 +11,7 @@ import { slugify } from "@/lib/slug";
 import { formatMinor } from "@/lib/money";
 import { notify } from "@/lib/toast";
 import { PRODUCT_STATUSES, requiredAttributeIds, SKU_PATTERN, statusMeta } from "@/lib/product-rules";
-import type { AttributeMeta, ProductEditorData, ProductMeta } from "@/server/services/admin-products";
+import type { AttributeMeta, ProductEditorData, ProductMeta } from "@/modules/catalog";
 import { Collapsible } from "@/components/ui/Collapsible";
 import { AdminConfirmDialog } from "./AdminConfirmDialog";
 import { AdminBadge } from "./ui";
@@ -25,6 +25,8 @@ type VariantState = {
   key: string; id?: string; sku: string; barcode: string; name: string; options: Record<string, string>;
   price: string; compareAt: string; stock: string; isActive: boolean; isDefault: boolean;
   weightGrams: string; widthMm: string; heightMm: string; depthMm: string; reserved: number; locked: boolean;
+  /** Stock as loaded: the server only writes stock that the user actually changed, guarded on this value. */
+  loadedStock?: number;
 };
 type FormState = {
   name: string; slug: string; status: Status; shortDescription: string; descriptionHtml: string; taxRateBps: number;
@@ -72,6 +74,7 @@ function fromData(d: ProductEditorData | null): FormState {
       key: v.id, id: v.id, sku: v.sku, barcode: v.barcode ?? "", name: v.name ?? "", options: v.options, price: minorToStr(v.priceMinor),
       compareAt: minorToStr(v.compareAtMinor), stock: String(v.stock), isActive: v.isActive, isDefault: v.isDefault,
       weightGrams: str(v.weightGrams), widthMm: str(v.widthMm), heightMm: str(v.heightMm), depthMm: str(v.depthMm), reserved: v.reserved, locked: v.locked,
+      loadedStock: v.stock,
     })),
     attributes: Object.fromEntries(d.attributes.map((a) => [a.attributeId, a.values])),
     seo: { metaTitle: d.seo.metaTitle ?? "", metaDescription: d.seo.metaDescription ?? "", canonicalUrl: d.seo.canonicalUrl ?? "", noindex: d.seo.noindex },
@@ -88,6 +91,7 @@ function toPayload(f: FormState) {
       ...(v.id ? { id: v.id } : {}), sku: v.sku.trim(), barcode: v.barcode.trim() || null, name: v.name.trim() || null,
       options: Object.fromEntries(f.axes.map((a) => [a, v.options[a] ?? ""]).filter(([, o]) => o)),
       priceMinor: strToMinor(v.price) ?? 0, compareAtMinor: strToMinor(v.compareAt), stock: strToInt(v.stock) ?? 0,
+      ...(v.loadedStock !== undefined ? { expectedStock: v.loadedStock } : {}),
       isActive: v.isActive, isDefault: v.isDefault,
       weightGrams: strToInt(v.weightGrams), widthMm: strToInt(v.widthMm), heightMm: strToInt(v.heightMm), depthMm: strToInt(v.depthMm),
     })),
@@ -267,7 +271,7 @@ export function ProductEditor({ initial, meta, canPublish }: { initial: ProductE
     try {
       type Saved = { id: string; archivedVariants: string[] };
       const r = initial
-        ? await api<Saved>(`/api/admin/products/${encodeURIComponent(initial.id)}`, { method: "PUT", json: toPayload(form) })
+        ? await api<Saved>(`/api/admin/products/${encodeURIComponent(initial.id)}`, { method: "PUT", json: { ...toPayload(form), expectedUpdatedAt: initial.updatedAt } })
         : await api<Saved>("/api/admin/products", { method: "POST", json: toPayload(form) });
       if (r.data.archivedVariants.length) {
         notify.info("Bazı varyantlar arşivlendi", { description: `${r.data.archivedVariants.join(", ")} geçmişi olduğu için silinmedi, pasife alındı.` });

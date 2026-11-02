@@ -86,6 +86,13 @@ await t("unit of work: lost race → whole batch rolled back with the guard's er
   assert((await db.first<{ n: number }>("SELECT count(*) AS n FROM audit_logs WHERE id IN ('uow2','uow3')"))!.n === 0, "nothing written");
   await rejects(() => uow.commit(), (e) => /already committed/.test(e.message), "single use");
 });
+await t("unit of work: with several guards, the error of the guard that fired is thrown", async () => {
+  const uow = new UnitOfWork(db);
+  uow.add(db.statement("UPDATE brands SET name = name WHERE id = ?", "b_atelier")).expectChanges(1, () => new ConflictError("first", "1"));
+  uow.add(db.statement("UPDATE brands SET name = name WHERE id = ?", "missing")).expectChanges(1, () => new ConflictError("second", "2"));
+  uow.add(db.statement("UPDATE brands SET name = name WHERE id = ?", "b_linen")).expectChanges(1, () => new ConflictError("third", "3"));
+  await rejects(() => uow.commit(), (e) => e.code === "second", "second guard");
+});
 
 // --- logger --------------------------------------------------------------------------------------
 await t("logger: sensitive keys are redacted, child bindings are kept", () => {

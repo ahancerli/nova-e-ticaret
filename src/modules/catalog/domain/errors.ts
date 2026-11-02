@@ -17,3 +17,13 @@ export const CatalogErrors = {
   slugTaken: (entity: "kategoride" | "markada") =>
     new ConflictError("slug_taken", `Bu slug başka bir ${entity} kullanılıyor.`, { fieldErrors: { slug: ["Bu slug zaten kullanılıyor."] } }),
 };
+
+export const ProductErrors = {
+  notFound: () => new NotFoundError("product_not_found", "Ürün bulunamadı."),
+  hasHistory: () => new ConflictError("product_has_history", "Bu ürünün sipariş veya stok geçmişi var; silinemez. Durumunu “Arşivlendi” yapın."),
+  changedMeanwhile: () => new ConflictError("product_changed", "Ürün siz düzenlerken başka biri tarafından güncellendi. Sayfayı yenileyip değişikliklerinizi tekrar yapın."),
+  stockChangedMeanwhile: (sku: string) =>
+    new ConflictError("stock_changed", `${sku} stoğu bu sırada değişti (satış veya başka bir güncelleme). Sayfayı yenileyip güncel stokla tekrar deneyin.`),
+  variantGainedHistory: (sku: string) =>
+    new ConflictError("variant_has_history", `${sku} varyantı bu sırada sipariş/stok geçmişi kazandı ve silinemez. Sayfayı yenileyin.`),
+};

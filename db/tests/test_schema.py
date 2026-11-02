@@ -389,7 +389,7 @@ def _():
     # expected change happened → guard row is skipped, later statements commit
     c.execute("BEGIN")
     c.execute("UPDATE site_settings SET updated_at = updated_at WHERE key = 'site.name'")
-    c.execute("INSERT INTO batch_guards (actual, expected) VALUES (changes(), 1)")
+    c.execute("INSERT INTO batch_guards (guard, actual, expected) VALUES (3, changes(), 1)")
     c.execute("INSERT INTO audit_logs (id, action, entity_type) VALUES ('g1','x','y')")
     c.execute("COMMIT")
     assert c.execute("SELECT count(*) FROM batch_guards").fetchone()[0] == 0
@@ -398,10 +398,10 @@ def _():
     c.execute("BEGIN")
     c.execute("UPDATE site_settings SET updated_at = updated_at WHERE key = 'no.such.key'")
     try:
-        c.execute("INSERT INTO batch_guards (actual, expected) VALUES (changes(), 1)")
+        c.execute("INSERT INTO batch_guards (guard, actual, expected) VALUES (3, changes(), 1)")
         raise AssertionError("guard did not abort")
     except sqlite3.DatabaseError as e:
-        assert "batch_guard_failed" in str(e), e
+        assert "batch_guard_failed:3" in str(e), e
     c.execute("ROLLBACK")
 
 

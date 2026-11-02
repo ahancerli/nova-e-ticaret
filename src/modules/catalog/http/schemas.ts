@@ -58,3 +58,5 @@ export const brandUpdateSchema = z
   .object({ ...brandFields, name: brandFields.name.optional(), isActive: brandFields.isActive.optional() })
   .strict()
   .refine(atLeastOneField, AT_LEAST_ONE_FIELD);
+
+export { productSaveSchema } from "../application/products/product-input";

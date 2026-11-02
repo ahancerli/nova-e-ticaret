@@ -1,23 +1,28 @@
-import { handler, ok, readJson, requestId } from "@/server/http";
-import { audit, requirePermission } from "@/server/auth";
-import { assertSameOrigin } from "@/server/security";
-import { adminProductSchema } from "@/server/validation";
-import { listAdminProducts, saveProduct } from "@/server/services/admin-products";
+import { reply } from "@/core";
+import { CreateProductToken, ListProductsToken, productSaveSchema } from "@/modules/catalog";
+import { actorOf } from "@/modules/shared/actor";
+import { route } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
-export const GET = handler(async (req) => {
-  await requirePermission("catalog.read");
-  const rows = await listAdminProducts();
-  return ok(req, rows, { total: rows.length });
+/** The whole aggregate (variants, specs, descriptions) travels in one body. */
+const PRODUCT_BODY_LIMIT = 512 * 1024;
+
+export const GET = route({
+  auth: { audience: "admin", permission: "catalog.read" },
+  handle: async ({ resolve }) => {
+    const rows = await resolve(ListProductsToken).execute();
+    return reply.ok(rows, { total: rows.length });
+  },
 });
 
 /** POST /api/admin/products — creates the whole aggregate (product, categories, media, variants, prices, stock, specs, SEO). */
-export const POST = handler(async (req) => {
-  await assertSameOrigin(req);
-  const user = await requirePermission("catalog.write");
-  const input = adminProductSchema.parse(await readJson(req, 512 * 1024));
-  const saved = await saveProduct(null, input, { id: user.id, canPublish: user.permissions.has("catalog.publish") });
-  await audit(user.id, "product.create", "product", saved.id, { name: input.name, status: input.status, variants: input.variants.length }, requestId(req));
-  return ok(req, saved, {}, 201);
+export const POST = route({
+  auth: { audience: "admin", permission: "catalog.write" },
+  body: productSaveSchema,
+  bodyLimit: PRODUCT_BODY_LIMIT,
+  handle: async (ctx) => {
+    const actor = { ...actorOf(ctx), canPublish: ctx.user!.permissions.has("catalog.publish") };
+    return reply.created(await ctx.resolve(CreateProductToken).execute(ctx.body, actor));
+  },
 });
