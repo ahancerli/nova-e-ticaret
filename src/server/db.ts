@@ -1,5 +1,6 @@
 import "server-only"
 import { getCloudflareContext } from "@opennextjs/cloudflare"
+import { databaseErrorCode } from "@/core/errors"
 
 /**
  * D1 access. Only server code imports this module ("server-only" guard).
@@ -63,23 +64,4 @@ export function placeholders(n: number): string {
 }
 
 /** Maps trigger RAISE(ABORT, 'code') messages and constraint errors to stable codes. */
-export function dbErrorCode(err: unknown): string | null {
-	const msg = err instanceof Error ? err.message : String(err)
-	const known = [
-		"insufficient_stock",
-		"campaign_capacity_exceeded",
-		"coupon_limit_reached",
-		"coupon_customer_limit_reached",
-		"coupon_inactive",
-		"reservation_terminal",
-		"payment_paid_terminal",
-		"order_snapshot_immutable",
-		"category_cycle",
-		"campaign_without_targets",
-	]
-	for (const code of known) if (msg.includes(code)) return code
-	if (msg.includes("UNIQUE constraint failed")) return "conflict"
-	if (msg.includes("FOREIGN KEY constraint failed")) return "invalid_reference"
-	if (msg.includes("CHECK constraint failed")) return "invalid_value"
-	return null
-}
+export const dbErrorCode = databaseErrorCode

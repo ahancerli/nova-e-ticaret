@@ -3,6 +3,7 @@
 PRAGMA defer_foreign_keys = true;
 -- categories.parent_id is ON DELETE RESTRICT (self reference): detach the tree first.
 UPDATE categories SET parent_id = NULL WHERE parent_id IS NOT NULL;
+DROP TABLE IF EXISTS batch_guards;
 DROP TABLE IF EXISTS rate_limit_buckets;
 DROP TABLE IF EXISTS audit_logs;
 DROP TABLE IF EXISTS outbox_events;

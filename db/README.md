@@ -6,7 +6,7 @@ tablo/kolon ayrıntıları için doğrudan [`schema.sql`](schema.sql) okunmalıd
 
 | Dosya | İçerik |
 |---|---|
-| `schema.sql` | Tek DDL scripti: **87 STRICT tablo · 47 indeks · 23 trigger**. Tekrar çalıştırılabilir (tablolar/indeksler `IF NOT EXISTS`, trigger'lar drop + create). |
+| `schema.sql` | Tek DDL scripti: **88 STRICT tablo · 47 indeks · 25 trigger**. Tekrar çalıştırılabilir (tablolar/indeksler `IF NOT EXISTS`, trigger'lar drop + create). |
 | `seed.sql` | Roller/izinler, demo katalog, demo kullanıcılar ve **demo bir sipariş zinciri** (sepet → checkout → sipariş → havale → kargo). `INSERT OR IGNORE`, tekrar çalıştırılabilir. Gerçek kişi verisi, sır veya gerçek IBAN yok. |
 | `drop_all.sql` | Tüm tabloları FK sırasıyla siler (`db:reset:*`). |
 | `tests/test_schema.py` | 40 bağımlılıksız şema testi (`npm run db:test`, python3). |
@@ -30,7 +30,7 @@ DataGrip/TablePlus ile bu dosyaya bağlanılabilir (WAL modunda; açık araçta 
 - **Para:** `*_minor` INTEGER, **kuruş**, **KDV dahil**. `tax_minor` toplamın *içindeki* KDV'dir, toplama tekrar eklenmez.
 - **Zaman:** UTC ISO-8601 milisaniyeli metin (`strftime('%Y-%m-%dT%H:%M:%fZ','now')` / `new Date().toISOString()`). Gösterim `Europe/Istanbul`.
 - **Boolean:** `0/1` INTEGER. **JSON:** yalnız snapshot/ayar/olay yükü (`json_valid` CHECK).
-- **Atomiklik:** D1'de `BEGIN/COMMIT` yok. Çok adımlı yazmalar tek `db.batch([...])` içindedir; bir trigger `RAISE(ABORT, 'kod')` attığında batch'in tamamı geri alınır. Durum geçişleri `UPDATE … WHERE status = <beklenen>` ile korunur, ilk ifadenin `changes = 1` olması kontrol edilir (yarış koşulu → 409).
+- **Atomiklik:** D1'de `BEGIN/COMMIT` yok. Çok adımlı yazmalar tek `db.batch([...])` içindedir; bir trigger `RAISE(ABORT, 'kod')` attığında batch'in tamamı geri alınır. Durum geçişleri `UPDATE … WHERE status = <beklenen>` ile korunur ve hemen ardından `batch_guards` koruma satırı eklenir (`core/db/unit-of-work.ts`): koşul tutmazsa batch'in tamamı geri alınır (yarış → 409, yarım yazma yok).
 - **Silme yerine durum:** sipariş/ödeme/defter kayıtları silinmez. Ürün → `archived`, varyant → `is_active = 0`, kullanıcı → `anonymized`. Append-only tablolar trigger ile korunur.
 - **updated_at** uygulama tarafından yazılır (trigger yok).
 
@@ -44,7 +44,7 @@ DataGrip/TablePlus ile bu dosyaya bağlanılabilir (WAL modunda; açık araçta 
 | 4 | Kampanya & kupon | `campaigns`, `campaign_products/brands/categories`, `campaign_reward_products`, `coupons`, `coupon_redemptions`, `campaign_allocations` | Fiyat motoru (`pricing.ts`); admin ekranı yok |
 | 5 | Sepet & sipariş | `carts`, `cart_items`, `cart_coupons`, `checkout_sessions`, `orders`, `order_addresses`, `order_items`, `order_adjustments`, `order_events` | Checkout, admin sipariş yönetimi |
 | 6 | Ödeme & lojistik | `payment_configs`, `bank_accounts`, `payments`, `payment_events`, `bank_transfers`, `refunds`, `integrations`, `integration_secrets`, `shipping_methods`, `shipments`, `shipment_items`, `shipment_events` | iyzico/havale, iade, kargo, webhook |
-| 7 | Etkileşim & operasyon | `wishlists(_items)`, `recent_views`, `reviews`, `comparison_sessions/items`, `external_search_jobs`, `external_offers`, `idempotency_keys`, `outbox_events`, `audit_logs`, `rate_limit_buckets` | Idempotency, outbox worker, audit, rate limit (diğerlerinin UI'ı yok) |
+| 7 | Etkileşim & operasyon | `wishlists(_items)`, `recent_views`, `reviews`, `comparison_sessions/items`, `external_search_jobs`, `external_offers`, `idempotency_keys`, `outbox_events`, `audit_logs`, `rate_limit_buckets`, `batch_guards` | Idempotency, outbox worker, audit, rate limit, batch eşzamanlılık koruması (diğerlerinin UI'ı yok) |
 
 ## 3. Kuralları kim koruyor?
 
@@ -63,6 +63,7 @@ DataGrip/TablePlus ile bu dosyaya bağlanılabilir (WAL modunda; açık araçta 
 | `trg_coupon_limits` | Kupon aktif + global + müşteri başı limit | `coupon_*` |
 | `trg_campaign_activate_targets` | `selected` kampanya hedefsiz aktif edilemez | `campaign_without_targets` |
 | `trg_payment_paid_terminal` | `paid` ödeme yalnız `refunded/partially_refunded` olabilir | `payment_paid_terminal` |
+| `trg_batch_guard_fail/pass` | `UnitOfWork.expectChanges`: `INSERT INTO batch_guards (actual, expected) VALUES (changes(), n)` — eşitse satır atlanır (tablo hep boş), değilse **tüm batch** geri alınır | `batch_guard_failed` |
 
 Önemli CHECK'ler: `orders.total = subtotal - discount + shipping`, `order_items.subtotal = qty × unit`, `variant_prices.compare_at > unit_price`, `bank_transfers` `matched` ise `received = expected` + onaylayan + zaman, `carts` sahibi user **xor** guest, `inventory_balances.on_hand ≥ reserved ≥ 0`, slug'lar `[a-z0-9-]`.
 
@@ -130,5 +131,5 @@ cron expire: süresi dolan rezervasyonlu ödenmemiş sipariş ──► cancelle
 2. **Var olan veritabanı için:** `CREATE TABLE IF NOT EXISTS` mevcut tabloya kolon **eklemez**. Ya `ALTER TABLE … ADD COLUMN …` komutunu ayrıca çalıştır (`db:query[:local]`), ya da local'de `npm run db:reset:local`. Remote'ta reset veri siler.
 3. Yeni tablo eklediysen `drop_all.sql` (FK sırası: önce çocuklar) ve `tests/test_schema.py` içindeki tablo sayısını güncelle.
 4. Trigger'lar her çalıştırmada drop + create edildiğinden değişiklikleri yeniden `db:schema:*` ile uygulanır.
-5. `npm test` (40 şema + 23 servis testi) yeşil olmalı. Seed'e eklenen veri `INSERT OR IGNORE` olmalı.
+5. `npm test` (41 şema + 13 çekirdek + 23 servis testi) yeşil olmalı. Seed'e eklenen veri `INSERT OR IGNORE` olmalı.
 6. SQLite sürüm farkı: SQLite ≥ 3.51, ilişkili alt sorgunun **ORDER BY**'ında dış tablo kolonuna izin vermez (`no such column`). Dış referansı yalnız `WHERE`'de kullan (örnek: `pricing.ts` `image_url` için `COALESCE(alt sorgu1, alt sorgu2)`).

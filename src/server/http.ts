@@ -1,17 +1,14 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { ZodError } from "zod";
-import { dbErrorCode } from "./db";
+import { AppError, JsonLogger, errorResponse, readJsonBody } from "@/core";
 
-/** Response contract: { data, meta, requestId } | { error: { code, message, fieldErrors }, requestId } */
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    public code: string,
-    message: string,
-    public fieldErrors?: Record<string, string[]>,
-  ) {
-    super(message);
+/**
+ * Legacy route helpers, kept while routes migrate to `route()` from ./app (Phase 3).
+ * Error handling is already the core pipeline's: ApiError IS an AppError and fail() uses errorResponse().
+ */
+export class ApiError extends AppError {
+  constructor(status: number, code: string, message: string, fieldErrors?: Record<string, string[]>) {
+    super(status, code, message, { fieldErrors });
   }
 }
 
@@ -23,55 +20,15 @@ export function ok<T>(req: Request, data: T, meta?: Record<string, unknown>, sta
   return NextResponse.json({ data, meta: meta ?? {}, requestId: requestId(req) }, { status });
 }
 
-const DB_ERROR_STATUS: Record<string, [number, string]> = {
-  insufficient_stock: [409, "Stok yetersiz."],
-  campaign_capacity_exceeded: [409, "Kampanya kapasitesi doldu."],
-  coupon_limit_reached: [409, "Kupon kullanım limiti doldu."],
-  coupon_customer_limit_reached: [409, "Bu kuponu daha önce kullandınız."],
-  coupon_inactive: [409, "Kupon geçerli değil."],
-  category_cycle: [422, "Kategori hiyerarşisinde döngü oluşturulamaz."],
-  conflict: [409, "Kayıt çakışması."],
-  invalid_reference: [422, "Geçersiz referans."],
-  invalid_value: [422, "Geçersiz değer."],
-};
+const logger = new JsonLogger({ level: process.env.NODE_ENV === "production" ? "info" : "debug" });
 
-export function fail(req: Request, err: unknown) {
+export function fail(req: Request, err: unknown): Response {
   const rid = requestId(req);
-  if (err instanceof ApiError) {
-    return NextResponse.json(
-      { error: { code: err.code, message: err.message, fieldErrors: err.fieldErrors ?? {} }, requestId: rid },
-      { status: err.status },
-    );
-  }
-  if (err instanceof ZodError) {
-    const fieldErrors: Record<string, string[]> = {};
-    for (const issue of err.issues) {
-      const key = issue.path.join(".") || "_";
-      (fieldErrors[key] ??= []).push(issue.message);
-    }
-    return NextResponse.json(
-      { error: { code: "validation_error", message: "Girdi doğrulanamadı.", fieldErrors }, requestId: rid },
-      { status: 422 },
-    );
-  }
-  const code = dbErrorCode(err);
-  if (code && DB_ERROR_STATUS[code]) {
-    const [status, message] = DB_ERROR_STATUS[code];
-    return NextResponse.json({ error: { code, message, fieldErrors: {} }, requestId: rid }, { status });
-  }
-  // Never leak internals to the client; detail goes to Workers observability logs.
-  console.error(JSON.stringify({
-    level: "error",
+  return errorResponse(err, {
     requestId: rid,
-    route: `${req.method} ${new URL(req.url).pathname}`,
-    message: err instanceof Error ? err.message : String(err),
-    // Stack only outside production: enough to locate the failing line without leaking it to prod logs.
-    ...(process.env.NODE_ENV !== "production" && err instanceof Error ? { stack: err.stack?.split("\n").slice(0, 6).join(" | ") } : {}),
-  }));
-  return NextResponse.json(
-    { error: { code: "internal_error", message: "Beklenmeyen bir hata oluştu.", fieldErrors: {} }, requestId: rid },
-    { status: 500 },
-  );
+    logger: logger.child({ requestId: rid, route: `${req.method} ${new URL(req.url).pathname}` }),
+    exposeStack: process.env.NODE_ENV !== "production",
+  });
 }
 
 /** Wraps a route handler with the error contract. */
@@ -85,15 +42,6 @@ export function handler<C>(fn: (req: Request, ctx: C) => Promise<Response>) {
   };
 }
 
-export async function readJson(req: Request, maxBytes = 64 * 1024): Promise<unknown> {
-  const len = Number(req.headers.get("content-length") ?? "0");
-  if (len > maxBytes) throw new ApiError(413, "payload_too_large", "İstek çok büyük.");
-  const text = await req.text();
-  if (text.length > maxBytes) throw new ApiError(413, "payload_too_large", "İstek çok büyük.");
-  if (!text) return {};
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw new ApiError(400, "invalid_json", "Geçersiz JSON.");
-  }
+export function readJson(req: Request, maxBytes = 64 * 1024): Promise<unknown> {
+  return readJsonBody(req, maxBytes);
 }

@@ -15,7 +15,7 @@ Tek satıcılı mağaza: müşteri vitrini (`/`) ve yönetim paneli (`/admin`) a
 ```bash
 nvm use 25                       # Node ≥ 22.13 zorunlu (v18 / v22.9 → tsc/next/servis testleri bozulur)
 npm install
-npm run db:schema:local          # local SQLite-D1: 87 tablo · 47 indeks · 23 trigger
+npm run db:schema:local          # local SQLite-D1: 88 tablo · 47 indeks · 25 trigger
 npm run db:seed:local            # roller/izinler + demo katalog + demo sipariş
 npm run admin:create:local -- siz@ornek.com "Ad Soyad"   # panel kullanıcısı (parolayı terminal sorar, ≥12 karakter)
 npm run dev                      # http://localhost:3000 · panel: /admin (giriş: /admin/giris)
@@ -29,7 +29,7 @@ Seed'deki `admin@nova.local` kullanıcısının parolası dokümante değildir; 
 |---|---|
 | `npm run dev` / `dev:remote` | Local D1 (varsayılan) / Cloudflare D1'e bağlı geliştirme |
 | `npm run typecheck` · `npm run lint` | `tsc --noEmit` · ESLint |
-| `npm test` | `db:test` (40 şema testi, python3) + `test:services` (23 servis testi, Node ≥ 22.13) |
+| `npm test` | `db:test` (41 şema testi, python3) + `test:core` (13 çekirdek birim testi) + `test:services` (23 servis testi) — Node ≥ 22.13 |
 | `npm run db:{schema,seed,reset}:{local,remote}` | Şema / seed / sil-kur-seed |
 | `npm run db:query[:local] -- "SQL"` | Tek SQL (remote varsayılan, `:local` ile local) |
 | `npm run admin:create[:local] -- email "Ad"` | Admin oluştur / parolasını sıfırla (remote / local) |
@@ -69,6 +69,7 @@ db/                       Şema, seed, drop, şema testleri — ayrıntı: db/RE
 docs/                     Kaynak şartname (PDF)
 scripts/                  env okuma, wrangler senkronu, d1/r2 sarmalayıcıları, admin oluşturma
 public/demo/              Seed görselleri (SVG)
+tests/unit/               Çekirdek (src/core) birim testleri
 tests/integration/        Servis testleri: gerçek servis kodu + schema/seed, node:sqlite üzerinde D1 taklidi
 src/
   app/
@@ -82,16 +83,18 @@ src/
     ui/                   Proje geneli: DataGrid, Toaster, Popover, Collapsible, Portal
     admin/                Panel bileşenleri (aşağıda katalog)
     storefront/ cart/ checkout/   Vitrin bileşenleri
+  core/                   Çatıdan bağımsız temel (ayrıntı §4.1): errors, di, db, logging, runtime, http
   lib/                    İstemci+sunucu ortak: api-client, toast, motion, money, slug, ids, types, order-rules, product-rules
-  server/                 Yalnız sunucu ("server-only"): db, auth, http, security, validation, idempotency, crypto
+  proxy.ts                Sayfa CSP'si (istek başına script nonce)
+  server/                 Yalnız sunucu ("server-only"): app (composition root + route), db, auth, http, security, validation, idempotency, crypto
     services/             İş mantığı: catalog, cart, pricing, checkout, iyzico, admin-*, media, shipping, outbox
 ```
 
 ## 4. Mimari kurallar (tüm yeni kod bunlara uyar)
 
 1. **Veri erişimi yalnız sunucuda** (`src/server`, `import "server-only"`). Parametreli sorgu (`?`); sıralama/kolon adları allowlist'ten. D1 sınırı: ifade başına ≤ 100 parametre → `IN` listeleri 80'lik parçalara bölünür (`placeholders()`).
-2. **Atomiklik:** çok adımlı yazma = tek `db.batch([...])`. Durum geçişleri `WHERE status = <beklenen>` ile; ilk ifadenin `changes` değeri kontrol edilir → yarışta 409. Dış ağ çağrıları (iyzico, kargo) **batch dışında**, mümkünse outbox üzerinden.
-3. **API sözleşmesi:** başarı `{data, meta, requestId}`, hata `{error:{code,message,fieldErrors}, requestId}`. Route'lar `handler()` ile sarılır; `ApiError`, `ZodError` ve trigger kodları otomatik HTTP koduna eşlenir (`src/server/http.ts`). Dev ortamında beklenmeyen hatalar route + stack ile loglanır.
+2. **Atomiklik:** çok adımlı yazma = tek `UnitOfWork` (D1 batch). Durum geçişleri `WHERE status = <beklenen>` + `uow.expectChanges(1, () => new ConflictError(…))`: koşul tutmazsa **batch'in tamamı veritabanında geri alınır** (`batch_guards` trigger'ı). Batch bittikten sonra `changes` kontrol etmek yetersizdir (diğer ifadeler yazılmış olur) — eski servislerde bu kalıp Aşama 3'te değiştirilecek. Dış ağ çağrıları (iyzico, kargo) **batch dışında**, mümkünse outbox üzerinden.
+3. **API sözleşmesi:** başarı `{data, meta, requestId}`, hata `{error:{code,message,fieldErrors}, requestId}`. Yeni route'lar `route({...})` ile yazılır (§4.1); eski `handler()` da aynı hata hattını kullanır. Hatalar `AppError` alt sınıflarıyla atılır; Zod ve DB trigger/constraint hataları `toAppError` ile tek yerde eşlenir (`src/core/errors/translate.ts`). 5xx'te istemci genel mesaj alır, ayrıntı `requestId` ile JSON log'a gider.
 4. **Kimlik:** yalnız oturum çerezinden. Mağaza `__Host-nova_store_session` (`SameSite=Lax`), panel `__Host-nova_admin_session` (ayrı; `SameSite=Strict`, 8 saat). Token'ın kendisi değil HMAC'i saklanır. Body'deki userId asla yetki değildir.
 5. **Yetki:** her admin route/sayfa `requirePermission("<kod>")` çağırır; UI gizlemek yetki değildir. Nesne/durum kuralları serviste ayrıca kontrol edilir.
 6. **CSRF:** cookie ile yazan her uç `assertSameOrigin(req)` (Origin/Referer + JSON içerik tipi; yükleme uçları `{multipart:true}`).
@@ -103,6 +106,31 @@ src/
 12. **HTML:** admin'in yazdığı açıklamalar vitrinde `sanitizeRichHtml` (tokenizer tabanlı allowlist; yalnız `https://` veya site içi `/yol` bağlantıları) üzerinden geçer; kullanıcı içeriği asla HTML olarak basılmaz. Yeni XSS bulgusu = `tests/integration/services.test.ts` içindeki payload listesine bir satır.
 13. **Sırlar** `integration_secrets`'ta AES-256-GCM; ana anahtar Worker secret. Panel sırları geri göstermez.
 14. **CSP:** sayfa CSP'si `src/proxy.ts`'te her istekte üretilen **script nonce** ile kurulur (`'unsafe-inline'` script yok, `'strict-dynamic'`). Bu yüzden root layout `connection()` ile tüm sayfaları dinamik render eder. Inline `<script>` yazılmaz; gerekiyorsa `headers().get("x-nonce")` ile `nonce` verilir. API ve `public/demo` yanıtları `next.config.ts`'te `default-src 'none'` alır. Harici script/iframe eklemek = `src/proxy.ts`'te ilgili direktife kaynak eklemek.
+
+### 4.1 Çekirdek (`src/core`) ve route yazımı
+
+`src/core` hiçbir `src/server` / modül kodunu import etmez; uygulama ona `src/server/app.ts` (composition root) üzerinden bağlanır.
+
+| Parça | Dosya | Ne için |
+|---|---|---|
+| Hata hiyerarşisi | `core/errors` | `AppError` → `BadRequest` 400 · `Unauthorized` 401 · `Forbidden` 403 · `NotFound` 404 · `Conflict` 409 · `PayloadTooLarge` 413 · `UnsupportedMediaType` 415 · `Validation` 422 · `RateLimit` 429 · `Internal` 500 · `ExternalService` 502. `code` sabit, `message` Türkçe kullanıcı metni, `details` yalnız log. Yeni trigger kodu = `translate.ts`'te bir satır |
+| DI | `core/di/container.ts` | `token<T>()`, `singleton / scoped / transient`, istek başına `createScope()`, `provide()`. Döngü ve "singleton → scoped" (captive) bağımlılık hata verir |
+| Veri | `core/db` | `Database` port'u (+ `D1DatabaseAdapter`), `UnitOfWork` (`add`, `expectChanges`, `commit`), `Repository` taban sınıfı, `placeholders`, `chunk` |
+| Altyapı | `core/logging`, `core/runtime` | `JsonLogger` (hassas anahtarlar maskelenir, `child({requestId})`), `Clock` / `FixedClock`, `IdGenerator`, `buildConfig` (canlıda eksik sır → başlangıçta hata) |
+| HTTP | `core/http` | `createRouter` → `route()`; port'lar: `Authenticator`, `OriginGuard`, `RateLimiter`, `IdempotencyStore` |
+
+**Route tanımı** (sıra sabit: hata sınırı → rate limit → origin/CSRF → kimlik/yetki → params/query/body doğrulama → idempotency → handler):
+```ts
+export const PUT = route({
+  auth: { audience: "admin", permission: "catalog.write" },   // "public" | "storefront" (+ required) | "admin" (+ permission)
+  params: z.object({ id: z.string() }),
+  body: adminCategoryUpdateSchema,                            // multipart: body yok + csrf: "multipart"
+  idempotency: { scope: ({ params }) => `category.update:${params.id}` },   // opsiyonel
+  rateLimit: { name: "coupon", limit: 5, windowSec: 60 },     // opsiyonel
+  handle: ({ params, body, user, resolve }) => resolve(UpdateCategoryToken).execute(params.id, body, user!),
+});
+```
+Handler yalnız doğrulanmış girdi alır, use case'i DI'dan çözer; düz veri döner (200) veya `reply.created(data, meta)`. Yanıtlar `Cache-Control: no-store` (public: `no-cache`).
 
 ## 5. Modül durumu
 
@@ -184,8 +212,8 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 
 ## 9. Testler
 
-- `npm test` → **40/40** şema + **23/23** servis testi (Node ≥ 22.13; `--experimental-transform-types`).
-- Servis testleri gerçek servis kodunu çalıştırır; `tests/integration/hooks.mjs` şunları taklit eder: `server-only`, `@opennextjs/cloudflare` (env = `globalThis.__ENV`), `next/headers` (çerez kavanozu), `next/server`, `bcryptjs` (`$2b$12$<parola>`), **`zod` (boş taklit — Zod şemasını test eden kod için kendi loader'ınızda bu eşlemeyi çıkarın)**. D1 taklidi: `tests/integration/d1-sqlite.mjs` (node:sqlite, `batch` = transaction).
+- `npm test` → **41/41** şema + **13/13** çekirdek + **23/23** servis testi (Node ≥ 22.13; `--experimental-transform-types`).
+- Servis testleri gerçek servis kodunu çalıştırır; `tests/integration/hooks.mjs` şunları taklit eder: `server-only`, `@opennextjs/cloudflare` (env = `globalThis.__ENV`), `next/headers` (çerez kavanozu), `next/server`, `bcryptjs` (`$2b$12$<parola>`). Zod gerçek paketle çalışır. D1 taklidi: `tests/integration/d1-sqlite.mjs` (node:sqlite, `batch` = transaction).
 - Admin modülleri (kategori, marka, ürün, sipariş, iade, toplu işlem, outbox, kargo webhook, route'lar) geliştirme sırasında aynı altyapıyla senaryo testlerinden geçirildi; bu senaryolar henüz `tests/integration/`'a taşınmadı (yol haritası).
 
 ## 10. Bilinen tuzaklar

@@ -54,11 +54,11 @@ def setup_checkout(c, cid="co_1", cart="cart_1"):
 
 
 # --- structure ---------------------------------------------------------------
-@test("01 87 tables exist")
+@test("01 88 tables exist")
 def _():
     c = new_db()
     n = c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()[0]
-    assert n == 87, n
+    assert n == 88, n
 
 
 @test("02 all tables are STRICT")
@@ -380,6 +380,29 @@ def _():
 def _():
     c = new_db()
     expect_error(c, "INSERT INTO integration_secrets (id, secret_name, ciphertext, nonce, auth_tag, key_version) VALUES ('s','k','c','n','t','v1')")
+
+
+@test("41 batch guard: whole batch rolls back when the guarded update lost the race")
+def _():
+    c = new_db()
+    c.execute("INSERT INTO audit_logs (id, action, entity_type) VALUES ('g0','x','y')")
+    # expected change happened → guard row is skipped, later statements commit
+    c.execute("BEGIN")
+    c.execute("UPDATE site_settings SET updated_at = updated_at WHERE key = 'site.name'")
+    c.execute("INSERT INTO batch_guards (actual, expected) VALUES (changes(), 1)")
+    c.execute("INSERT INTO audit_logs (id, action, entity_type) VALUES ('g1','x','y')")
+    c.execute("COMMIT")
+    assert c.execute("SELECT count(*) FROM batch_guards").fetchone()[0] == 0
+    assert c.execute("SELECT count(*) FROM audit_logs WHERE id = 'g1'").fetchone()[0] == 1
+    # nothing changed → guard aborts
+    c.execute("BEGIN")
+    c.execute("UPDATE site_settings SET updated_at = updated_at WHERE key = 'no.such.key'")
+    try:
+        c.execute("INSERT INTO batch_guards (actual, expected) VALUES (changes(), 1)")
+        raise AssertionError("guard did not abort")
+    except sqlite3.DatabaseError as e:
+        assert "batch_guard_failed" in str(e), e
+    c.execute("ROLLBACK")
 
 
 if __name__ == "__main__":

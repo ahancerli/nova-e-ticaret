@@ -1061,6 +1061,14 @@ CREATE TABLE IF NOT EXISTS rate_limit_buckets (
   PRIMARY KEY (bucket_key, window_start)
 ) STRICT;
 
+-- Optimistic-concurrency guard for multi-statement D1 batches (D1 has no BEGIN/COMMIT).
+-- core/db/unit-of-work.ts inserts `changes()` of the previous statement right after it; the triggers
+-- below either skip the row (count as expected) or abort the WHOLE batch. The table always stays empty.
+CREATE TABLE IF NOT EXISTS batch_guards (
+  actual   INTEGER NOT NULL,
+  expected INTEGER NOT NULL
+) STRICT;
+
 -- =============================================================================
 -- INDEXES
 -- =============================================================================
@@ -1140,6 +1148,8 @@ DROP TRIGGER IF EXISTS trg_campaign_capacity;
 DROP TRIGGER IF EXISTS trg_coupon_limits;
 DROP TRIGGER IF EXISTS trg_campaign_activate_targets;
 DROP TRIGGER IF EXISTS trg_payment_paid_terminal;
+DROP TRIGGER IF EXISTS trg_batch_guard_fail;
+DROP TRIGGER IF EXISTS trg_batch_guard_pass;
 
 -- category tree: no cycles (insert can only create a cycle via self-reference, blocked by CHECK;
 -- kept for completeness when ids are reused)
@@ -1348,4 +1358,19 @@ BEFORE UPDATE OF status ON payments
 WHEN OLD.status = 'paid' AND NEW.status NOT IN ('paid','refunded','partially_refunded')
 BEGIN
   SELECT RAISE(ABORT, 'payment_paid_terminal');
+END;
+
+-- batch guard: abort the batch when the guarded statement did not change the expected number of rows
+CREATE TRIGGER trg_batch_guard_fail
+BEFORE INSERT ON batch_guards
+WHEN NEW.actual <> NEW.expected
+BEGIN
+  SELECT RAISE(ABORT, 'batch_guard_failed');
+END;
+
+CREATE TRIGGER trg_batch_guard_pass
+BEFORE INSERT ON batch_guards
+WHEN NEW.actual = NEW.expected
+BEGIN
+  SELECT RAISE(IGNORE);
 END;
