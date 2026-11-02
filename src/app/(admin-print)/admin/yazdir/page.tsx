@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 import { queryAll } from "@/server/db";
-import { getOrderDetail, type OrderDetail } from "@/server/services/admin-orders";
+import { GetOrderDetailToken, type OrderDetail } from "@/modules/orders";
 import { formatMinor, includedTaxMinor } from "@/lib/money";
 import { orderStatusMeta, PROVIDER_LABEL } from "@/lib/order-rules";
 import { PrintToolbar } from "@/components/admin/PrintToolbar";
-import { currentPrincipal } from "@/server/app";
+import { currentPrincipal, resolveService } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Belge yazdır", robots: { index: false, follow: false } };
@@ -28,7 +28,7 @@ export default async function PrintPage({ searchParams }: { searchParams: Promis
   const canSeeCustomer = user.permissions.has("customers.read");
 
   const [orders, settings] = await Promise.all([
-    Promise.all(ids.map((id) => getOrderDetail(id, { canSeeCustomer }))),
+    resolveService(GetOrderDetailToken).then((q) => Promise.all(ids.map((id) => q.execute(id, canSeeCustomer)))),
     queryAll<{ key: string; value_json: string }>("SELECT key, value_json FROM site_settings WHERE key IN ('site.name','contact.email','contact.phone')"),
   ]);
   const s = Object.fromEntries(settings.map((r) => [r.key, JSON.parse(r.value_json) as string]));

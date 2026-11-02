@@ -32,6 +32,17 @@ const storefront = await S("modules/storefront/index");
 const cartModule = await S("modules/cart/index");
 const pricingModule = await S("modules/pricing/index");
 const svc = (tok: any) => app.resolveService(tok);
+const checkoutModule = await S("modules/checkout/index");
+const ordersModule = await S("modules/orders/index");
+const checkout = {
+  createQuote: async () => (await svc(checkoutModule.CreateCheckoutQuoteToken)).execute(),
+  confirmCheckout: async (input: any) => (await svc(checkoutModule.ConfirmCheckoutToken)).execute(input),
+  markPaymentPaid: (await S("server/services/checkout")).markPaymentPaid,
+  expireStaleCheckouts: async () => (await svc(checkoutModule.ExpireStaleCheckoutsToken)).execute(),
+};
+const admin = {
+  listOrders: async (q: any, opts: { canSeeCustomer: boolean }) => (await svc(ordersModule.ListOrdersToken)).execute(q, opts.canSeeCustomer),
+};
 const catalog = {
   getShellData: async () => (await svc(storefront.GetShellToken)).execute(),
   getHomeData: async () => (await svc(storefront.GetHomeToken)).execute(),
@@ -51,8 +62,7 @@ const pricing = {
   buildQuote: (await S("server/services/pricing")).buildQuote,
   findUsableCoupon: async (code: string) => (await svc(pricingModule.FindUsableCouponToken)).execute(code),
 };
-const checkout = await S("server/services/checkout");
-const admin = await S("server/services/admin-orders");
+
 const auth = await S("server/auth");
 const sec = await S("server/security");
 const money = await S("lib/money");

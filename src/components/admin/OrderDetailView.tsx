@@ -13,7 +13,7 @@ import { notify } from "@/lib/toast";
 import {
   canRunAction, ORDER_ACTIONS, ORDER_FLOW, PRIMARY_ACTION, PROVIDER_LABEL, REFUND_STATUS, SHIPMENT_STATUS, orderStatusMeta, paymentStatusMeta, type OrderActionId, type OrderStatus,
 } from "@/lib/order-rules";
-import type { OrderDetail } from "@/server/services/admin-orders";
+import type { OrderDetail } from "@/modules/orders";
 import { Popover } from "@/components/ui/Popover";
 import { AdminBadge } from "./ui";
 import { AdminDrawer } from "./AdminDrawer";

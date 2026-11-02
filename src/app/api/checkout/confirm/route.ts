@@ -1,9 +1,8 @@
-import { handler, ok, readJson } from "@/server/http";
-import { withIdempotency } from "@/server/idempotency";
-import { assertSameOrigin, clientIp } from "@/server/security";
-import { confirmCheckout } from "@/server/services/checkout";
+import { reply } from "@/core";
+import { ConfirmCheckoutToken, confirmSchema } from "@/modules/checkout";
+import { clientIp } from "@/modules/platform/module";
+import { route } from "@/server/app";
 import { startCheckoutForm } from "@/server/services/iyzico";
-import { confirmSchema } from "@/server/validation";
 
 export const dynamic = "force-dynamic";
 
@@ -12,18 +11,18 @@ export const dynamic = "force-dynamic";
  * Body: { checkoutId, paymentMethod, email, phone, shipping, billing?, note?, acceptedTermsVersion }
  * Guest checkout is allowed (no account required).
  */
-export const POST = handler(async (req) => {
-  await assertSameOrigin(req);
-  const input = confirmSchema.parse(await readJson(req));
-  const result = await withIdempotency(req, "checkout.confirm", input, async () => {
-    const order = await confirmCheckout(input);
+export const POST = route({
+  auth: { audience: "storefront" },
+  body: confirmSchema,
+  idempotency: { scope: () => "checkout.confirm" },
+  handle: async ({ body, req, resolve }) => {
+    const order = await resolve(ConfirmCheckoutToken).execute(body);
     let payment: { paymentPageUrl: string | null } | null = null;
     if (order.paymentMethod === "iyzico") {
-      // Network call happens AFTER the DB batch committed.
+      // Network call happens AFTER the order transaction committed.
       const started = await startCheckoutForm(order.paymentId, clientIp(req));
       payment = { paymentPageUrl: started.paymentPageUrl };
     }
-    return { status: 201, data: { orderNumber: order.orderNumber, totalMinor: order.totalMinor, paymentMethod: order.paymentMethod, payment } };
-  });
-  return ok(req, result.data, { replayed: result.replayed }, result.status);
+    return reply.created({ orderNumber: order.orderNumber, totalMinor: order.totalMinor, paymentMethod: order.paymentMethod, payment });
+  },
 });

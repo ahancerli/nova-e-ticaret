@@ -1,7 +1,7 @@
-import { ApiError, handler, ok } from "@/server/http";
-import { getEnv } from "@/server/db";
-import { safeEqual } from "@/server/crypto";
-import { expireStaleCheckouts } from "@/server/services/checkout";
+import { ConfigToken } from "@/core";
+import { ExpireStaleCheckoutsToken } from "@/modules/checkout";
+import { assertCronRequest } from "@/modules/platform/cron";
+import { route } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +10,10 @@ export const dynamic = "force-dynamic";
  * Call every few minutes with: Authorization: Bearer <CRON_SECRET>
  * (e.g. a small Cron Trigger worker or an external scheduler — see README).
  */
-export const POST = handler(async (req) => {
-  const env = await getEnv();
-  const auth = req.headers.get("authorization") ?? "";
-  if (!env.CRON_SECRET || !safeEqual(auth, `Bearer ${env.CRON_SECRET}`)) throw new ApiError(401, "unauthorized", "Yetkisiz.");
-  return ok(req, await expireStaleCheckouts());
+export const POST = route({
+  csrf: "none",
+  handle: async ({ req, resolve }) => {
+    assertCronRequest(req, resolve(ConfigToken).cronSecret);
+    return resolve(ExpireStaleCheckoutsToken).execute();
+  },
 });

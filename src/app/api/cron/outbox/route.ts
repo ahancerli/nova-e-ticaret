@@ -1,6 +1,7 @@
-import { ApiError, handler, ok } from "@/server/http";
-import { getEnv } from "@/server/db";
-import { safeEqual } from "@/server/crypto";
+import { z } from "zod";
+import { ConfigToken } from "@/core";
+import { assertCronRequest } from "@/modules/platform/cron";
+import { route } from "@/server/app";
 import { processOutbox } from "@/server/services/outbox";
 
 export const dynamic = "force-dynamic";
@@ -9,10 +10,11 @@ export const dynamic = "force-dynamic";
  * Delivers pending outbox events (refunds → iyzico, shipments → carrier, notifications).
  * Call every minute with: Authorization: Bearer <CRON_SECRET>   (optional ?limit=1..100)
  */
-export const POST = handler(async (req) => {
-  const env = await getEnv();
-  const auth = req.headers.get("authorization") ?? "";
-  if (!env.CRON_SECRET || !safeEqual(auth, `Bearer ${env.CRON_SECRET}`)) throw new ApiError(401, "unauthorized", "Yetkisiz.");
-  const limit = Number(new URL(req.url).searchParams.get("limit") ?? 25);
-  return ok(req, await processOutbox(Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 25));
+export const POST = route({
+  csrf: "none",
+  query: z.object({ limit: z.coerce.number().int().min(1).max(100).default(25) }),
+  handle: async ({ req, query, resolve }) => {
+    assertCronRequest(req, resolve(ConfigToken).cronSecret);
+    return processOutbox(query.limit);
+  },
 });

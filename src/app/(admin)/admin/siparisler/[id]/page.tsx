@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import { getOrderDetail } from "@/server/services/admin-orders";
+import { GetOrderDetailToken } from "@/modules/orders";
 import { OrderDetailView } from "@/components/admin/OrderDetailView";
-import { requireAdminPage } from "@/server/app";
+import { requireAdminPage, resolveService } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function AdminOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireAdminPage("orders.read");
-  const order = await getOrderDetail((await params).id, { canSeeCustomer: user.permissions.has("customers.read") });
+  const order = await (await resolveService(GetOrderDetailToken)).execute((await params).id, user.permissions.has("customers.read"));
   if (!order) notFound();
   return <OrderDetailView order={order} permissions={[...user.permissions]} />;
 }

@@ -21,8 +21,10 @@ import {
 import { registerAudit } from "@/modules/audit/audit-log";
 import { registerCart } from "@/modules/cart";
 import { registerCatalog } from "@/modules/catalog";
+import { registerCheckout } from "@/modules/checkout";
 import { GetCurrentPrincipalToken, registerIdentity } from "@/modules/identity";
 import { registerMedia } from "@/modules/media";
+import { registerOrders } from "@/modules/orders";
 import { registerPlatform } from "@/modules/platform/module";
 import { registerPricing } from "@/modules/pricing";
 import { registerStorefront } from "@/modules/storefront";
@@ -52,6 +54,8 @@ registerCatalog(container);
 registerStorefront(container);
 registerPricing(container);
 registerCart(container); // also subscribes the guest-cart merge to storefront logins
+registerCheckout(container);
+registerOrders(container);
 
 /** Fills a request scope with per-request values. getEnv() adds local .env fallbacks for secrets. */
 async function prepareScope(scope: Container): Promise<void> {

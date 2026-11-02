@@ -66,7 +66,8 @@ export const ORDER_ACTIONS: Record<OrderActionId, { label: string; permission: s
   // Paid orders need the refund flow (planned) — cancelling them here would keep the money without a refund record.
   cancel: { label: "Siparişi iptal et", permission: "orders.write", from: ["pending_payment", "awaiting_transfer"], to: "cancelled", danger: true },
   // Paid orders are cancelled through a (full) refund; partial refunds keep the order status.
-  refund: { label: "İade et", permission: "orders.write", from: ["paid", "preparing", "shipped", "delivered", "completed"], danger: true },
+  // "cancelled": a card payment that arrived after expiry / cancel is recorded and must be paid back.
+  refund: { label: "İade et", permission: "orders.write", from: ["paid", "preparing", "shipped", "delivered", "completed", "cancelled"], danger: true },
   note: { label: "Not ekle", permission: "orders.write", from: "any" },
 };
 

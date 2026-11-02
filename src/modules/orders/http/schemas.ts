@@ -1,33 +1,5 @@
-import "server-only";
 import { z } from "zod";
-import "@/modules/shared/schemas"; // Turkish Zod messages
-
-const id = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/, "Geçersiz kimlik");
-const phone = z.string().trim().regex(/^\+?[1-9]\d{9,14}$/, "Telefon +905xxxxxxxxx biçiminde olmalı");
-const text = (max: number) => z.string().trim().min(1).max(max);
-
-const address = z.object({
-  recipientName: text(120),
-  phone,
-  province: text(60),
-  district: text(60),
-  line1: text(250),
-  line2: z.string().trim().max(250).optional(),
-  postalCode: z.string().trim().max(10).optional(),
-  companyName: z.string().trim().max(160).optional(),
-  taxOffice: z.string().trim().max(80).optional(),
-}).strict();
-
-export const confirmSchema = z.object({
-  checkoutId: id,
-  paymentMethod: z.enum(["iyzico", "bank_transfer"]),
-  email: z.email().max(254),
-  phone,
-  shipping: address,
-  billing: address.optional(),
-  note: z.string().trim().max(1000).optional(),
-  acceptedTermsVersion: text(32),
-}).strict();
+import { entityId as id } from "@/modules/shared/schemas";
 
 const ORDER_STATUSES = ["pending_payment", "awaiting_transfer", "paid", "preparing", "shipped", "delivered", "completed", "cancelled", "refunded", "partially_refunded"] as const;
 const PAYMENT_STATUSES = ["unpaid", "pending", "paid", "failed", "refunded", "partially_refunded"] as const;
@@ -35,7 +7,7 @@ const PAYMENT_STATUSES = ["unpaid", "pending", "paid", "failed", "refunded", "pa
 const csvEnum = <T extends readonly [string, ...string[]]>(values: T) =>
   z.string().max(300).transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean)).pipe(z.array(z.enum(values)).max(values.length));
 
-export const adminOrderQuerySchema = z.object({
+export const orderQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),
   status: csvEnum(ORDER_STATUSES).optional(),
   paymentStatus: z.enum(PAYMENT_STATUSES).optional(),
@@ -51,7 +23,7 @@ export const adminOrderQuerySchema = z.object({
 });
 
 /** POST /api/admin/orders/:id/actions — one schema per state-machine action (lib/order-rules.ts). */
-export const adminOrderActionSchema = z.discriminatedUnion("action", [
+export const orderActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("prepare"), note: z.string().trim().max(500).optional() }).strict(),
   z.object({ action: z.literal("complete"), note: z.string().trim().max(500).optional() }).strict(),
   z.object({ action: z.literal("deliver"), note: z.string().trim().max(500).optional() }).strict(),
@@ -79,7 +51,7 @@ export const adminOrderActionSchema = z.discriminatedUnion("action", [
 ]);
 
 /** POST /api/admin/orders/bulk — same action payloads, applied to each selected order independently. */
-export const adminOrderBulkSchema = z.object({
+export const orderBulkSchema = z.object({
   orderIds: z.array(id).min(1, "En az bir sipariş seçin.").max(100, "Tek seferde en fazla 100 sipariş."),
   action: z.discriminatedUnion("action", [
     z.object({ action: z.literal("prepare") }).strict(),
@@ -90,3 +62,7 @@ export const adminOrderBulkSchema = z.object({
     z.object({ action: z.literal("ship"), shippingMethodId: id }).strict(),
   ]),
 }).strict();
+
+export type OrderQuery = z.output<typeof orderQuerySchema>;
+export type OrderActionInput = z.output<typeof orderActionSchema>;
+export type BulkActionInput = z.output<typeof orderBulkSchema>["action"];
