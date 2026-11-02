@@ -1,6 +1,6 @@
 import { ListBrandsToken } from "@/modules/catalog";
 import { requireAdminPage, resolveService } from "@/server/app";
-import { BrandsManager } from "@/components/admin/BrandsManager";
+import { BrandsManager } from "@/features/catalog/brands/BrandsManager";
 
 export const metadata = { title: "Markalar" };
 export const dynamic = "force-dynamic";

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
-import { ListingClient } from "@/components/storefront/ListingClient";
+import { ListingClient } from "@/features/storefront/ListingClient";
 import { GetCategoryPageToken } from "@/modules/storefront";
 import { resolveService } from "@/server/app";
 

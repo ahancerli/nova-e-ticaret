@@ -4,8 +4,8 @@ import { notFound } from "next/navigation";
 import { GetProductDetailToken } from "@/modules/storefront";
 import { resolveService } from "@/server/app";
 import { sanitizeRichHtml } from "@/core";
-import { VariantPicker } from "@/components/storefront/VariantPicker";
-import { ProductCard } from "@/components/storefront/ProductCard";
+import { VariantPicker } from "@/features/storefront/VariantPicker";
+import { ProductCard } from "@/features/storefront/ProductCard";
 
 const getProductBySlug = async (slug: string) => (await resolveService(GetProductDetailToken)).execute(slug);
 

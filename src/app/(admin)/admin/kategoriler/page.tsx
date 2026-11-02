@@ -1,6 +1,6 @@
 import { ListCategoryTreeToken } from "@/modules/catalog";
 import { requireAdminPage, resolveService } from "@/server/app";
-import { CategoriesManager } from "@/components/admin/CategoriesManager";
+import { CategoriesManager } from "@/features/catalog/categories/CategoriesManager";
 
 export const metadata = { title: "Kategoriler" };
 export const dynamic = "force-dynamic";

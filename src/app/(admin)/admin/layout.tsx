@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { AdminShell } from "@/components/admin/AdminShell";
-import type { SidebarEntry, SidebarGroup } from "@/components/admin/AdminSidebar";
+import { AdminShell } from "@/features/admin-shell/AdminShell";
+import type { SidebarEntry, SidebarGroup } from "@/features/admin-shell/AdminSidebar";
 import { ConfigToken } from "@/core";
 import { GetStaffRolesToken } from "@/modules/identity";
 import { currentPrincipal, resolveService } from "@/server/app";

@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { ListingClient } from "@/components/storefront/ListingClient";
+import { ListingClient } from "@/features/storefront/ListingClient";
 
 export const metadata = { title: "Arama", robots: { index: false } };
 

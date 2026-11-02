@@ -3,7 +3,7 @@ import { GetOrderDetailToken, type OrderDetail } from "@/modules/orders";
 import { GetSiteSettingsToken } from "@/modules/storefront";
 import { formatMinor, includedTaxMinor } from "@/lib/money";
 import { orderStatusMeta, PROVIDER_LABEL } from "@/lib/order-rules";
-import { PrintToolbar } from "@/components/admin/PrintToolbar";
+import { PrintToolbar } from "@/features/orders/PrintToolbar";
 import { currentPrincipal, resolveService } from "@/server/app";
 
 export const dynamic = "force-dynamic";

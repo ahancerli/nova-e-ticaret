@@ -1,4 +1,4 @@
-import { OrdersManager } from "@/components/admin/OrdersManager";
+import { OrdersManager } from "@/features/orders/OrdersManager";
 import { ListShippingMethodsToken } from "@/modules/orders";
 import { requireAdminPage, resolveService } from "@/server/app";
 

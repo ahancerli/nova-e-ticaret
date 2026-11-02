@@ -1,4 +1,4 @@
-import { CheckoutClient } from "@/components/checkout/CheckoutClient";
+import { CheckoutClient } from "@/features/checkout/CheckoutClient";
 
 export const metadata = { title: "Ödeme", robots: { index: false } };
 

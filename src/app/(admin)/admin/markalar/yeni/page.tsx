@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { AdminCard, AdminPageHeader } from "@/components/admin/ui";
-import { BrandCreateForm } from "@/components/admin/BrandCreateForm";
+import { BrandCreateForm } from "@/features/catalog/brands/BrandCreateForm";
 import { requireAdminPage } from "@/server/app";
 
 export const metadata = { title: "Marka ekle" };

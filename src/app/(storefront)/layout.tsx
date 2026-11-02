@@ -1,7 +1,7 @@
-import { Header } from "@/components/storefront/Header";
-import { Footer } from "@/components/storefront/Footer";
-import { CartProvider } from "@/components/cart/CartProvider";
-import { CartDrawer } from "@/components/cart/CartDrawer";
+import { Header } from "@/features/storefront/Header";
+import { Footer } from "@/features/storefront/Footer";
+import { CartProvider } from "@/features/cart/CartProvider";
+import { CartDrawer } from "@/features/cart/CartDrawer";
 import { GetShellToken } from "@/modules/storefront";
 import { resolveService } from "@/server/app";
 

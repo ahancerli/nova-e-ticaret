@@ -79,16 +79,22 @@ src/
     (admin-print)/admin/yazdir Yazdırılabilir belgeler (kabuk dışında)
     api/                  Route handler'lar ({data, meta, requestId} sözleşmesi)
     assets/[...path]/     R2'deki yüklenmiş görselleri sunar
-  components/
-    ui/                   Proje geneli: DataGrid, Toaster, Popover, Collapsible, Portal
-    admin/                Panel bileşenleri (aşağıda katalog)
-    storefront/ cart/ checkout/   Vitrin bileşenleri
+  components/             Paylaşılan UI (iş bilgisi yok)
+    ui/                   DataGrid, Toaster, Popover, Collapsible, Portal, ErrorState, ErrorBoundary, RouteError, ClientErrorReporter
+    admin/                Panel tasarım sistemi: ui (kart, rozet, tablo), AdminDrawer, AdminConfirmDialog, AdminFormDialog, Skeleton
+  features/               Domain'e göre frontend (ayrıntı §4.3); her feature kendi api.ts'i ile konuşur
+    admin-shell/          AdminShell, AdminSidebar, CommandPalette, TopProgress
+    auth/                 LoginForm + api (giriş/çıkış)
+    catalog/              categories/ · brands/ · products/ (ProductEditor + editor/ bölümleri)
+    media/                ImageUpload, MediaGallery + api (yükleme)
+    orders/               OrdersManager, OrderDetailView (+ detail/), PrintToolbar
+    storefront/ cart/ checkout/   Vitrin, sepet çekmecesi, ödeme
   core/                   Çatıdan bağımsız temel (ayrıntı §4.1): errors, di, db, logging, runtime, http, security (crypto, HTML sanitizer)
   modules/                İş modülleri (ayrıntı §4.2): platform (CSRF, rate limit, idempotency), identity (giriş, oturum, RBAC), audit, media,
                           catalog (admin: kategori, marka, ürün), storefront (vitrin okuma), pricing (fiyat motoru), cart (sepet, kupon),
                           checkout (teklif, sipariş, ödeme sonuçlandırma, süre aşımı), orders (sipariş ekranları, durum makinesi, iade, dashboard),
                           payments (iyzico gateway), shipping (kargo adaptörleri + webhook), outbox (worker + işleyici kaydı), notifications
-  lib/                    İstemci+sunucu ortak: api-client, toast, motion, money, slug, ids, types, order-rules, product-rules
+  lib/                    İstemci+sunucu ortak: api-client, use-field-errors, error-reporting, toast, motion, money, slug, safe-redirect, ids, types, order-rules, product-rules
   proxy.ts                Sayfa CSP'si (istek başına script nonce)
   server/                 Yalnız sunucu ("server-only"): app.ts = composition root (DI kayıtları, `route`, `resolveService`, `currentPrincipal`, `requireAdminPage`); env.ts = Worker binding + local .env
 ```
@@ -149,6 +155,15 @@ index.ts          Modülün dışa açık yüzeyi — diğer kod yalnız buradan
 
 Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf bilmez. Yazmalar `UnitOfWork` ile; durum/varlık koşulları `expectChanges` ile batch içinde korunur (ör. "alt kategori yoksa sil" → `DELETE … AND NOT EXISTS (…)` + guard). Dış etkiler (R2 silme) commit'ten sonra. Sorgular (Query) yokluğu `null` ile döner, route 404'e çevirir. Sayfalar (server component) use case'i `resolveService(Token)` ile çözer; yetkiyi sayfa kontrol eder. Modüller arası bağımlılık arayüz üzerinden (catalog → `MediaLibrary`).
 
+### 4.3 Frontend ve hata yönetimi
+
+- **Feature klasörü** (`src/features/<alan>`): ekran bileşenleri + `api.ts` (o alanın uçlarını tipli fonksiyonlar olarak toplar; istek/yanıt tipleri `import type` ile `@/modules/*`'tan gelir, sunucu kodu pakete girmez). Bileşenler ham URL / `fetch` yazmaz. Büyük ekranlar parçalanır: `catalog/products/editor/*` (form modeli, doğrulama, alanlar, her bölüm ayrı dosya), `orders/detail/*` (biçimlendirme, ilerleme, kargo çekmecesi, iade diyaloğu, kart parçaları).
+- **API istemcisi** (`lib/api-client.ts`): her hata tek tip `ClientApiError` olur — HTTP, ağ (`network_error`), zaman aşımı (`timeout`, varsayılan 20 sn), iptal, JSON olmayan yanıt. Yardımcılar: `isValidation`, `isConflict`, `isUnauthorized`, `isRateLimited`, `isServer`… `errorMessage(err)` 5xx'te kısa bir `Ref` (requestId başı) ekler. 401 → `nova:unauthorized` olayı → panel kabuğu "oturum süresi doldu" uyarısı + `/admin/giris?next=<sayfa>`.
+- **Form hataları:** `useFieldErrors()` (`lib/use-field-errors.ts`) — `fromError(err)` sunucunun `fieldErrors`'ını alır, `get("a.b")` alanın ilk mesajını verir; istemci doğrulaması aynı anahtarları kullanır.
+- **Hata sınırları:** her route grubunda `error.tsx` (vitrin, panel — kabuk içinde, yazdırma, giriş) + kök `error.tsx` + `global-error.tsx` (kök layout çökerse; kendi `<html>`'i, satır içi stil). Panelde `not-found.tsx` kabuk içinde. Sunucu hata metni kullanıcıya **hiç** gösterilmez; Next'in `digest`'i "Ref" olarak gösterilir ve sunucu log satırıyla eşleşir. Tek widget'ı izole etmek için `<ErrorBoundary name="…">` (ana sayfa bölümleri bununla sarılı: bozuk bir bölüm gizlenir, sayfa ayakta kalır).
+- **İstemci hata raporu:** `reportClientError()` (`lib/error-reporting.ts`) → `POST /api/client-errors` (aynı köken, ≤ 8 KB, IP başına dakikada 30, DB'ye yazmaz) → sunucu JSON log'u (`message: "client error"`). Sınırlar, `ClientErrorReporter` (yakalanmamış hata / promise reddi; API hataları hariç) ve sayfa başına en fazla 10 rapor.
+- **Log bütünlüğü:** `JsonLogger`'da `level/time/message` ve bağlam alanları (`requestId`, `route`) çağıranın alanlarından sonra yazılır; istemciden gelen bir alan bunları ezemez.
+
 **Yeni modül eklemek:** klasörü kur → `module.ts`'te `registerX(c)` → `src/server/app.ts`'te `registerX(container)` → route dosyaları `route({...})` → `tests/integration/<modül>.test.ts` (container testte kurulur, yalnız dış servisler sahte).
 
 ## 5. Modül durumu
@@ -183,9 +198,10 @@ Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf b
 | `AdminFormDialog` | Küçük formlu işlem penceresi (havale onayı, iptal sebebi, iade, toplu işlem) |
 | `Popover` | Bağlı menüler (kullanıcı, "Yeni", "İşlemler", "Yazdır") |
 | `Collapsible` | Yükseklik animasyonlu aç/kapa (sidebar grubu, ağaç dalı, filtre paneli) |
-| `ImageUpload` / `MediaGallery` | Bilgisayardan tek / çoklu görsel yükleme (R2), ilerleme, sürükle-bırak |
+| `features/media/ImageUpload` / `MediaGallery` | Bilgisayardan tek / çoklu görsel yükleme (R2), ilerleme, sürükle-bırak |
 | `Skeleton`, `LoadingShell`, `GridSkeleton`, `TreeSkeleton`, `FormSkeleton`, `StepEditorSkeleton`, `TopProgress` | Her admin rotasında `loading.tsx` gerçek düzeni taklit eden iskelet + üstte ilerleme çubuğu |
-| `CommandPalette` | ⌘K / Ctrl+K; sidebar + hızlı işlemlerden beslenir (`AdminShell`) |
+| `features/admin-shell/CommandPalette` | ⌘K / Ctrl+K; sidebar + hızlı işlemlerden beslenir (`AdminShell`) |
+| `ErrorState` / `ErrorBoundary` | Hata ve "bulunamadı" ekranları / tek widget'ı izole eden sınır (§4.3) |
 
 **Ekran kalıpları:**
 - *Basit kayıt (kategori, marka):* liste + üstte yalnız "X ekle" butonu → `/x/yeni` sayfası → kaydedince listeye dön (`?eklendi=id` → toast + satır vurgusu). Satıra tıkla → sağ drawer'da güncelle, sil = onay diyaloğu.

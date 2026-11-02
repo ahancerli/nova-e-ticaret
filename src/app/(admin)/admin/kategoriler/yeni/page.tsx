@@ -3,7 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { ListCategoryTreeToken } from "@/modules/catalog";
 import { requireAdminPage, resolveService } from "@/server/app";
 import { AdminCard, AdminPageHeader } from "@/components/admin/ui";
-import { CategoryCreateForm } from "@/components/admin/CategoryCreateForm";
+import { CategoryCreateForm } from "@/features/catalog/categories/CategoryCreateForm";
 
 export const metadata = { title: "Kategori ekle" };
 export const dynamic = "force-dynamic";

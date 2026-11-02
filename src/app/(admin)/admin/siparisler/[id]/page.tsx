@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { GetOrderDetailToken } from "@/modules/orders";
-import { OrderDetailView } from "@/components/admin/OrderDetailView";
+import { OrderDetailView } from "@/features/orders/OrderDetailView";
 import { requireAdminPage, resolveService } from "@/server/app";
 
 export const dynamic = "force-dynamic";

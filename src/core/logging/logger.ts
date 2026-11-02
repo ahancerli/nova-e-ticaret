@@ -71,7 +71,9 @@ export class JsonLogger implements Logger {
 
   private write(level: LogLevel, message: string, fields?: LogFields) {
     if (LEVELS[level] < this.min) return;
-    const entry = { level, time: new Date().toISOString(), message, ...this.bindings, ...(fields ? (redact(fields) as LogFields) : {}) };
+    // Bindings (requestId, route) and reserved keys come last: caller fields — possibly client-supplied —
+    // can never overwrite them, so log correlation cannot be spoofed.
+    const entry = { ...(fields ? (redact(fields) as LogFields) : {}), ...this.bindings, level, time: new Date().toISOString(), message };
     try {
       this.sink(level, JSON.stringify(entry));
     } catch {

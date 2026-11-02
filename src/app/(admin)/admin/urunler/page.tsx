@@ -1,6 +1,6 @@
 import { ListProductsToken } from "@/modules/catalog";
 import { requireAdminPage, resolveService } from "@/server/app";
-import { ProductsManager } from "@/components/admin/ProductsManager";
+import { ProductsManager } from "@/features/catalog/products/ProductsManager";
 
 export const metadata = { title: "Ürünler" };
 export const dynamic = "force-dynamic";

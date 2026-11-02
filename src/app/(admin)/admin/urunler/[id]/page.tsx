@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { GetProductEditorToken, GetProductMetaToken } from "@/modules/catalog";
 import { requireAdminPage, resolveService } from "@/server/app";
-import { ProductEditor } from "@/components/admin/ProductEditor";
+import { ProductEditor } from "@/features/catalog/products/ProductEditor";
 
 export const metadata = { title: "Ürünü düzenle" };
 export const dynamic = "force-dynamic";

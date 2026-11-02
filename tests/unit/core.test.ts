@@ -104,6 +104,9 @@ await t("logger: sensitive keys are redacted, child bindings are kept", () => {
   const e = JSON.parse(lines[0]!);
   assert(e.requestId === "r1" && e.password === "[redacted]" && e.nested.apiKey === "[redacted]" && e.nested.ok === 1 && e.headers.Authorization === "[redacted]" && e.email === "a@b.c", lines[0]!);
   assert((redact({ a: { b: { c: { d: { e: 1 } } } } }) as any).a.b.c.d === "[depth]", "depth bound");
+  log.warn("real message", { message: "spoofed", level: "debug", requestId: "forged" });
+  const spoof = JSON.parse(lines[1]!);
+  assert(spoof.message === "real message" && spoof.level === "warn" && spoof.requestId === "r1", lines[1]!);
 });
 
 // --- HTTP route pipeline -------------------------------------------------------------------------

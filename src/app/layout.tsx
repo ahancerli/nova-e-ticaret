@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { connection } from "next/server";
 import "./globals.css";
+import { ClientErrorReporter } from "@/components/ui/ClientErrorReporter";
 import { Toaster } from "@/components/ui/Toaster";
 
 export const metadata: Metadata = {
@@ -22,6 +23,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         {children}
         <Toaster />
+        <ClientErrorReporter />
       </body>
     </html>
   );

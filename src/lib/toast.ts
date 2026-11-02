@@ -1,7 +1,7 @@
 "use client";
 
 import { toast } from "sonner";
-import { ClientApiError } from "./api-client";
+import { errorMessage as apiErrorMessage } from "./api-client";
 
 /**
  * Single entry point for notifications.
@@ -12,9 +12,7 @@ import { ClientApiError } from "./api-client";
 type Opts = { description?: string; id?: string | number; action?: { label: string; onClick: () => void } };
 
 function errorMessage(err: unknown, fallback: string): string {
-  if (err instanceof ClientApiError) return err.message;
-  if (typeof err === "string") return err;
-  return fallback;
+  return typeof err === "string" ? err : apiErrorMessage(err, fallback);
 }
 
 export const notify = {

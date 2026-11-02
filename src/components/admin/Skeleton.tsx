@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { AdminCard } from "./ui";
-import { TopProgress } from "./TopProgress";
+import { TopProgress } from "@/features/admin-shell/TopProgress";
 
 /** Shimmering placeholder block. Size it with className (h-*, w-*, rounded-*). */
 export function Skeleton({ className = "", style }: { className?: string; style?: CSSProperties }) {

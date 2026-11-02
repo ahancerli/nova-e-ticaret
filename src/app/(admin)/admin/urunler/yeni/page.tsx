@@ -1,6 +1,6 @@
 import { GetProductMetaToken } from "@/modules/catalog";
 import { requireAdminPage, resolveService } from "@/server/app";
-import { ProductEditor } from "@/components/admin/ProductEditor";
+import { ProductEditor } from "@/features/catalog/products/ProductEditor";
 
 export const metadata = { title: "Yeni ürün" };
 export const dynamic = "force-dynamic";

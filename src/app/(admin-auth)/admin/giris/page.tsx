@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { LoginForm } from "@/components/LoginForm";
+import { LoginForm } from "@/features/auth/LoginForm";
 
 export const metadata = { title: "Panel girişi", robots: { index: false } };
 
@@ -29,7 +29,7 @@ export default function AdminLoginPage() {
             <div className="mt-8">
               <Suspense>
                 <LoginForm
-                  endpoint="/api/admin/auth/login"
+                  audience="admin"
                   fallbackTarget="/admin"
                   submitLabel="Giriş yap"
                   card={false}
