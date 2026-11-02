@@ -60,7 +60,14 @@ export function fail(req: Request, err: unknown) {
     return NextResponse.json({ error: { code, message, fieldErrors: {} }, requestId: rid }, { status });
   }
   // Never leak internals to the client; detail goes to Workers observability logs.
-  console.error(JSON.stringify({ level: "error", requestId: rid, message: err instanceof Error ? err.message : String(err) }));
+  console.error(JSON.stringify({
+    level: "error",
+    requestId: rid,
+    route: `${req.method} ${new URL(req.url).pathname}`,
+    message: err instanceof Error ? err.message : String(err),
+    // Stack only outside production: enough to locate the failing line without leaking it to prod logs.
+    ...(process.env.NODE_ENV !== "production" && err instanceof Error ? { stack: err.stack?.split("\n").slice(0, 6).join(" | ") } : {}),
+  }));
   return NextResponse.json(
     { error: { code: "internal_error", message: "Beklenmeyen bir hata oluştu.", fieldErrors: {} }, requestId: rid },
     { status: 500 },

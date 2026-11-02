@@ -1,8 +1,24 @@
 // Service-level integration tests: real services + schema.sql/seed.sql on node:sqlite (D1 stand-in).
 // Run: npm run test:services   (Node >= 22.13, no npm install needed for this suite)
+import { readFileSync } from "node:fs";
 import { makeD1 } from "./d1-sqlite.mjs";
 const ROOT = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 const d1 = makeD1([`${ROOT}/db/schema.sql`, `${ROOT}/db/seed.sql`]);
+// The seed also ships demo users, a demo cart and a demo order (for the admin panel). This suite asserts on
+// "the only order / the only payment …", so start from the catalogue only: remove the demo transactional rows.
+// Append-only triggers are dropped for the cleanup and restored by re-running schema.sql (idempotent).
+d1.raw.exec(`
+  DROP TRIGGER IF EXISTS trg_order_events_no_delete; DROP TRIGGER IF EXISTS trg_inv_movements_no_delete; DROP TRIGGER IF EXISTS trg_audit_no_delete;
+  DELETE FROM shipment_events; DELETE FROM shipment_items; DELETE FROM shipments; DELETE FROM refunds; DELETE FROM bank_transfers;
+  DELETE FROM payment_events; DELETE FROM payments; DELETE FROM bank_accounts; DELETE FROM order_adjustments; DELETE FROM reviews;
+  DELETE FROM order_items; DELETE FROM order_addresses; DELETE FROM order_events; DELETE FROM coupon_redemptions; DELETE FROM campaign_allocations;
+  DELETE FROM stock_reservations; DELETE FROM orders; DELETE FROM checkout_sessions; DELETE FROM cart_coupons; DELETE FROM cart_items; DELETE FROM carts;
+  DELETE FROM inventory_movements; DELETE FROM outbox_events; DELETE FROM idempotency_keys; DELETE FROM audit_logs; DELETE FROM rate_limit_buckets;
+  UPDATE inventory_balances SET reserved = 0;
+  DELETE FROM sessions; DELETE FROM verification_tokens; DELETE FROM user_consents; DELETE FROM addresses; DELETE FROM wishlists;
+  DELETE FROM user_roles; DELETE FROM staff_profiles; DELETE FROM customer_profiles; DELETE FROM auth_credentials; DELETE FROM users;
+`);
+d1.raw.exec(readFileSync(`${ROOT}/db/schema.sql`, "utf8"));
 (globalThis as any).__ENV = { DB: d1, SESSION_SECRET: "s3cret", PUBLIC_SITE_URL: "https://nova.test", SECRETS_MASTER_KEY: btoa(String.fromCharCode(...new Uint8Array(32))), CRON_SECRET: "c" };
 const jar: Map<string, string> = (globalThis as any).__JAR ??= new Map();
 const S = (m: string) => import(`${ROOT}/src/${m}.ts`);
@@ -105,12 +121,12 @@ await t("login + RBAC + admin order grid", async () => {
                INSERT INTO auth_credentials (user_id,password_hash) VALUES ('u_admin','$2b$12$correct-horse');
                INSERT INTO staff_profiles (user_id) VALUES ('u_admin'); INSERT INTO user_roles (user_id,role_id) VALUES ('u_admin','role_order');`);
   let bad = false; try { await auth.login("admin@nova.test", "wrong", "ip"); } catch (e: any) { bad = e.code === "invalid_credentials"; } assert(bad, "bad pw");
-  const s = await auth.login("ADMIN@nova.test ", "correct-horse", "ip"); await auth.setSessionCookie(s.token, s.expiresAt);
+  const s = await auth.login("ADMIN@nova.test ", "correct-horse", "ip", "admin"); await auth.setSessionCookie(s.token, s.expiresAt, "admin");
   const u = await auth.requirePermission("orders.read"); assert(u.isStaff, "staff");
   let forb = false; try { await auth.requirePermission("users.manage"); } catch (e: any) { forb = e.code === "forbidden"; } assert(forb, "forbidden");
   const res = await admin.listOrders({ sort: "total_minor", dir: "desc", page: 1, pageSize: 25, q: "ayşe" } as any, { canSeeCustomer: false });
   assert(res.total === 1 && res.items[0].customerEmail === "a***@e***.com" && res.kpi.orders === 2, JSON.stringify(res));
-  const st = await admin.listOrders({ sort: "placed_at", dir: "asc", page: 1, pageSize: 25, status: "cancelled", provider: "bank_transfer" } as any, { canSeeCustomer: true });
+  const st = await admin.listOrders({ sort: "placed_at", dir: "asc", page: 1, pageSize: 25, status: ["cancelled"], provider: "bank_transfer" } as any, { canSeeCustomer: true });
   assert(st.total === 1 && st.items[0].customerEmail === "ali@example.com", JSON.stringify(st.items));
 });
 await t("rate limit: 6th failure in window blocked", async () => {

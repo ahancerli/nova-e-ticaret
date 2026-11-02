@@ -2,6 +2,8 @@ import "server-only";
 import { getDb } from "../db";
 import { ApiError } from "../http";
 import { newId, nowIso } from "@/lib/ids";
+import { slugify } from "@/lib/slug";
+import { releaseMedia } from "./media";
 
 type Row = {
   id: string;
@@ -9,6 +11,10 @@ type Row = {
   name: string;
   slug: string;
   description: string | null;
+  image_media_id: string | null;
+  menu_media_id: string | null;
+  image_url: string | null;
+  menu_url: string | null;
   sort_order: number;
   is_active: number;
   created_at: string;
@@ -23,6 +29,10 @@ export interface CategoryNode {
   name: string;
   slug: string;
   description: string | null;
+  imageMediaId: string | null;
+  menuMediaId: string | null;
+  imageUrl: string | null;
+  menuUrl: string | null;
   sortOrder: number;
   isActive: boolean;
   createdAt: string;
@@ -34,14 +44,15 @@ export interface CategoryNode {
   children: CategoryNode[];
 }
 
-function slugify(v: string): string {
-  return v
-    .toLocaleLowerCase("tr-TR")
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .slice(0, 160);
+export interface CategoryInput {
+  name: string;
+  slug?: string;
+  parentId?: string | null;
+  description?: string | null;
+  imageMediaId?: string | null;
+  menuMediaId?: string | null;
+  sortOrder: number;
+  isActive: boolean;
 }
 
 function toNode(r: Row): CategoryNode {
@@ -51,6 +62,10 @@ function toNode(r: Row): CategoryNode {
     name: r.name,
     slug: r.slug,
     description: r.description,
+    imageMediaId: r.image_media_id,
+    menuMediaId: r.menu_media_id,
+    imageUrl: r.image_url,
+    menuUrl: r.menu_url,
     sortOrder: r.sort_order,
     isActive: r.is_active === 1,
     createdAt: r.created_at,
@@ -92,10 +107,12 @@ function buildTree(rows: Row[]): { tree: CategoryNode[]; flat: CategoryNode[] } 
 async function allRows() {
   const db = await getDb();
   const { results } = await db
-    .prepare(`SELECT c.*,
+    .prepare(`SELECT c.*, im.public_url AS image_url, mm.public_url AS menu_url,
                      (SELECT COUNT(*) FROM product_categories pc WHERE pc.category_id = c.id) AS product_count,
                      (SELECT COUNT(*) FROM categories ch WHERE ch.parent_id = c.id) AS child_count
                 FROM categories c
+                LEFT JOIN media_assets im ON im.id = c.image_media_id
+                LEFT JOIN media_assets mm ON mm.id = c.menu_media_id
                ORDER BY c.sort_order, c.name COLLATE NOCASE`)
     .all<Row>();
   return (results ?? []) as Row[];
@@ -135,48 +152,63 @@ export async function getCategoryDetail(id: string) {
   return { category: current, parentOptions, sampleProducts: (results ?? []), tree };
 }
 
-export async function createCategory(input: {
-  name: string;
-  slug?: string;
-  parentId?: string | null;
-  description?: string | null;
-  sortOrder: number;
-  isActive: boolean;
-}) {
-  const db = await getDb();
-  const parentId = input.parentId ?? null;
-  if (parentId) {
-    const p = await db.prepare("SELECT id FROM categories WHERE id = ?").bind(parentId).first<{ id: string }>();
-    if (!p) throw new ApiError(422, "invalid_parent", "Üst kategori bulunamadı.");
-  }
-  const normalizedSlug = slugify(input.slug?.trim() || input.name);
-  if (!normalizedSlug) throw new ApiError(422, "invalid_slug", "Geçerli bir slug üretilemedi.");
-
-  const id = newId();
-  await db
-    .prepare(`INSERT INTO categories (id, parent_id, name, slug, description, sort_order, is_active, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(id, parentId, input.name.trim(), normalizedSlug, input.description?.trim() || null, input.sortOrder, input.isActive ? 1 : 0, nowIso(), nowIso())
-    .run();
-  return id;
+async function assertParent(db: D1Database, parentId: string) {
+  const p = await db.prepare("SELECT id FROM categories WHERE id = ?").bind(parentId).first<{ id: string }>();
+  if (!p) throw new ApiError(422, "invalid_parent", "Üst kategori bulunamadı.", { parentId: ["Üst kategori bulunamadı."] });
 }
 
-export async function updateCategory(id: string, patch: {
-  name?: string;
-  slug?: string;
-  parentId?: string | null;
-  description?: string | null;
-  sortOrder?: number;
-  isActive?: boolean;
-}) {
+async function assertImage(db: D1Database, mediaId: string, field: "imageMediaId" | "menuMediaId") {
+  const m = await db.prepare("SELECT mime_type FROM media_assets WHERE id = ?").bind(mediaId).first<{ mime_type: string }>();
+  if (!m || !m.mime_type.startsWith("image/")) {
+    throw new ApiError(422, "invalid_media", "Seçilen görsel bulunamadı.", { [field]: ["Geçerli bir görsel seçin."] });
+  }
+}
+
+async function assertSlugFree(db: D1Database, slug: string, exceptId: string | null) {
+  const hit = await db
+    .prepare("SELECT id FROM categories WHERE slug = ? AND (? IS NULL OR id <> ?)")
+    .bind(slug, exceptId, exceptId)
+    .first<{ id: string }>();
+  if (hit) throw new ApiError(409, "slug_taken", "Bu slug başka bir kategoride kullanılıyor.", { slug: ["Bu slug zaten kullanılıyor."] });
+}
+
+function normalizeSlug(raw: string): string {
+  const s = slugify(raw);
+  if (s.length < 2) throw new ApiError(422, "invalid_slug", "Geçerli bir slug üretilemedi.", { slug: ["Geçerli bir slug girin."] });
+  return s;
+}
+
+export async function createCategory(input: CategoryInput) {
   const db = await getDb();
-  const existing = await db.prepare("SELECT id, name FROM categories WHERE id = ?").bind(id).first<{ id: string; name: string }>();
+  const parentId = input.parentId ?? null;
+  if (parentId) await assertParent(db, parentId);
+  if (input.imageMediaId) await assertImage(db, input.imageMediaId, "imageMediaId");
+  if (input.menuMediaId) await assertImage(db, input.menuMediaId, "menuMediaId");
+  const slug = normalizeSlug(input.slug?.trim() || input.name);
+  await assertSlugFree(db, slug, null);
+
+  const id = newId();
+  const now = nowIso();
+  await db
+    .prepare(`INSERT INTO categories (id, parent_id, name, slug, description, image_media_id, menu_media_id, sort_order, is_active, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(id, parentId, input.name.trim(), slug, input.description?.trim() || null, input.imageMediaId ?? null, input.menuMediaId ?? null,
+      input.sortOrder, input.isActive ? 1 : 0, now, now)
+    .run();
+  return { id, slug };
+}
+
+export async function updateCategory(id: string, patch: Partial<CategoryInput>) {
+  const db = await getDb();
+  const existing = await db
+    .prepare("SELECT id, image_media_id, menu_media_id FROM categories WHERE id = ?")
+    .bind(id)
+    .first<{ id: string; image_media_id: string | null; menu_media_id: string | null }>();
   if (!existing) throw new ApiError(404, "category_not_found", "Kategori bulunamadı.");
 
-  if (patch.parentId === id) throw new ApiError(422, "invalid_parent", "Kategori kendisinin üstüne bağlanamaz.");
+  if (patch.parentId === id) throw new ApiError(422, "invalid_parent", "Kategori kendisinin üstüne bağlanamaz.", { parentId: ["Kategori kendisinin üstü olamaz."] });
   if (patch.parentId) {
-    const p = await db.prepare("SELECT id FROM categories WHERE id = ?").bind(patch.parentId).first<{ id: string }>();
-    if (!p) throw new ApiError(422, "invalid_parent", "Üst kategori bulunamadı.");
+    await assertParent(db, patch.parentId);
     const cycle = await db
       .prepare(
         `WITH RECURSIVE descendants(id) AS (
@@ -188,46 +220,44 @@ export async function updateCategory(id: string, patch: {
       )
       .bind(id, patch.parentId)
       .first<{ hit: number }>();
-    if (cycle?.hit) throw new ApiError(422, "category_cycle", "Seçilen üst kategori, mevcut alt ağacın içinde olamaz.");
+    if (cycle?.hit) throw new ApiError(422, "category_cycle", "Seçilen üst kategori, mevcut alt ağacın içinde olamaz.", { parentId: ["Alt kategorilerden biri üst kategori olamaz."] });
   }
+  if (patch.imageMediaId) await assertImage(db, patch.imageMediaId, "imageMediaId");
+  if (patch.menuMediaId) await assertImage(db, patch.menuMediaId, "menuMediaId");
 
   const fields: string[] = [];
   const values: unknown[] = [];
-  if (patch.name != null) {
-    fields.push("name = ?");
-    values.push(patch.name.trim());
-  }
+  const set = (column: string, value: unknown) => {
+    fields.push(`${column} = ?`);
+    values.push(value);
+  };
+  if (patch.name != null) set("name", patch.name.trim());
   if (patch.slug != null) {
-    const normalizedSlug = slugify(patch.slug.trim());
-    if (!normalizedSlug) throw new ApiError(422, "invalid_slug", "Geçerli bir slug üretilemedi.");
-    fields.push("slug = ?");
-    values.push(normalizedSlug);
+    const slug = normalizeSlug(patch.slug.trim());
+    await assertSlugFree(db, slug, id);
+    set("slug", slug);
   }
-  if (patch.parentId !== undefined) {
-    fields.push("parent_id = ?");
-    values.push(patch.parentId ?? null);
-  }
-  if (patch.description !== undefined) {
-    fields.push("description = ?");
-    values.push(patch.description?.trim() || null);
-  }
-  if (patch.sortOrder !== undefined) {
-    fields.push("sort_order = ?");
-    values.push(patch.sortOrder);
-  }
-  if (patch.isActive !== undefined) {
-    fields.push("is_active = ?");
-    values.push(patch.isActive ? 1 : 0);
-  }
-  fields.push("updated_at = ?");
-  values.push(nowIso());
+  if (patch.parentId !== undefined) set("parent_id", patch.parentId ?? null);
+  if (patch.description !== undefined) set("description", patch.description?.trim() || null);
+  if (patch.imageMediaId !== undefined) set("image_media_id", patch.imageMediaId ?? null);
+  if (patch.menuMediaId !== undefined) set("menu_media_id", patch.menuMediaId ?? null);
+  if (patch.sortOrder !== undefined) set("sort_order", patch.sortOrder);
+  if (patch.isActive !== undefined) set("is_active", patch.isActive ? 1 : 0);
+  set("updated_at", nowIso());
   values.push(id);
   await db.prepare(`UPDATE categories SET ${fields.join(", ")} WHERE id = ?`).bind(...values).run();
+
+  // Replaced or removed uploads are cleaned up once nothing references them.
+  if (patch.imageMediaId !== undefined && patch.imageMediaId !== existing.image_media_id) await releaseMedia(existing.image_media_id);
+  if (patch.menuMediaId !== undefined && patch.menuMediaId !== existing.menu_media_id) await releaseMedia(existing.menu_media_id);
 }
 
 export async function deleteCategory(id: string) {
   const db = await getDb();
-  const row = await db.prepare("SELECT id FROM categories WHERE id = ?").bind(id).first<{ id: string }>();
+  const row = await db
+    .prepare("SELECT id, name, slug, image_media_id, menu_media_id FROM categories WHERE id = ?")
+    .bind(id)
+    .first<{ id: string; name: string; slug: string; image_media_id: string | null; menu_media_id: string | null }>();
   if (!row) throw new ApiError(404, "category_not_found", "Kategori bulunamadı.");
 
   const [children, products] = await db.batch([
@@ -240,4 +270,7 @@ export async function deleteCategory(id: string) {
   if (productCount > 0) throw new ApiError(409, "category_has_products", "Bu kategoriye bağlı ürünler var, önce ilişkiyi kaldırın.");
 
   await db.prepare("DELETE FROM categories WHERE id = ?").bind(id).run();
+  await releaseMedia(row.image_media_id);
+  await releaseMedia(row.menu_media_id);
+  return { name: row.name, slug: row.slug };
 }

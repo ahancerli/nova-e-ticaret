@@ -127,6 +127,25 @@ export async function startCheckoutForm(paymentId: string, buyerIp: string) {
 }
 
 /**
+ * Refunds (part of) a captured iyzico payment. Called only by the outbox worker, never inside a DB transaction.
+ * Uses the payment-level refund (v2: paymentId + price) so partial amounts do not need per-basket-item splitting.
+ * ⚠ Verify endpoint/fields against the current iyzico docs and sandbox before going live.
+ */
+export async function refundIyzicoPayment(input: { providerPaymentId: string; amountMinor: number; conversationId: string; ip: string }) {
+  const creds = await loadCreds();
+  const resp = await call<{ status: string; paymentId?: string; price?: number | string; errorCode?: string; errorMessage?: string }>(
+    creds,
+    "/v2/payment/refund",
+    { locale: "tr", conversationId: input.conversationId, paymentId: input.providerPaymentId, price: price(input.amountMinor), currency: "TRY", ip: input.ip },
+  );
+  const refundedMinor = Math.round(Number(resp.price ?? 0) * 100);
+  if (resp.status !== "success" || refundedMinor !== input.amountMinor) {
+    return { ok: false as const, failureCode: resp.errorCode ?? (resp.status === "success" ? "amount_mismatch" : "refund_failed") };
+  }
+  return { ok: true as const, providerRefundId: resp.paymentId ?? null };
+}
+
+/**
  * Verifies a checkout form token with iyzico and settles the payment if everything matches.
  * Used by both the browser callback and the server webhook; safe to call repeatedly.
  */

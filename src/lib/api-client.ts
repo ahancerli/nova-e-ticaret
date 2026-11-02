@@ -28,4 +28,38 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown;
   return payload;
 }
 
-export const newIdempotencyKey = () => crypto.randomUUID().replaceAll("-", "");
+/**
+ * Multipart upload with progress (fetch cannot report upload progress, so this uses XHR).
+ * Same envelope/error contract as `api()`. Abort with the returned controller's signal.
+ */
+export function uploadFile<T>(
+  path: string,
+  form: FormData,
+  opts: { onProgress?: (fraction: number) => void; signal?: AbortSignal } = {},
+): Promise<Envelope<T>> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", path);
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.withCredentials = true;
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) opts.onProgress?.(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      let payload: (Envelope<T> & { error?: { code: string; message: string; fieldErrors?: Record<string, string[]> } }) | null = null;
+      try { payload = JSON.parse(xhr.responseText); } catch { /* non-JSON error page */ }
+      if (xhr.status < 200 || xhr.status >= 300 || !payload || payload.error) {
+        const e = payload?.error;
+        reject(new ClientApiError(xhr.status, e?.code ?? "upload_failed", e?.message ?? "Yükleme başarısız. Lütfen tekrar deneyin.", e?.fieldErrors));
+        return;
+      }
+      resolve(payload);
+    };
+    xhr.onerror = () => reject(new ClientApiError(0, "network_error", "Bağlantı hatası. Lütfen tekrar deneyin."));
+    xhr.onabort = () => reject(new ClientApiError(0, "aborted", "Yükleme iptal edildi."));
+    opts.signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+    xhr.send(form);
+  });
+}
+
+export const newIdempotencyKey =() => crypto.randomUUID().replaceAll("-", "");

@@ -21,6 +21,15 @@
 			"remote": false,
 		},
 	],
+	// Uploaded media (category images, …). Objects live under keys like "categories/<uuid>.webp"
+	// and are served by src/app/assets/[...path]/route.ts. In local dev wrangler keeps a local R2 copy in .wrangler/.
+	// Production: create once with `npm run r2:create`.
+	"r2_buckets": [
+		{
+			"binding": "ASSETS_BUCKET",
+			"bucket_name": "nova-assets",
+		},
+	],
 	"observability": { "enabled": true },
 	"vars": {
 		"APP_ENV": "production",

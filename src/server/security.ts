@@ -3,8 +3,11 @@ import { ApiError } from "./http";
 import { getDb, getEnv } from "./db";
 import { hmacHex } from "./crypto";
 
-/** CSRF defence for cookie-authenticated writes: Origin (or Referer) must be our own site. */
-export async function assertSameOrigin(req: Request): Promise<void> {
+/**
+ * CSRF defence for cookie-authenticated writes: Origin (or Referer) must be our own site.
+ * Bodies must be JSON unless the route explicitly opts into multipart (file uploads).
+ */
+export async function assertSameOrigin(req: Request, opts: { multipart?: boolean } = {}): Promise<void> {
   if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return;
   const env = await getEnv();
   const own = new URL(req.url).origin;
@@ -14,6 +17,10 @@ export async function assertSameOrigin(req: Request): Promise<void> {
   const source = origin ?? (referer ? new URL(referer).origin : null);
   if (!source || !allowed.has(source)) throw new ApiError(403, "bad_origin", "İstek kaynağı doğrulanamadı.");
   const ct = req.headers.get("content-type") ?? "";
+  if (opts.multipart) {
+    if (!ct.startsWith("multipart/form-data")) throw new ApiError(415, "unsupported_media_type", "Dosya yüklemesi bekleniyor.");
+    return;
+  }
   if (req.method !== "DELETE" && !ct.includes("application/json")) {
     throw new ApiError(415, "unsupported_media_type", "JSON bekleniyor.");
   }

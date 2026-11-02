@@ -1,9 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentAdminUser } from "@/server/auth";
-import { SearchIcon } from "@/components/icons";
-import { AdminHeaderActions } from "@/components/admin/AdminHeaderActions";
-import { AdminSidebar, type SidebarEntry, type SidebarGroup } from "@/components/admin/AdminSidebar";
+import { getEnv, queryAll } from "@/server/db";
+import { AdminShell } from "@/components/admin/AdminShell";
+import type { SidebarEntry, SidebarGroup } from "@/components/admin/AdminSidebar";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: { default: "Yönetim", template: "%s | nova. yönetim" }, robots: { index: false, follow: false } };
@@ -81,31 +80,20 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     return { title: group.title, items };
   }).filter((g) => g.items.length > 0);
 
+  const [roles, env] = await Promise.all([
+    queryAll<{ name: string }>("SELECT r.name FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ? ORDER BY r.is_system DESC, r.name", user.id),
+    getEnv(),
+  ]);
+  const can = (p: string) => user.permissions.has(p);
+
   return (
-    <div className="min-h-dvh bg-[#f5f6fb] xl:grid xl:grid-cols-[280px_1fr]">
-      <aside className="border-r border-slate-800/70 bg-[#2a2e45] text-slate-200 xl:min-h-dvh">
-        <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
-          <Link href="/admin" className="text-2xl font-extrabold tracking-tight text-white">nova<span className="text-indigo-300">.</span></Link>
-          <span className="rounded-md border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-slate-300">v1</span>
-        </div>
-        <AdminSidebar groups={groups} />
-      </aside>
-      <div className="min-w-0">
-        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-            <label className="relative w-full max-w-md">
-              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input placeholder="Ara (sipariş, müşteri, modül...)" className="input border-slate-200 pl-9 text-sm" />
-            </label>
-            <div className="flex items-center gap-3">
-              <Link href="/admin/profil" className="hidden rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 md:inline-flex">{user.displayName}</Link>
-              <Link href="/" className="hidden rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 md:inline-flex">Mağaza</Link>
-              <AdminHeaderActions />
-            </div>
-          </div>
-        </header>
-        <main className="p-4 sm:p-6">{children}</main>
-      </div>
-    </div>
+    <AdminShell
+      user={{ displayName: user.displayName, email: user.email, roles: roles.map((r) => r.name) }}
+      groups={groups}
+      quickCreate={{ product: can("catalog.write"), category: can("catalog.write"), brand: can("catalog.write") }}
+      env={env.APP_ENV === "production" ? "production" : "development"}
+    >
+      {children}
+    </AdminShell>
   );
 }

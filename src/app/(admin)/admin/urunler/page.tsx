@@ -1,23 +1,13 @@
-import Link from "next/link";
 import { requirePermission } from "@/server/auth";
-import { AdminCard, AdminPageHeader } from "@/components/admin/ui";
+import { listAdminProducts } from "@/server/services/admin-products";
+import { ProductsManager } from "@/components/admin/ProductsManager";
 
-export const metadata = { title: "Ürün listesi" };
+export const metadata = { title: "Ürünler" };
+export const dynamic = "force-dynamic";
 
-export default async function AdminProductsPage() {
-  await requirePermission("catalog.read");
-  return (
-    <div className="space-y-6">
-      <AdminPageHeader title="Ürün listesi" subtitle="Ürün ekranı sonraki adımda tamamlanacak; kategori yönetimi hazır." />
-      <AdminCard className="max-w-3xl p-5">
-        <p className="text-sm text-slate-600">
-          Katalog menüsünde ürün bölümü açık. Şimdilik kategori tarafı tamamlandı, ürün CRUD ekranı bir sonraki iterasyonda buraya bağlanacak.
-        </p>
-        <Link href="/admin/kategoriler" className="mt-4 inline-flex min-h-9 items-center rounded-lg bg-[#7367f0] px-3 text-sm font-medium text-white hover:bg-[#6559df]">
-          Kategori yönetimine git
-        </Link>
-      </AdminCard>
-    </div>
-  );
+export default async function AdminProductsPage({ searchParams }: { searchParams: Promise<{ vurgula?: string }> }) {
+  const user = await requirePermission("catalog.read");
+  const [rows, { vurgula }] = await Promise.all([listAdminProducts(), searchParams]);
+  const highlightId = vurgula && rows.some((r) => r.id === vurgula) ? vurgula : null;
+  return <ProductsManager key={highlightId ?? "list"} rows={rows} canWrite={user.permissions.has("catalog.write")} highlightId={highlightId} />;
 }
-

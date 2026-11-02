@@ -2,6 +2,9 @@
 -- NOVA — DEVELOPMENT / DEMO SEED (no real customer data, no secrets, no IBAN)
 -- Apply after schema.sql:  npm run db:seed:remote
 -- Safe to re-run: INSERT OR IGNORE everywhere.
+-- Demo users' passwords are not documented: create your own admin with
+--   npm run admin:create:local -- you@example.com "Name"     (remote: npm run admin:create)
+-- In production delete or re-password admin@nova.local / musteri@nova.local.
 -- =============================================================================
 
 -- RBAC ------------------------------------------------------------------------

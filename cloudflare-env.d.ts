@@ -33,12 +33,39 @@ interface D1Database {
   exec(query: string): Promise<{ count: number; duration: number }>;
 }
 
+interface R2HTTPMetadata {
+  contentType?: string;
+  cacheControl?: string;
+}
+
+interface R2Object {
+  key: string;
+  size: number;
+  etag: string;
+  httpEtag: string;
+  uploaded: Date;
+  httpMetadata?: R2HTTPMetadata;
+  writeHttpMetadata(headers: Headers): void;
+}
+
+interface R2ObjectBody extends R2Object {
+  body: ReadableStream;
+}
+
+interface R2Bucket {
+  put(key: string, value: ArrayBuffer | ArrayBufferView | ReadableStream | string, options?: { httpMetadata?: R2HTTPMetadata; customMetadata?: Record<string, string> }): Promise<R2Object | null>;
+  get(key: string): Promise<R2ObjectBody | null>;
+  head(key: string): Promise<R2Object | null>;
+  delete(keys: string | string[]): Promise<void>;
+}
+
 interface Fetcher {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
 }
 
 interface CloudflareEnv {
   DB: D1Database;
+  ASSETS_BUCKET: R2Bucket;
   ASSETS: Fetcher;
   WORKER_SELF_REFERENCE: Fetcher;
   APP_ENV: "development" | "production";

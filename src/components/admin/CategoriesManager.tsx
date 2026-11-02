@@ -1,289 +1,255 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, FolderPlus, Save, Trash2 } from "lucide-react";
-import { api, ClientApiError } from "@/lib/api-client";
-import { AdminBadge, AdminCard, AdminCardTitle, AdminPageHeader } from "./ui";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronRight, FolderTree, Plus, Save, Trash2 } from "lucide-react";
+import { api } from "@/lib/api-client";
+import { notify } from "@/lib/toast";
+import type { CategoryNode } from "@/server/services/admin-categories";
+import { Collapsible } from "@/components/ui/Collapsible";
+import { AdminBadge, AdminCard, AdminPageHeader } from "./ui";
+import { AdminDrawer } from "./AdminDrawer";
+import { AdminConfirmDialog } from "./AdminConfirmDialog";
+import { CategoryForm } from "./CategoryForm";
 
-type Node = {
-  id: string;
-  parentId: string | null;
-  name: string;
-  slug: string;
-  description: string | null;
-  sortOrder: number;
-  isActive: boolean;
-  productCount: number;
-  childCount: number;
-  depth: number;
-  path: string;
-  children: Node[];
-};
+type TreeResponse = { tree: CategoryNode[]; flat: CategoryNode[] };
 
-type TreeResponse = { tree: Node[]; flat: Node[] };
+const dt = new Intl.DateTimeFormat("tr-TR", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Istanbul" });
 
-export function CategoriesManager({ initial }: { initial: TreeResponse }) {
-  const router = useRouter();
+/** Ids of `id` and all its ancestors, so a freshly created node is visible in the tree. */
+function ancestorsOf(flat: CategoryNode[], id: string): string[] {
+  const byId = new Map(flat.map((n) => [n.id, n]));
+  const out: string[] = [];
+  for (let cur = byId.get(id); cur?.parentId; cur = byId.get(cur.parentId)) out.push(cur.parentId);
+  return out;
+}
+
+export function CategoriesManager({ initial, createdId }: { initial: TreeResponse; createdId: string | null }) {
   const [data, setData] = useState<TreeResponse>(initial);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(initial.flat.filter((n) => n.depth === 0).map((n) => n.id)));
-  const [selectedId, setSelectedId] = useState<string | null>(initial.flat[0]?.id ?? null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () => new Set([...initial.flat.filter((n) => n.depth === 0).map((n) => n.id), ...(createdId ? ancestorsOf(initial.flat, createdId) : [])]),
+  );
+  // editingId outlives `drawerOpen` so the drawer keeps its content during the slide-out animation.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(createdId);
+  const [formBusy, setFormBusy] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  const selected = useMemo(() => data.flat.find((n) => n.id === selectedId) ?? null, [data, selectedId]);
-  const [form, setForm] = useState({
-    mode: "create" as "create" | "edit",
-    name: "",
-    slug: "",
-    parentId: "" as string,
-    description: "",
-    sortOrder: 0,
-    isActive: true,
-  });
+  useEffect(() => {
+    if (!createdId) return;
+    const created = initial.flat.find((n) => n.id === createdId);
+    // Fixed id: effects may run twice in dev; Sonner de-duplicates by id.
+    if (created) notify.success("Kategori eklendi", { id: `category-created-${createdId}`, description: created.path });
+    // Drop ?eklendi=… without re-rendering the server page.
+    window.history.replaceState(null, "", window.location.pathname);
+  }, [createdId, initial.flat]);
 
-  const refresh = async (nextSelected?: string | null) => {
+  const editing = useMemo(() => data.flat.find((n) => n.id === editingId) ?? null, [data, editingId]);
+
+  // A category cannot move under itself or one of its own descendants.
+  const parentOptions = useMemo(() => {
+    if (!editing) return data.flat;
+    const blocked = new Set<string>();
+    const walk = (n: CategoryNode) => { blocked.add(n.id); n.children.forEach(walk); };
+    walk(editing);
+    return data.flat.filter((n) => !blocked.has(n.id));
+  }, [data, editing]);
+
+  const reload = useCallback(async () => {
     const r = await api<TreeResponse>("/api/admin/categories");
     setData(r.data);
-    const id = nextSelected ?? selectedId;
-    setSelectedId(id && r.data.flat.some((n) => n.id === id) ? id : r.data.flat[0]?.id ?? null);
-  };
+  }, []);
 
-  const openCreate = (parentId?: string | null) => {
-    setForm({
-      mode: "create",
-      name: "",
-      slug: "",
-      parentId: parentId ?? "",
-      description: "",
-      sortOrder: 0,
-      isActive: true,
+  const openEditor = (id: string) => {
+    setEditingId(id);
+    setHighlightId(id);
+    setDrawerOpen(true);
+  };
+  const closeEditor = useCallback(() => setDrawerOpen(false), []);
+
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
-    setError(null);
+
+  const onSaved = async (id: string) => {
+    await reload();
+    setDrawerOpen(false);
+    setHighlightId(id);
+    notify.success("Kategori güncellendi", { description: data.flat.find((n) => n.id === id)?.name });
   };
 
-  const openEdit = () => {
-    if (!selected) return;
-    setForm({
-      mode: "edit",
-      name: selected.name,
-      slug: selected.slug,
-      parentId: selected.parentId ?? "",
-      description: selected.description ?? "",
-      sortOrder: selected.sortOrder,
-      isActive: selected.isActive,
-    });
-    setError(null);
-  };
-
-  const submit = async () => {
-    setBusy(true);
-    setError(null);
+  const remove = async () => {
+    if (!editing) return;
+    const { id, name } = editing;
+    setDeleting(true);
     try {
-      const payload = {
-        name: form.name,
-        slug: form.slug || undefined,
-        parentId: form.parentId || null,
-        description: form.description || null,
-        sortOrder: form.sortOrder,
-        isActive: form.isActive,
-      };
-      if (form.mode === "create") {
-        const r = await api<{ id: string }>("/api/admin/categories", { method: "POST", json: payload });
-        await refresh(r.data.id);
-      } else if (selected) {
-        await api(`/api/admin/categories/${selected.id}`, { method: "PUT", json: payload });
-        await refresh(selected.id);
-      }
-      router.refresh();
+      await api(`/api/admin/categories/${encodeURIComponent(id)}`, { method: "DELETE" });
+      setConfirmOpen(false);
+      setDrawerOpen(false);
+      setHighlightId(null);
+      await reload();
+      notify.success("Kategori silindi", { description: name });
     } catch (err) {
-      setError(err instanceof ClientApiError ? err.message : "İşlem başarısız.");
+      setConfirmOpen(false);
+      notify.error(err, { fallback: "Kategori silinemedi." });
     } finally {
-      setBusy(false);
+      setDeleting(false);
     }
   };
 
-  const removeSelected = async () => {
-    if (!selected || busy) return;
-    if (!confirm(`"${selected.name}" kategorisi silinsin mi?`)) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api(`/api/admin/categories/${selected.id}`, { method: "DELETE" });
-      await refresh(null);
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof ClientApiError ? err.message : "Silme başarısız.");
-    } finally {
-      setBusy(false);
-    }
-  };
+  const canDelete = editing ? editing.childCount === 0 && editing.productCount === 0 : false;
 
   return (
     <div className="space-y-6">
       <AdminPageHeader
-        title="Kategori yönetimi"
-        subtitle="Kategori ağacı, kategori detayları ve CRUD işlemleri."
+        title="Kategoriler"
+        subtitle={`${data.flat.length} kategori · düzenlemek için bir kategoriye tıklayın`}
         actions={
-          <button type="button" onClick={() => openCreate(null)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#7367f0] px-3 text-sm font-medium text-white hover:bg-[#6559df]">
-            <FolderPlus className="h-4 w-4" />
-            Yeni kök kategori
-          </button>
+          <Link href="/admin/kategoriler/yeni" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#7367f0] px-4 text-sm font-semibold text-white shadow-sm shadow-[#7367f0]/30 transition hover:-translate-y-px hover:bg-[#6559df] hover:shadow-md hover:shadow-[#7367f0]/30">
+            <Plus className="h-4 w-4" />
+            Kategori ekle
+          </Link>
         }
       />
 
-      <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
-        <AdminCard>
-          <AdminCardTitle title={`Kategori ağacı (${data.flat.length})`} subtitle="İç içe kategori yapısı" />
-          <div className="p-4">
-            {data.tree.length === 0 ? <p className="text-sm text-slate-500">Henüz kategori yok.</p> : data.tree.map((n) => (
-              <TreeNode
-                key={n.id}
-                node={n}
-                selectedId={selectedId}
-                expanded={expanded}
-                onSelect={(id) => setSelectedId(id)}
-                onToggle={(id) =>
-                  setExpanded((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(id)) next.delete(id);
-                    else next.add(id);
-                    return next;
-                  })
-                }
-                onQuickAdd={(id) => openCreate(id)}
-              />
-            ))}
+      <AdminCard>
+        {data.tree.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
+            <FolderTree className="h-10 w-10 text-slate-300" />
+            <p className="text-sm text-slate-500">Henüz kategori yok. Başlamak için üstten “Kategori ekle”yi kullanın.</p>
           </div>
-        </AdminCard>
+        ) : (
+          <ul role="tree" aria-label="Kategori ağacı" className="p-2 sm:p-3">
+            {data.tree.map((n) => (
+              <TreeNode key={n.id} node={n} expanded={expanded} activeId={drawerOpen ? editingId : highlightId} onToggle={toggle} onOpen={openEditor} />
+            ))}
+          </ul>
+        )}
+      </AdminCard>
 
-        <div className="space-y-4">
-          <AdminCard>
-            <AdminCardTitle
-              title={form.mode === "create" ? "Kategori ekle" : "Kategori düzenle"}
-              subtitle={form.mode === "create" ? "Yeni kategori için alanları doldurun." : selected?.path ?? ""}
-              actions={
-                form.mode === "edit" && selected ? (
-                  <Link href={`/admin/kategoriler/${selected.id}`} className="text-sm text-[#7367f0] hover:underline">
-                    Detay sayfası
-                  </Link>
-                ) : null
-              }
-            />
-            <div className="space-y-3 p-4">
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-slate-600">Ad</span>
-                <input className="input border-slate-200" value={form.name} onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))} />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-slate-600">Slug (boşsa otomatik)</span>
-                <input className="input border-slate-200" value={form.slug} onChange={(e) => setForm((s) => ({ ...s, slug: e.target.value }))} />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-slate-600">Üst kategori</span>
-                <select className="input border-slate-200" value={form.parentId} onChange={(e) => setForm((s) => ({ ...s, parentId: e.target.value }))}>
-                  <option value="">(Kök kategori)</option>
-                  {data.flat
-                    .filter((x) => !(form.mode === "edit" && selected && x.id === selected.id))
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>{"— ".repeat(c.depth)}{c.name}</option>
-                    ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-slate-600">Sıra</span>
-                <input type="number" className="input border-slate-200" value={form.sortOrder} onChange={(e) => setForm((s) => ({ ...s, sortOrder: Number(e.target.value) }))} />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-slate-600">Açıklama</span>
-                <textarea className="input min-h-24 border-slate-200 py-2" value={form.description} onChange={(e) => setForm((s) => ({ ...s, description: e.target.value }))} />
-              </label>
-              <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" className="size-4 accent-[#7367f0]" checked={form.isActive} onChange={(e) => setForm((s) => ({ ...s, isActive: e.target.checked }))} />
-                Aktif
-              </label>
-
-              {error ? <p className="text-sm text-red-600">{error}</p> : null}
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button type="button" onClick={submit} disabled={busy || form.name.trim().length < 2} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-[#7367f0] px-3 text-sm font-medium text-white hover:bg-[#6559df] disabled:opacity-60">
-                  <Save className="h-4 w-4" />
-                  {form.mode === "create" ? "Kategoriyi ekle" : "Güncelle"}
+      <AdminDrawer
+        open={drawerOpen && !!editing}
+        onClose={closeEditor}
+        title={editing ? `${editing.name} düzenle` : "Kategori düzenle"}
+        subtitle={editing?.path}
+        footer={
+          editing ? (
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <button type="button" onClick={() => setConfirmOpen(true)} disabled={!canDelete || deleting || formBusy}
+                title={canDelete ? undefined : "Alt kategorisi veya ürünü olan kategori silinemez."}
+                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-red-200 px-4 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">
+                <Trash2 className="h-4 w-4" />
+                Sil
+              </button>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                <button type="button" onClick={closeEditor} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-200 px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+                  Vazgeç
                 </button>
-                {form.mode === "edit" ? (
-                  <button type="button" onClick={removeSelected} disabled={busy || !selected} className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-red-200 px-3 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-60">
-                    <Trash2 className="h-4 w-4" />
-                    Sil
-                  </button>
-                ) : null}
-                {selected ? (
-                  <button type="button" onClick={openEdit} className="inline-flex min-h-9 items-center rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                    Seçiliyi düzenle
-                  </button>
-                ) : null}
+                <button type="submit" form="category-edit-form" disabled={formBusy || deleting}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#7367f0] px-4 text-sm font-semibold text-white transition hover:bg-[#6559df] disabled:opacity-60">
+                  <Save className="h-4 w-4" />
+                  {formBusy ? "Bekleyin…" : "Güncelle"}
+                </button>
               </div>
             </div>
-          </AdminCard>
+          ) : null
+        }
+      >
+        {editing ? (
+          <div className="space-y-5">
+            <CategoryForm
+              key={editing.id}
+              formId="category-edit-form"
+              mode="edit"
+              category={editing}
+              parents={parentOptions}
+              onSaved={onSaved}
+              onBusyChange={setFormBusy}
+            />
+            <dl className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-xs">
+              <div><dt className="text-slate-500">Ürün bağlantısı</dt><dd className="mt-0.5 font-medium text-slate-800">{editing.productCount}</dd></div>
+              <div><dt className="text-slate-500">Alt kategori</dt><dd className="mt-0.5 font-medium text-slate-800">{editing.childCount}</dd></div>
+              <div><dt className="text-slate-500">Oluşturulma</dt><dd className="mt-0.5 font-medium text-slate-800">{dt.format(new Date(editing.createdAt))}</dd></div>
+              <div><dt className="text-slate-500">Son güncelleme</dt><dd className="mt-0.5 font-medium text-slate-800">{dt.format(new Date(editing.updatedAt))}</dd></div>
+              <div className="col-span-2"><dt className="text-slate-500">Kimlik (id)</dt><dd className="mt-0.5 break-all font-mono text-slate-700">{editing.id}</dd></div>
+            </dl>
+          </div>
+        ) : null}
+      </AdminDrawer>
 
-          {selected ? (
-            <AdminCard className="p-4">
-              <h3 className="text-sm font-semibold text-slate-800">{selected.name}</h3>
-              <p className="mt-1 text-xs text-slate-500">{selected.path}</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <AdminBadge tone={selected.isActive ? "green" : "slate"}>{selected.isActive ? "Aktif" : "Pasif"}</AdminBadge>
-                <AdminBadge tone="blue">Ürün: {selected.productCount}</AdminBadge>
-                <AdminBadge tone="purple">Alt kategori: {selected.childCount}</AdminBadge>
-              </div>
-            </AdminCard>
-          ) : null}
-        </div>
-      </div>
+      <AdminConfirmDialog
+        open={confirmOpen}
+        title="Kategori silinsin mi?"
+        description={editing ? `"${editing.name}" kalıcı olarak silinecek. Bu işlem geri alınamaz.` : undefined}
+        confirmLabel="Evet, sil"
+        busyLabel="Siliniyor…"
+        busy={deleting}
+        onConfirm={remove}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }
 
 function TreeNode({
   node,
-  selectedId,
   expanded,
-  onSelect,
+  activeId,
   onToggle,
-  onQuickAdd,
+  onOpen,
 }: {
-  node: Node;
-  selectedId: string | null;
+  node: CategoryNode;
   expanded: Set<string>;
-  onSelect: (id: string) => void;
+  activeId: string | null;
   onToggle: (id: string) => void;
-  onQuickAdd: (id: string) => void;
+  onOpen: (id: string) => void;
 }) {
-  const isOpen = expanded.has(node.id);
   const hasChildren = node.children.length > 0;
+  const isOpen = hasChildren && expanded.has(node.id);
+  const active = activeId === node.id;
   return (
-    <div className="select-none">
-      <div className={`mb-1 flex items-center justify-between rounded-lg px-2 py-1.5 text-sm ${selectedId === node.id ? "bg-indigo-50 text-indigo-700" : "text-slate-700 hover:bg-slate-50"}`}>
-        <button type="button" className="flex min-w-0 items-center gap-2" onClick={() => onSelect(node.id)}>
-          {hasChildren ? (
-            <span onClick={(e) => { e.stopPropagation(); onToggle(node.id); }}>
-              {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            </span>
-          ) : <span className="w-4" />}
-          <span className="truncate">{node.name}</span>
+    <li role="treeitem" aria-expanded={hasChildren ? isOpen : undefined} aria-selected={active}>
+      <div className={`group flex min-h-12 items-center gap-1 rounded-lg pr-2 transition-colors duration-200 ${active ? "bg-indigo-50 ring-1 ring-indigo-200" : "hover:bg-slate-50"}`}>
+        {hasChildren ? (
+          <button type="button" onClick={() => onToggle(node.id)} aria-label={`${node.name} ${isOpen ? "daralt" : "genişlet"}`}
+            className="inline-flex size-9 flex-none items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-200/60 hover:text-slate-700">
+            <ChevronRight className={`h-4 w-4 transition-transform duration-300 ease-out-expo ${isOpen ? "rotate-90" : ""}`} />
+          </button>
+        ) : (
+          <span className="size-9 flex-none" aria-hidden />
+        )}
+        <button type="button" onClick={() => onOpen(node.id)} className="flex min-w-0 flex-1 items-center gap-3 py-2 text-left">
+          <span className="grid size-9 flex-none place-items-center overflow-hidden rounded-lg bg-slate-100 transition-transform duration-200 group-hover:scale-105">
+            {node.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={node.imageUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <FolderTree className="h-4 w-4 text-slate-400" />
+            )}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className={`block truncate text-sm font-medium ${node.isActive ? "text-slate-800" : "text-slate-400"}`}>{node.name}</span>
+            <span className="block truncate font-mono text-xs text-slate-400">/{node.slug}</span>
+          </span>
+          <span className="hidden flex-none text-xs tabular-nums text-slate-500 sm:inline">{node.productCount} ürün</span>
+          {node.isActive ? null : <AdminBadge tone="slate">Pasif</AdminBadge>}
         </button>
-        <div className="flex items-center gap-1">
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">{node.productCount}</span>
-          <button type="button" onClick={() => onQuickAdd(node.id)} className="rounded px-1 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700">+ alt</button>
-        </div>
       </div>
-      {hasChildren && isOpen ? (
-        <div className="ml-4 border-l border-slate-200 pl-2">
-          {node.children.map((c) => (
-            <TreeNode key={c.id} node={c} selectedId={selectedId} expanded={expanded} onSelect={onSelect} onToggle={onToggle} onQuickAdd={onQuickAdd} />
-          ))}
-        </div>
+      {hasChildren ? (
+        <Collapsible open={isOpen}>
+          <ul role="group" className="ml-4 border-l border-slate-200 pl-1 sm:ml-5 sm:pl-2">
+            {node.children.map((c) => (
+              <TreeNode key={c.id} node={c} expanded={expanded} activeId={activeId} onToggle={onToggle} onOpen={onOpen} />
+            ))}
+          </ul>
+        </Collapsible>
       ) : null}
-    </div>
+    </li>
   );
 }
-

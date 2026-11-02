@@ -39,9 +39,14 @@ export async function loadCartLines(cartId: string): Promise<CartLineRow[]> {
     .prepare(`SELECT ci.id AS cart_item_id, v.id AS variant_id, p.id AS product_id, p.brand_id, v.sku, p.name AS product_name, v.name AS variant_name,
                      ci.quantity, vp.unit_price_minor, p.tax_rate_bps, v.is_active, p.status AS product_status,
                      COALESCE((SELECT SUM(ib.on_hand - ib.reserved) FROM inventory_balances ib WHERE ib.variant_id = v.id), 0) AS available,
-                     (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
-                       WHERE pm.product_id = p.id AND (pm.variant_id IS NULL OR pm.variant_id = v.id)
-                       ORDER BY (pm.variant_id = v.id) DESC, pm.is_primary DESC, pm.sort_order LIMIT 1) AS image_url,
+                     -- variant-specific image first, product gallery second. (Outer columns may only be used in
+                     -- the subquery WHERE: SQLite ≥ 3.51 rejects them in a correlated subquery's ORDER BY.)
+                     COALESCE(
+                       (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
+                         WHERE pm.variant_id = v.id ORDER BY pm.is_primary DESC, pm.sort_order LIMIT 1),
+                       (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
+                         WHERE pm.product_id = p.id AND pm.variant_id IS NULL ORDER BY pm.is_primary DESC, pm.sort_order LIMIT 1)
+                     ) AS image_url,
                      (SELECT group_concat(ao.label, ' / ') FROM variant_options vo JOIN attribute_options ao ON ao.id = vo.option_id
                        WHERE vo.variant_id = v.id) AS option_labels
                 FROM cart_items ci

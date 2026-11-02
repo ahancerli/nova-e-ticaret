@@ -4,9 +4,6 @@ import { notFound } from "next/navigation";
 import { AdminBadge, AdminCard, AdminCardTitle, AdminPageHeader } from "@/components/admin/ui";
 
 const MODULES: Record<string, { title: string; tables: string; api: string }> = {
-  urunler: { title: "Ürünler", tables: "products, product_variants, variant_prices, inventory_balances, product_media, product_attribute_values", api: "/api/admin/products" },
-  kategoriler: { title: "Kategoriler", tables: "categories, category_attributes, seo_documents", api: "/api/admin/categories" },
-  markalar: { title: "Markalar", tables: "brands, seo_documents", api: "/api/admin/brands" },
   kampanyalar: { title: "Kampanyalar ve kuponlar", tables: "campaigns, campaign_products/brands/categories, coupons", api: "/api/admin/campaigns" },
   vitrin: { title: "Vitrin", tables: "sliders, slides, story_collections, stories, story_frames, home_sections", api: "/api/admin/home" },
   odemeler: { title: "Ödeme sistemleri", tables: "payment_configs, bank_accounts, integration_secrets, bank_transfers", api: "/api/admin/payments" },

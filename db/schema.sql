@@ -1,6 +1,7 @@
 -- =============================================================================
 -- NOVA E-COMMERCE — SINGLE DDL SCRIPT (Cloudflare D1 / SQLite)
--- 87 STRICT tables · indexes · triggers
+-- 87 STRICT tables · 47 indexes · 23 triggers
+-- Data rules, status transitions and value vocabularies used by the app: db/README.md
 --
 -- Apply:
 --   npm run db:schema:remote   (wrangler d1 execute nova-db --remote --file=db/schema.sql)

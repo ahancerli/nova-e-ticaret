@@ -1,5 +1,6 @@
-// Creates (or re-roles) an admin user directly in the remote D1.
-//   npm run admin:create -- admin@example.com "Ad Soyad"
+// Creates (or re-roles / resets the password of) an admin user in D1.
+//   npm run admin:create:local  -- admin@example.com "Ad Soyad"     → local SQLite D1 (.env.local)
+//   npm run admin:create        -- admin@example.com "Ad Soyad"     → remote Cloudflare D1 (.env)
 // The password is read from the terminal (not from argv, so it never lands in shell history).
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline/promises";
@@ -8,11 +9,19 @@ import bcrypt from "bcryptjs";
 import { loadEnv, requireEnv } from "./env.mjs";
 
 loadEnv();
-requireEnv("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_D1_DATABASE_NAME", "CLOUDFLARE_D1_DATABASE_ID");
+const remote = (process.env.D1_MODE || "remote").toLowerCase() === "remote";
+if (remote) requireEnv("CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN");
+const db = remote
+  ? process.env.CLOUDFLARE_D1_REMOTE_DATABASE_NAME || process.env.CLOUDFLARE_D1_DATABASE_NAME
+  : process.env.CLOUDFLARE_D1_LOCAL_DATABASE_NAME || process.env.CLOUDFLARE_D1_DATABASE_NAME || "nova-db";
+if (!db) {
+  console.error("✖ D1 database name is missing (CLOUDFLARE_D1_*_DATABASE_NAME).");
+  process.exit(1);
+}
 
 const [emailArg, nameArg] = process.argv.slice(2);
 if (!emailArg) {
-  console.error('Usage: npm run admin:create -- <email> "<display name>"');
+  console.error('Usage: npm run admin:create[:local] -- <email> "<display name>"');
   process.exit(1);
 }
 const email = emailArg.trim().toLowerCase();
@@ -38,9 +47,10 @@ INSERT OR IGNORE INTO staff_profiles (user_id) SELECT id FROM users WHERE email_
 INSERT OR IGNORE INTO user_roles (user_id, role_id) SELECT id, 'role_admin' FROM users WHERE email_normalized = ${q(email)};
 `;
 
+console.log(`→ ${remote ? "remote" : "local"} D1 "${db}": admin ${email}`);
 const r = spawnSync(
   "npx",
-  ["--no-install", "wrangler", "d1", "execute", process.env.CLOUDFLARE_D1_DATABASE_NAME, "--remote", "--yes", "--command", sql],
+  ["--no-install", "wrangler", "d1", "execute", db, remote ? "--remote" : "--local", "--yes", "--command", sql],
   { stdio: "inherit", env: process.env, shell: process.platform === "win32" },
 );
 process.exit(r.status ?? 1);
