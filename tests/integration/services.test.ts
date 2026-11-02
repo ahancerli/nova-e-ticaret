@@ -83,7 +83,7 @@ const sec = {
 };
 const money = await S("lib/money");
 
-await t("shell data (header/footer tree)", async () => { const s = await catalog.getShellData(); assert(s.header.length === 5 && s.footer[0].children.length === 2 && s.settings["site.name"] === "nova.", JSON.stringify(s).slice(0, 200)); });
+await t("shell data (header/footer tree)", async () => { const s = await catalog.getShellData(); assert(s.header.length === 5 && s.footer.length === 1 && s.footer[0].children.length === 3 && !("settings" in s), JSON.stringify(s).slice(0, 200)); });
 await t("home data (stories, hero, products)", async () => { const h = await catalog.getHomeData(); assert(h.sections.map((x: any) => x.type).join() === "story_strip,hero_slider,products", h.sections.map((x: any) => x.type).join()); const p = h.sections[2]; assert(p.products.length === 5 && p.products[0].priceMinor === 109999 && p.products[0].hasVariants, JSON.stringify(p.products[0])); });
 await t("list by parent category includes descendants", async () => { const r = await catalog.listProducts({ category: "moda", sort: "newest", page: 1, attrs: {} }); assert(r.total === 1 && r.items[0].slug === "yarim-balikci-yaka-triko", JSON.stringify(r)); });
 await t("same-SKU variant filter: navy+L has no SKU", async () => { const r = await catalog.listProducts({ sort: "newest", page: 1, attrs: { color: ["navy"], size: ["l"] } }); assert(r.total === 0, String(r.total)); const r2 = await catalog.listProducts({ sort: "newest", page: 1, attrs: { color: ["navy", "black"], size: ["l"] } }); assert(r2.total === 1, String(r2.total)); });

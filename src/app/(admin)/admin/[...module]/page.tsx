@@ -8,8 +8,6 @@ const MODULES: Record<string, { title: string; tables: string; api: string }> = 
   vitrin: { title: "Vitrin", tables: "sliders, slides, story_collections, stories, story_frames, home_sections", api: "/api/admin/home" },
   odemeler: { title: "Ödeme sistemleri", tables: "payment_configs, bank_accounts, integration_secrets, bank_transfers", api: "/api/admin/payments" },
   entegrasyonlar: { title: "Entegrasyonlar", tables: "integrations, integration_secrets, shipping_methods", api: "/api/admin/integrations" },
-  kullanicilar: { title: "Kullanıcılar ve roller", tables: "users, staff_profiles, roles, permissions, user_roles", api: "/api/admin/users" },
-  ayarlar: { title: "Site ve SEO ayarları", tables: "site_settings, seo_documents, content_pages, navigation_menus/items", api: "/api/admin/settings" },
   denetim: { title: "Denetim kayıtları", tables: "audit_logs", api: "/api/admin/audit" },
 };
 

@@ -16,6 +16,7 @@ export function AdminFormDialog({
   icon: Icon,
   tone = "primary",
   submitLabel,
+  cancelLabel = "Vazgeç",
   busyLabel = "İşleniyor…",
   busy = false,
   submitDisabled = false,
@@ -29,6 +30,7 @@ export function AdminFormDialog({
   icon?: ComponentType<{ className?: string }>;
   tone?: "primary" | "danger" | "success";
   submitLabel: string;
+  cancelLabel?: string;
   busyLabel?: string;
   busy?: boolean;
   submitDisabled?: boolean;
@@ -75,7 +77,7 @@ export function AdminFormDialog({
           {children ? <div className="space-y-4 px-5 pt-4 sm:px-6">{children}</div> : null}
           <div className="mt-5 flex flex-col-reverse gap-2 border-t border-slate-100 px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
             <button type="button" onClick={onCancel} disabled={busy} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-200 px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-60">
-              Vazgeç
+              {cancelLabel}
             </button>
             <button type="submit" disabled={busy || submitDisabled} className={`inline-flex min-h-10 items-center justify-center rounded-lg px-4 text-sm font-semibold text-white shadow-sm transition disabled:opacity-60 ${tones.btn}`}>
               {busy ? busyLabel : submitLabel}

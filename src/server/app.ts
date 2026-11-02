@@ -22,6 +22,8 @@ import { registerAudit } from "@/modules/audit/audit-log";
 import { registerCart } from "@/modules/cart";
 import { registerCatalog } from "@/modules/catalog";
 import { registerCheckout } from "@/modules/checkout";
+import { registerContent } from "@/modules/content";
+import { registerCustomers } from "@/modules/customers";
 import { GetCurrentPrincipalToken, registerIdentity } from "@/modules/identity";
 import { registerMedia } from "@/modules/media";
 import { registerNotifications } from "@/modules/notifications/notifications";
@@ -32,7 +34,9 @@ import { registerPlatform } from "@/modules/platform/module";
 import { registerSecrets } from "@/modules/platform/secrets";
 import { registerPricing } from "@/modules/pricing";
 import { registerReporting } from "@/modules/reporting";
+import { registerSettings } from "@/modules/settings";
 import { registerShipping } from "@/modules/shipping";
+import { registerStaff } from "@/modules/staff";
 import { registerStorefront } from "@/modules/storefront";
 import { getEnv } from "./env";
 
@@ -57,7 +61,11 @@ registerSecrets(container);
 registerOutbox(container);
 registerIdentity(container);
 registerAudit(container);
+registerStaff(container); // panel users + roles (invitation links from identity)
 registerMedia(container);
+registerSettings(container);
+registerContent(container); // {{placeholders}} from settings
+registerCustomers(container); // members + storefront sign-up (consent versions from content)
 registerCatalog(container);
 registerStorefront(container);
 registerPricing(container);

@@ -54,11 +54,11 @@ def setup_checkout(c, cid="co_1", cart="cart_1"):
 
 
 # --- structure ---------------------------------------------------------------
-@test("01 88 tables exist")
+@test("01 89 tables exist")
 def _():
     c = new_db()
     n = c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()[0]
-    assert n == 88, n
+    assert n == 89, n
 
 
 @test("02 all tables are STRICT")
@@ -403,6 +403,29 @@ def _():
     except sqlite3.DatabaseError as e:
         assert "batch_guard_failed:3" in str(e), e
     c.execute("ROLLBACK")
+
+
+@test("42 content page: legal kind needs a legal type; one active page per legal type; slug format")
+def _():
+    c = new_db()
+    ins = ("INSERT INTO content_pages (id, slug, title, kind, legal_type, body_html, status, published_at) "
+           "VALUES (?, ?, 'Başlık', ?, ?, '<p>x</p>', ?, ?)")
+    expect_error(c, ins, ("p1", "metin-a", "legal", None, "draft", None), "CHECK")
+    expect_error(c, ins, ("p1", "metin-a", "general", "kvkk", "draft", None), "CHECK")
+    expect_error(c, ins, ("p1", "Buyuk-Harf", "general", None, "draft", None), "CHECK")
+    expect_error(c, ins, ("p1", "metin-a", "general", None, "published", None), "CHECK")
+    # seed already holds an active distance_sales page
+    expect_error(c, ins, ("p2", "ikinci-sozlesme", "legal", "distance_sales", "draft", None), "UNIQUE")
+    c.execute("UPDATE content_pages SET status = 'archived' WHERE legal_type = 'distance_sales'")
+    c.execute(ins, ("p2", "ikinci-sozlesme", "legal", "distance_sales", "draft", None))
+
+
+@test("43 site settings: key format, known group, valid JSON")
+def _():
+    c = new_db()
+    expect_error(c, "INSERT INTO site_settings (key, group_name, value_json) VALUES ('Site.Name', 'general', '1')", "CHECK")
+    expect_error(c, "INSERT INTO site_settings (key, group_name, value_json) VALUES ('site.x', 'checkout', '1')", "CHECK")
+    expect_error(c, "INSERT INTO site_settings (key, group_name, value_json) VALUES ('site.x', 'general', '{bad')", "CHECK")
 
 
 if __name__ == "__main__":

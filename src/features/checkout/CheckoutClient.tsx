@@ -8,12 +8,10 @@ import { ClientApiError, errorMessage, newIdempotencyKey } from "@/lib/api-clien
 import { useFieldErrors } from "@/lib/use-field-errors";
 import { checkoutApi } from "./api";
 import { formatMinor } from "@/lib/money";
-
-const TERMS_VERSION = "2026-10-v1";
-
+import type { CheckoutLegal } from "@/modules/content";
 
 /** Guest checkout (no account required, spec R13). All amounts come from the server. */
-export function CheckoutClient() {
+export function CheckoutClient({ legal }: { legal: CheckoutLegal }) {
   const { cart, refresh } = useCart();
   const router = useRouter();
   const [method, setMethod] = useState<"iyzico" | "bank_transfer">("iyzico");
@@ -54,7 +52,7 @@ export function CheckoutClient() {
       const res = await checkoutApi.confirm({
         checkoutId: quote.data.checkoutId, paymentMethod: method, email: s("email"), phone: s("phone"),
         shipping: addr("s_"), billing: sameBilling ? undefined : addr("b_"), note: s("note") || undefined,
-        acceptedTermsVersion: TERMS_VERSION,
+        acceptedTermsVersion: legal.termsVersion,
       }, idemKey);
       if (res.data.payment?.paymentPageUrl) {
         window.location.assign(res.data.payment.paymentPageUrl);
@@ -130,7 +128,10 @@ export function CheckoutClient() {
           </dl>
           <label className="mt-4 flex gap-2 text-xs text-ink-soft">
             <input type="checkbox" required className="mt-0.5 h-4 w-4 accent-brand" />
-            <span><Link href="/sayfa/on-bilgilendirme" className="underline">Ön bilgilendirme formu</Link> ve <Link href="/sayfa/mesafeli-satis" className="underline">mesafeli satış sözleşmesini</Link> okudum, onaylıyorum.</span>
+            {/* Documents open in a new tab so the filled form is kept; versions go with the order (user_consents). */}
+            <span>
+              <LegalLink doc={legal.preInformation}>Ön bilgilendirme formu</LegalLink> ve <LegalLink doc={legal.distanceSales}>mesafeli satış sözleşmesini</LegalLink> okudum, onaylıyorum.
+            </span>
           </label>
           {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-danger">{error}</p>}
           <button className="btn btn-primary mt-4 w-full" disabled={busy}>{busy ? "İşleniyor…" : "Siparişi onayla"}</button>
@@ -161,4 +162,9 @@ function AddressFields({ p, kind, fe }: { p: string; kind: "shipping" | "billing
       <div className="sm:col-span-2"><Field name={`${p}line1`} label="Adres" auto={`${kind} street-address`} err={fe(`${kind}.line1`)} /></div>
     </div>
   );
+}
+
+function LegalLink({ doc, children }: { doc: CheckoutLegal["distanceSales"]; children: React.ReactNode }) {
+  if (!doc) return <>{children}</>;
+  return <Link href={doc.href} target="_blank" rel="noopener" className="underline">{children}</Link>;
 }

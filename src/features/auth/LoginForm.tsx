@@ -30,7 +30,10 @@ export function LoginForm({
   passwordPlaceholder,
 }: LoginFormProps) {
   const router = useRouter();
-  const next = useSearchParams().get("next");
+  const params = useSearchParams();
+  const next = params.get("next");
+  // Prefilled after setting a password from an invitation / reset link.
+  const prefillEmail = params.get("email")?.slice(0, 254) ?? undefined;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const target = safeInternalPath(next, fallbackTarget);
@@ -51,7 +54,7 @@ export function LoginForm({
         setError(errorMessage(err, "Giriş yapılamadı."));
       } finally { setBusy(false); }
     }}>
-      <div><label htmlFor="email" className="mb-1 block text-sm font-medium">E-posta</label><input id="email" name="email" type="email" required autoComplete="username" placeholder={emailPlaceholder} className={inputBase} /></div>
+      <div><label htmlFor="email" className="mb-1 block text-sm font-medium">E-posta</label><input id="email" name="email" type="email" required autoComplete="username" placeholder={emailPlaceholder} defaultValue={prefillEmail} className={inputBase} /></div>
       <div><label htmlFor="password" className="mb-1 block text-sm font-medium">Parola</label><input id="password" name="password" type="password" required autoComplete="current-password" placeholder={passwordPlaceholder} className={inputBase} /></div>
       {error && <p role="alert" className="text-sm text-danger">{error}</p>}
       <button className={buttonBase} disabled={busy}>{busy ? "Giriş yapılıyor…" : submitLabel}</button>

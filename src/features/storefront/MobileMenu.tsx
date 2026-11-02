@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { NavItem } from "@/modules/storefront";
 import { CloseIcon, MenuIcon } from "@/components/icons";
+import { Wordmark } from "./Wordmark";
 
-export function MobileMenu({ nav }: { nav: NavItem[] }) {
+export function MobileMenu({ nav, siteName, logoUrl }: { nav: NavItem[]; siteName: string; logoUrl: string | null }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     if (!open) return;
@@ -21,7 +22,7 @@ export function MobileMenu({ nav }: { nav: NavItem[] }) {
           <button className="absolute inset-0 bg-black/30" aria-label="Menüyü kapat" tabIndex={-1} onClick={() => setOpen(false)} />
           <nav aria-label="Mobil menü" className="absolute left-0 top-0 h-full w-80 max-w-[85vw] overflow-y-auto bg-white p-5 shadow-xl">
             <div className="mb-4 flex items-center justify-between">
-              <span className="text-xl font-extrabold">nova<span className="text-brand">.</span></span>
+              <Wordmark name={siteName} logoUrl={logoUrl} className="h-7" />
               <button className="p-2" aria-label="Kapat" onClick={() => setOpen(false)}><CloseIcon /></button>
             </div>
             <ul className="space-y-1">

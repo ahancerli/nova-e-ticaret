@@ -1,13 +1,12 @@
-import { AlertCircle } from "lucide-react";
 import type { FormState } from "./form-state";
+import { Req } from "@/components/admin/form";
+
+export { Counter, Field, Req, inputCls, labelCls } from "@/components/admin/form";
 
 // ---------------------------------------------------------------------------
 // Building blocks
 // ---------------------------------------------------------------------------
 export type SectionProps = { form: FormState; patch: (p: Partial<FormState>) => void; fe: (k: string) => string | undefined };
-export const labelCls = "mb-1 block text-xs font-medium text-slate-600";
-export const inputCls = "input border-slate-200 text-sm text-slate-800 aria-[invalid=true]:border-red-400 aria-[invalid=true]:bg-red-50/40";
-export const Req = () => <span className="text-red-500" aria-hidden> *</span>;
 
 export function SectionShell({ title, desc, required, actions, children }: { title: string; desc?: string; required?: boolean; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -24,16 +23,3 @@ export function SectionShell({ title, desc, required, actions, children }: { tit
   );
 }
 
-export function Field({ id, label, required, error, hint, className = "", children }: { id: string; label: string; required?: boolean; error?: string; hint?: React.ReactNode; className?: string; children: React.ReactNode }) {
-  return (
-    <div className={className}>
-      <label htmlFor={id} className={labelCls}>{label}{required ? <Req /> : null}</label>
-      {children}
-      {error ? <p className="mt-1 flex items-center gap-1 text-xs text-red-600"><AlertCircle className="h-3 w-3 flex-none" />{error}</p> : hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
-    </div>
-  );
-}
-
-export function Counter({ value, max }: { value: string; max: number }) {
-  return <span className={`tabular-nums ${value.length > max ? "text-red-600" : ""}`}>{value.length}/{max}</span>;
-}

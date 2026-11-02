@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { GetOrderDetailToken, type OrderDetail } from "@/modules/orders";
-import { GetSiteSettingsToken } from "@/modules/storefront";
+import { GetPublicSettingsToken } from "@/modules/settings";
 import { formatMinor, includedTaxMinor } from "@/lib/money";
 import { orderStatusMeta, PROVIDER_LABEL } from "@/lib/order-rules";
 import { PrintToolbar } from "@/features/orders/PrintToolbar";
@@ -29,10 +29,15 @@ export default async function PrintPage({ searchParams }: { searchParams: Promis
 
   const [orders, settings] = await Promise.all([
     resolveService(GetOrderDetailToken).then((q) => Promise.all(ids.map((id) => q.execute(id, canSeeCustomer)))),
-    resolveService(GetSiteSettingsToken).then((q) => q.execute(["site.name", "contact.email", "contact.phone"])),
+    resolveService(GetPublicSettingsToken).then((q) => q.execute()),
   ]);
-  const s = settings as Record<string, string | undefined>;
-  const seller = { name: s["site.name"] ?? "nova.", email: s["contact.email"] ?? "", phone: s["contact.phone"] ?? "" };
+  const { company: c, contact } = settings;
+  const seller: Seller = {
+    name: settings.siteName, email: contact.email ?? "", phone: contact.phone ?? "",
+    // Seller identity block (unvan, adres, VD/VKN, MERSİS) from Site ayarları → Firma bilgileri.
+    identity: [c.legalName, c.address, [c.taxOffice && `${c.taxOffice} V.D.`, c.taxNumber && `VKN ${c.taxNumber}`].filter(Boolean).join(" · "), c.mersisNo && `MERSİS ${c.mersisNo}`]
+      .filter((x): x is string => !!x),
+  };
   const found = orders.filter((o): o is OrderDetail => !!o);
 
   return (
@@ -47,7 +52,7 @@ export default async function PrintPage({ searchParams }: { searchParams: Promis
   );
 }
 
-type Seller = { name: string; email: string; phone: string };
+type Seller = { name: string; email: string; phone: string; identity: string[] };
 
 function Sheet({ title, subtitle, o, seller, children }: { title: string; subtitle: string; o: OrderDetail; seller: Seller; children: React.ReactNode }) {
   return (
@@ -56,6 +61,7 @@ function Sheet({ title, subtitle, o, seller, children }: { title: string; subtit
         <div>
           <p className="text-3xl font-black tracking-tight">{seller.name.replace(/\.$/, "")}<span className="text-[#7367f0]">.</span></p>
           <p className="mt-1 text-xs text-slate-500">{[seller.email, seller.phone].filter(Boolean).join(" · ")}</p>
+          {seller.identity.map((line) => <p key={line} className="whitespace-pre-line text-[11px] leading-snug text-slate-500">{line}</p>)}
         </div>
         <div className="text-right">
           <p className="text-lg font-bold uppercase tracking-wide">{title}</p>

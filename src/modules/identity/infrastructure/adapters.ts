@@ -14,6 +14,10 @@ export class BcryptPasswordHasher implements PasswordHasher {
     const ok = await bcrypt.compare(plain, target);
     return hash !== null && ok;
   }
+
+  hash(plain: string): Promise<string> {
+    return bcrypt.hash(plain, BCRYPT_COST);
+  }
 }
 
 /** Random 32-byte tokens; the DB keeps HMAC-SHA256(SESSION_SECRET, "session:<token>"). */
@@ -26,6 +30,11 @@ export class HmacTokenService implements TokenService {
 
   hash(token: string): Promise<string> {
     return hmacHex(this.secret, `session:${token}`);
+  }
+
+  /** Invitation / reset links: a different HMAC scope, so a link token can never be replayed as a session. */
+  hashAccountToken(token: string): Promise<string> {
+    return hmacHex(this.secret, `account:${token}`);
   }
 }
 

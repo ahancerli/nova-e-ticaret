@@ -31,6 +31,7 @@ const NAV: Array<{ title: string; items: NavEntry[] }> = [
     items: [
       { type: "link", href: "/admin", label: "Dashboard", perm: "orders.read", icon: "dashboard" },
       { type: "link", href: "/admin/siparisler", label: "Siparişler", perm: "orders.read", icon: "orders" },
+      { type: "link", href: "/admin/musteriler", label: "Müşteriler", perm: "customers.read", icon: "customers" },
     ],
   },
   {
@@ -56,7 +57,8 @@ const NAV: Array<{ title: string; items: NavEntry[] }> = [
       { type: "link", href: "/admin/odemeler", label: "Ödeme sistemleri", perm: "payments.reconcile", icon: "payments" },
       { type: "link", href: "/admin/entegrasyonlar", label: "Entegrasyonlar", perm: "integrations.write", icon: "integrations" },
       { type: "link", href: "/admin/kullanicilar", label: "Kullanıcılar", perm: "users.manage", icon: "users" },
-      { type: "link", href: "/admin/ayarlar", label: "Ayarlar", perm: "settings.write", icon: "settings" },
+      { type: "link", href: "/admin/icerik", label: "İçerik yönetimi", perm: "content.write", icon: "content" },
+      { type: "link", href: "/admin/ayarlar", label: "Site ayarları", perm: "settings.write", icon: "settings" },
       { type: "link", href: "/admin/denetim", label: "Denetim kayıtları", perm: "audit.read", icon: "audit" },
     ],
   },
@@ -91,7 +93,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <AdminShell
       user={{ displayName: user.displayName, email: user.email, roles }}
       groups={groups}
-      quickCreate={{ product: can("catalog.write"), category: can("catalog.write"), brand: can("catalog.write") }}
+      quickCreate={{ product: can("catalog.write"), category: can("catalog.write"), brand: can("catalog.write"), page: can("content.write") }}
       env={config.isProduction ? "production" : "development"}
     >
       {children}

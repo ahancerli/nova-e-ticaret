@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  Bell, ChevronRight, ExternalLink, FolderTree, LogOut, Menu, Package, Plus, Search, Store, Tags, UserRound, X,
+  Bell, ChevronRight, ExternalLink, FileText, FolderTree, LogOut, Menu, Package, Plus, Search, Store, Tags, UserRound, X,
 } from "lucide-react";
 import { UNAUTHORIZED_EVENT } from "@/lib/api-client";
 import { authApi } from "@/features/auth/api";
@@ -16,7 +16,7 @@ import { AdminSidebar, iconMap, type SidebarGroup } from "@/features/admin-shell
 import { CommandPalette, type PaletteItem } from "@/features/admin-shell/CommandPalette";
 
 export type ShellUser = { displayName: string; email: string; roles: string[] };
-export type QuickCreate = { product: boolean; category: boolean; brand: boolean };
+export type QuickCreate = { product: boolean; category: boolean; brand: boolean; page: boolean };
 
 const EXTRA_LABELS: Record<string, string> = { "/admin": "Panel", "/admin/profil": "Profilim" };
 
@@ -74,6 +74,7 @@ export function AdminShell({ user, groups, quickCreate, env, children }: { user:
     ...(quickCreate.product ? [{ id: "new-product", label: "Yeni ürün oluştur", group: "Hızlı işlemler", href: "/admin/urunler/yeni", icon: Package, keywords: "ekle urun" }] : []),
     ...(quickCreate.category ? [{ id: "new-category", label: "Yeni kategori oluştur", group: "Hızlı işlemler", href: "/admin/kategoriler/yeni", icon: FolderTree, keywords: "ekle" }] : []),
     ...(quickCreate.brand ? [{ id: "new-brand", label: "Yeni marka oluştur", group: "Hızlı işlemler", href: "/admin/markalar/yeni", icon: Tags, keywords: "ekle" }] : []),
+    ...(quickCreate.page ? [{ id: "new-page", label: "Yeni içerik sayfası oluştur", group: "Hızlı işlemler", href: "/admin/icerik/yeni", icon: FileText, keywords: "ekle sayfa sozlesme kvkk yasal" }] : []),
     ...links.map((l) => ({ id: l.href, label: l.label, group: "Sayfalar", href: l.href, icon: iconMap[l.icon] })),
     { id: "profile", label: "Profilim", group: "Hesap", href: "/admin/profil", icon: UserRound },
     { id: "store", label: "Mağazayı yeni sekmede aç", group: "Hesap", href: "/", icon: Store, external: true },
@@ -89,7 +90,7 @@ export function AdminShell({ user, groups, quickCreate, env, children }: { user:
     }
   }, [router]);
 
-  const canCreate = quickCreate.product || quickCreate.category || quickCreate.brand;
+  const canCreate = quickCreate.product || quickCreate.category || quickCreate.brand || quickCreate.page;
   const iconBtn = "inline-flex size-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 aria-expanded:bg-slate-100 aria-expanded:text-slate-800";
 
   return (
@@ -148,6 +149,7 @@ export function AdminShell({ user, groups, quickCreate, env, children }: { user:
                       {quickCreate.product ? <MenuLink href="/admin/urunler/yeni" icon={Package} label="Ürün" desc="Varyant, fiyat ve stokla" onClick={close} /> : null}
                       {quickCreate.category ? <MenuLink href="/admin/kategoriler/yeni" icon={FolderTree} label="Kategori" desc="Ağaçta yeni düğüm" onClick={close} /> : null}
                       {quickCreate.brand ? <MenuLink href="/admin/markalar/yeni" icon={Tags} label="Marka" desc="Logo ve banner ile" onClick={close} /> : null}
+                      {quickCreate.page ? <MenuLink href="/admin/icerik/yeni" icon={FileText} label="İçerik sayfası" desc="Yasal metin, kurumsal, yardım" onClick={close} /> : null}
                     </div>
                   )}
                 </Popover>

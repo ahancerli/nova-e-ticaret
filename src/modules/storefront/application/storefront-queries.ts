@@ -65,15 +65,6 @@ export class GetCategoryPage {
   }
 }
 
-/** Query: published CMS page (body is admin HTML; render it through sanitizeRichHtml). */
-export class GetContentPage {
-  constructor(private readonly read: StorefrontReadModel) {}
-
-  execute(slug: string) {
-    return this.read.contentPage(slug);
-  }
-}
-
 /** Query: brand directory. */
 export class ListActiveBrands {
   constructor(private readonly read: StorefrontReadModel) {}
@@ -89,14 +80,5 @@ export class ListActiveCategories {
 
   execute() {
     return this.read.activeCategories();
-  }
-}
-
-/** Query: site settings by key (e.g. seller details on printed documents). */
-export class GetSiteSettings {
-  constructor(private readonly read: StorefrontReadModel) {}
-
-  execute(keys: string[]) {
-    return this.read.settings(keys);
   }
 }

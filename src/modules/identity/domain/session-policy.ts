@@ -12,8 +12,11 @@ export interface SessionPolicy {
   readCookies: readonly string[];
   ttlMinutes: number;
   sameSite: "lax" | "strict";
-  /** Only staff accounts may sign in. */
-  staffOnly: boolean;
+  /**
+   * Which accounts may sign in. Staff and customer accounts are kept apart (as in Shopify): staff use the panel
+   * only, and a staff member who wants to shop uses a separate customer account (different e-mail).
+   */
+  accounts: "staff" | "customer";
 }
 
 export const LEGACY_SESSION_COOKIE = "__Host-nova_session";
@@ -27,7 +30,7 @@ export const SESSION_POLICIES: Record<Audience, SessionPolicy> = {
     readCookies: [STOREFRONT_SESSION_COOKIE, LEGACY_SESSION_COOKIE],
     ttlMinutes: 60 * 24 * 7,
     sameSite: "lax",
-    staffOnly: false,
+    accounts: "customer",
   },
   admin: {
     audience: "admin",
@@ -35,7 +38,7 @@ export const SESSION_POLICIES: Record<Audience, SessionPolicy> = {
     readCookies: [ADMIN_SESSION_COOKIE],
     ttlMinutes: 60 * 8,
     sameSite: "strict",
-    staffOnly: true,
+    accounts: "staff",
   },
 };
 

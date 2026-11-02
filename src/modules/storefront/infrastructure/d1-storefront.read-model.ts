@@ -6,6 +6,7 @@ import { HOME_SECTION_LOADERS, type HomeSectionRow } from "./home-sections";
 import { CARD_SELECT, PAGE_SIZE, SORTS, toCard, type CardRow } from "./product-cards";
 
 const rows = <T>(r: D1Result | undefined) => (r?.results ?? []) as T[];
+type NavRow = { id: string; parent_id: string | null; label: string; href: string | null; category_slug: string | null; brand_slug: string | null; menu: string };
 
 export class D1StorefrontReadModel extends Repository implements StorefrontReadModel {
   // --- simple pages ----------------------------------------------------------------------------------
@@ -21,11 +22,6 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
     return r ? { name: r.name, metaTitle: r.meta_title, metaDescription: r.meta_description, noindex: r.noindex === 1 } : null;
   }
 
-  async contentPage(slug: string) {
-    const r = await this.db.first<{ title: string; body_html: string }>("SELECT title, body_html FROM content_pages WHERE slug = ? AND is_published = 1", slug);
-    return r ? { title: r.title, bodyHtml: r.body_html } : null;
-  }
-
   activeBrands() {
     return this.db.all<{ slug: string; name: string }>("SELECT slug, name FROM brands WHERE is_active = 1 ORDER BY name COLLATE NOCASE");
   }
@@ -37,33 +33,19 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
     return rows.map((r) => ({ id: r.id, parentId: r.parent_id, slug: r.slug, name: r.name }));
   }
 
-  async settings(keys: string[]): Promise<Record<string, unknown>> {
-    if (!keys.length) return {};
-    const rows = await this.db.all<{ key: string; value_json: string }>(`SELECT key, value_json FROM site_settings WHERE key IN (${placeholders(keys.length)})`, ...keys);
-    return Object.fromEntries(rows.map((r) => [r.key, JSON.parse(r.value_json)]));
-  }
-
   // --- shell (SSR header / footer) ---------------------------------------------------------------
   async shell(): Promise<ShellData> {
-    const [settings, nav] = await this.db.batch([
-      this.db.statement("SELECT key, value_json FROM site_settings WHERE is_public = 1"),
-      this.db.statement(
-        `SELECT ni.id, ni.parent_id, ni.label, ni.href, c.slug AS category_slug, b.slug AS brand_slug, m.code AS menu
-           FROM navigation_items ni
-           JOIN navigation_menus m ON m.id = ni.menu_id AND m.is_active = 1
-           LEFT JOIN categories c ON c.id = ni.category_id
-           LEFT JOIN brands b ON b.id = ni.brand_id
-          WHERE ni.is_active = 1
-          ORDER BY ni.sort_order, ni.label`,
-      ),
-    ]);
-    const s: Record<string, unknown> = {};
-    for (const row of rows<{ key: string; value_json: string }>(settings)) s[row.key] = JSON.parse(row.value_json);
-
-    type NavRow = { id: string; parent_id: string | null; label: string; href: string | null; category_slug: string | null; brand_slug: string | null; menu: string };
-    const navRows = rows<NavRow>(nav);
+    const nav = await this.db.all<NavRow>(
+      `SELECT ni.id, ni.parent_id, ni.label, ni.href, c.slug AS category_slug, b.slug AS brand_slug, m.code AS menu
+         FROM navigation_items ni
+         JOIN navigation_menus m ON m.id = ni.menu_id AND m.is_active = 1
+         LEFT JOIN categories c ON c.id = ni.category_id
+         LEFT JOIN brands b ON b.id = ni.brand_id
+        WHERE ni.is_active = 1
+        ORDER BY ni.sort_order, ni.label`,
+    );
     const build = (menu: string) => {
-      const mine = navRows.filter((x) => x.menu === menu);
+      const mine = nav.filter((x) => x.menu === menu);
       const byId = new Map<string, NavItem>();
       const roots: NavItem[] = [];
       for (const r of mine) {
@@ -75,7 +57,7 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
       }
       return roots;
     };
-    return { settings: s, header: build("header"), footer: build("footer") };
+    return { header: build("header"), footer: build("footer") };
   }
 
   // --- home ------------------------------------------------------------------------------------------

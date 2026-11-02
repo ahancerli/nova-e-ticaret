@@ -11,8 +11,8 @@ export interface NavItem {
   children: NavItem[];
 }
 
+/** Header / footer navigation menus (site settings and footer pages come from their own modules). */
 export interface ShellData {
-  settings: Record<string, unknown>;
   header: NavItem[];
   footer: NavItem[];
 }
@@ -48,11 +48,8 @@ export interface CategoryPageData {
 export interface StorefrontReadModel {
   brandPage(slug: string): Promise<{ name: string; description: string | null } | null>;
   categoryPage(slug: string): Promise<CategoryPageData | null>;
-  contentPage(slug: string): Promise<{ title: string; bodyHtml: string } | null>;
   activeBrands(): Promise<{ slug: string; name: string }[]>;
   activeCategories(): Promise<{ id: string; parentId: string | null; slug: string; name: string }[]>;
-  /** Selected site_settings values (JSON-decoded). */
-  settings(keys: string[]): Promise<Record<string, unknown>>;
   shell(): Promise<ShellData>;
   home(now: string): Promise<HomeData>;
   listProducts(p: ListParams): Promise<ProductPage>;

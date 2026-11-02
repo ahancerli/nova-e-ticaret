@@ -50,7 +50,7 @@ export default async function ProductPage({ params }: Props) {
           <div className="card p-5">
             <h2 className="mb-3 text-lg font-semibold">Ürün açıklaması</h2>
             {/* Admin-authored HTML, sanitized server-side with an allowlist. */}
-            <div className="prose max-w-none text-sm text-ink-soft" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(p.descriptionHtml) }} />
+            <div className="rich-text max-w-none text-sm text-ink-soft" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(p.descriptionHtml) }} />
           </div>
         )}
         {p.specs.length > 0 && (

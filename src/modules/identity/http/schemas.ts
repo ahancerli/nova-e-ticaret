@@ -5,3 +5,8 @@ export const loginSchema = z.object({
   email: z.email().max(254),
   password: z.string().min(1).max(200),
 }).strict();
+
+export const completeLinkSchema = z.object({
+  token: z.string().min(20).max(128).regex(/^[A-Za-z0-9_-]+$/),
+  password: z.string().min(1).max(200),
+}).strict();

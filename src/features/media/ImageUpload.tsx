@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { ImageUp, RefreshCw, Trash2, X } from "lucide-react";
-import { uploadImage } from "./api";
+import { uploadImage, type MediaFolder } from "./api";
 import { notify } from "@/lib/toast";
 
 export type UploadedImage = { id: string; url: string };
@@ -27,7 +27,7 @@ export function ImageUpload({
 }: {
   label: string;
   hint?: string;
-  folder: "categories" | "brands" | "products";
+  folder: MediaFolder;
   /** Preview box ratio, e.g. "aspect-square" for logos. */
   aspect?: string;
   value: UploadedImage | null;

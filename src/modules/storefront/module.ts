@@ -1,7 +1,7 @@
 import { ClockToken, DatabaseToken, token, type Container } from "@/core";
 import type { StorefrontReadModel } from "./application/ports";
 import {
-  GetBrandPage, GetCategoryPage, GetContentPage, GetFacets, GetHome, GetProductDetail, GetShell, GetSiteSettings, ListActiveBrands, ListActiveCategories, ListCatalogProducts,
+  GetBrandPage, GetCategoryPage, GetFacets, GetHome, GetProductDetail, GetShell, ListActiveBrands, ListActiveCategories, ListCatalogProducts,
 } from "./application/storefront-queries";
 import { D1StorefrontReadModel } from "./infrastructure/d1-storefront.read-model";
 
@@ -13,10 +13,8 @@ export const GetFacetsToken = token<GetFacets>("GetFacets");
 export const GetProductDetailToken = token<GetProductDetail>("GetProductDetail");
 export const GetBrandPageToken = token<GetBrandPage>("GetBrandPage");
 export const GetCategoryPageToken = token<GetCategoryPage>("GetCategoryPage");
-export const GetContentPageToken = token<GetContentPage>("GetContentPage");
 export const ListActiveBrandsToken = token<ListActiveBrands>("ListActiveBrands");
 export const ListActiveCategoriesToken = token<ListActiveCategories>("ListActiveCategories");
-export const GetSiteSettingsToken = token<GetSiteSettings>("GetSiteSettings");
 
 export function registerStorefront(c: Container): void {
   c.scoped(StorefrontReadModelToken, (r) => new D1StorefrontReadModel(r.resolve(DatabaseToken)));
@@ -27,8 +25,6 @@ export function registerStorefront(c: Container): void {
   c.scoped(GetProductDetailToken, (r) => new GetProductDetail(r.resolve(StorefrontReadModelToken)));
   c.scoped(GetBrandPageToken, (r) => new GetBrandPage(r.resolve(StorefrontReadModelToken)));
   c.scoped(GetCategoryPageToken, (r) => new GetCategoryPage(r.resolve(StorefrontReadModelToken)));
-  c.scoped(GetContentPageToken, (r) => new GetContentPage(r.resolve(StorefrontReadModelToken)));
   c.scoped(ListActiveBrandsToken, (r) => new ListActiveBrands(r.resolve(StorefrontReadModelToken)));
   c.scoped(ListActiveCategoriesToken, (r) => new ListActiveCategories(r.resolve(StorefrontReadModelToken)));
-  c.scoped(GetSiteSettingsToken, (r) => new GetSiteSettings(r.resolve(StorefrontReadModelToken)));
 }

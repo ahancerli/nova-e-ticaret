@@ -5,8 +5,10 @@ import { usePathname } from "next/navigation";
 import { useState, type ComponentType } from "react";
 import {
   ChevronRight,
+  Contact,
   CreditCard,
   FileCheck2,
+  FileText,
   FolderTree,
   LayoutGrid,
   Megaphone,
@@ -23,6 +25,7 @@ import { Collapsible } from "@/components/ui/Collapsible";
 export type SidebarIcon =
   | "dashboard"
   | "orders"
+  | "customers"
   | "products"
   | "categories"
   | "brands"
@@ -32,6 +35,7 @@ export type SidebarIcon =
   | "integrations"
   | "users"
   | "settings"
+  | "content"
   | "audit";
 
 type SidebarLink = {
@@ -58,6 +62,7 @@ export type SidebarGroup = {
 export const iconMap: Record<SidebarIcon, ComponentType<{ className?: string }>> = {
   dashboard: LayoutGrid,
   orders: ShoppingCart,
+  customers: Contact,
   products: Package,
   categories: FolderTree,
   brands: Tags,
@@ -67,6 +72,7 @@ export const iconMap: Record<SidebarIcon, ComponentType<{ className?: string }>>
   integrations: PlugZap,
   users: UsersRound,
   settings: Settings,
+  content: FileText,
   audit: FileCheck2,
 };
 

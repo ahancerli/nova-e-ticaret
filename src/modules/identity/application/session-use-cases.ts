@@ -77,7 +77,7 @@ export class Login {
     const passwordOk = await deps.passwords.verify(cmd.password, credential?.passwordHash ?? null);
     const blockedHere = accountBucket ? await this.isBlocked(accountBucket) : false;
 
-    const allowed = credential && passwordOk && !blockedHere && credential.status === "active" && (!policy.staffOnly || credential.isStaff);
+    const allowed = credential && passwordOk && !blockedHere && credential.status === "active" && credential.isStaff === (policy.accounts === "staff");
     if (!allowed) {
       await this.recordFailure(ipBucket, accountBucket, credential && !passwordOk ? credential.userId : null);
       throw IdentityErrors.invalidCredentials();
@@ -89,6 +89,7 @@ export class Login {
     await new UnitOfWork(deps.db)
       .add(deps.sessions.createStatement({ id: deps.ids.newId(), userId: credential.userId, tokenHash: await deps.tokens.hash(token), expiresAt, ipHash: ipKey }))
       .add(deps.credentials.resetFailuresStatement(credential.userId, now.toISOString()))
+      .add(deps.sessions.touchLoginStatement(credential.userId, now.toISOString()))
       .commit();
     await deps.cookies.set(policy.cookie, token, { expires: new Date(expiresAt), sameSite: policy.sameSite });
 

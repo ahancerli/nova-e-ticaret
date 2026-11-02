@@ -3,6 +3,6 @@ export { SORT_KEYS, isSortKey, type ListParams, type NavItem, type ProductPage, 
 export { parseListQuery } from "./http/list-query";
 export { PAGE_SIZE } from "./infrastructure/product-cards";
 export {
-  GetBrandPageToken, GetCategoryPageToken, GetContentPageToken, GetFacetsToken, GetHomeToken, GetProductDetailToken, GetShellToken, GetSiteSettingsToken,
+  GetBrandPageToken, GetCategoryPageToken, GetFacetsToken, GetHomeToken, GetProductDetailToken, GetShellToken,
   ListActiveBrandsToken, ListActiveCategoriesToken, ListCatalogProductsToken, registerStorefront,
 } from "./module";

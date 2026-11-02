@@ -185,4 +185,73 @@
   .no-scrollbar {
     scrollbar-width: none;
   }
+  /* Admin-authored rich text (content pages, product descriptions, editor preview) — the sanitizer's tag set. */
+  .rich-text {
+    line-height: 1.75;
+  }
+  .rich-text > * + * {
+    margin-top: 0.9em;
+  }
+  .rich-text h2 {
+    margin-top: 1.8em;
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--color-ink);
+  }
+  .rich-text h3 {
+    margin-top: 1.5em;
+    font-size: 1.075rem;
+    font-weight: 700;
+    color: var(--color-ink);
+  }
+  .rich-text h4 {
+    margin-top: 1.25em;
+    font-weight: 600;
+    color: var(--color-ink);
+  }
+  .rich-text ul,
+  .rich-text ol {
+    padding-left: 1.4em;
+  }
+  .rich-text ul {
+    list-style: disc;
+  }
+  .rich-text ol {
+    list-style: decimal;
+  }
+  .rich-text li + li {
+    margin-top: 0.35em;
+  }
+  .rich-text a {
+    color: var(--color-brand-dark);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .rich-text strong,
+  .rich-text b {
+    font-weight: 600;
+    color: var(--color-ink);
+  }
+  .rich-text blockquote {
+    border-left: 3px solid var(--color-line);
+    padding-left: 1em;
+    color: var(--color-muted);
+  }
+  .rich-text table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.925em;
+  }
+  .rich-text th,
+  .rich-text td {
+    border: 1px solid var(--color-line);
+    padding: 0.5em 0.75em;
+    text-align: left;
+    vertical-align: top;
+  }
+  .rich-text th {
+    background: var(--color-ground);
+    font-weight: 600;
+  }
 }

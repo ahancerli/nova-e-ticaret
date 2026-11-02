@@ -6,9 +6,15 @@ import { SearchBox } from "@/features/storefront/SearchBox";
 import { MobileMenu } from "@/features/storefront/MobileMenu";
 import { UserIcon } from "@/components/icons";
 import { currentPrincipal } from "@/server/app";
+import { Wordmark } from "./Wordmark";
 
 /** Server component: menu/public settings from D1, account CTA from storefront session cookie. */
-export async function Header({ nav, announcement }: { nav: NavItem[]; announcement?: { text: string; href?: string } }) {
+export async function Header({ nav, announcement, siteName, logoUrl }: {
+  nav: NavItem[];
+  announcement: { text: string; href: string | null } | null;
+  siteName: string;
+  logoUrl: string | null;
+}) {
   const user = await currentPrincipal("storefront");
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-white/95 backdrop-blur">
@@ -18,9 +24,9 @@ export async function Header({ nav, announcement }: { nav: NavItem[]; announceme
         </div>
       )}
       <div className="container-page flex items-center gap-3 py-3 md:gap-6">
-        <MobileMenu nav={nav} />
-        <Link href="/" className="text-2xl font-extrabold tracking-tight text-ink md:text-[28px]" aria-label="nova ana sayfa">
-          nova<span className="text-brand">.</span>
+        <MobileMenu nav={nav} siteName={siteName} logoUrl={logoUrl} />
+        <Link href="/" aria-label={`${siteName} ana sayfa`} className="shrink-0">
+          <Wordmark name={siteName} logoUrl={logoUrl} />
         </Link>
         <div className="hidden flex-1 md:flex">
           <Suspense><SearchBox /></Suspense>

@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
   status            TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended','anonymized')),
   email_verified_at TEXT,
   phone_verified_at TEXT,
+  last_login_at     TEXT,
   created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 ) STRICT;
@@ -45,19 +46,28 @@ CREATE TABLE IF NOT EXISTS customer_profiles (
   updated_at               TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 ) STRICT;
 
+-- Staff (panel) accounts. A staff member sets their own password through an invitation link
+-- (verification_tokens purpose 'staff_invite'); until then there is no auth_credentials row.
 CREATE TABLE IF NOT EXISTS staff_profiles (
   user_id       TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   employee_code TEXT UNIQUE,
-  department    TEXT,
+  department    TEXT CHECK (department IS NULL OR length(department) <= 80),
+  job_title     TEXT CHECK (job_title IS NULL OR length(job_title) <= 80),
   mfa_required  INTEGER NOT NULL DEFAULT 1 CHECK (mfa_required IN (0,1)),
+  invited_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
+  invited_at    TEXT,
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 ) STRICT;
 
+-- is_system roles ship with the product (code fixed, not deletable); 'admin' always holds every permission and
+-- 'customer' is the storefront role (never assignable to staff).
 CREATE TABLE IF NOT EXISTS roles (
-  id        TEXT PRIMARY KEY,
-  code      TEXT NOT NULL UNIQUE,
-  name      TEXT NOT NULL,
-  is_system INTEGER NOT NULL DEFAULT 0 CHECK (is_system IN (0,1))
+  id          TEXT PRIMARY KEY,
+  code        TEXT NOT NULL UNIQUE CHECK (length(code) BETWEEN 2 AND 60 AND code NOT GLOB '*[^a-z0-9_]*'),
+  name        TEXT NOT NULL CHECK (length(name) BETWEEN 2 AND 80),
+  description TEXT CHECK (description IS NULL OR length(description) <= 300),
+  is_system   INTEGER NOT NULL DEFAULT 0 CHECK (is_system IN (0,1)),
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS permissions (
@@ -104,7 +114,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE TABLE IF NOT EXISTS verification_tokens (
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  purpose     TEXT NOT NULL CHECK (purpose IN ('email_verify','password_reset','phone_verify','guest_order_view')),
+  purpose     TEXT NOT NULL CHECK (purpose IN ('email_verify','password_reset','phone_verify','guest_order_view','staff_invite')),
   token_hash  TEXT NOT NULL UNIQUE,
   expires_at  TEXT NOT NULL,
   consumed_at TEXT,
@@ -503,15 +513,41 @@ CREATE TABLE IF NOT EXISTS home_section_products (
   PRIMARY KEY (section_id, product_id)
 ) STRICT;
 
+-- Content management: company-specific pages (legal texts, corporate, help). Bodies may contain {{placeholders}}
+-- filled from site_settings at render time (src/modules/content/domain/template.ts). Published pages with a
+-- footer_column appear in the storefront footer automatically.
 CREATE TABLE IF NOT EXISTS content_pages (
-  id           TEXT PRIMARY KEY,
-  slug         TEXT NOT NULL UNIQUE,
-  title        TEXT NOT NULL,
-  body_html    TEXT NOT NULL,
-  version      INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
-  is_published INTEGER NOT NULL DEFAULT 0 CHECK (is_published IN (0,1)),
-  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  id            TEXT PRIMARY KEY,
+  slug          TEXT NOT NULL UNIQUE CHECK (length(slug) BETWEEN 2 AND 120 AND slug NOT GLOB '*[^a-z0-9-]*'),
+  title         TEXT NOT NULL CHECK (length(title) BETWEEN 2 AND 200),
+  kind          TEXT NOT NULL DEFAULT 'general' CHECK (kind IN ('legal','corporate','help','general')),
+  legal_type    TEXT CHECK (legal_type IS NULL OR legal_type IN ('kvkk','privacy','cookies','distance_sales','pre_information','return_policy','terms_of_use','membership')),
+  summary       TEXT CHECK (summary IS NULL OR length(summary) <= 500),
+  body_html     TEXT NOT NULL CHECK (length(body_html) <= 200000),
+  status        TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','archived')),
+  footer_column TEXT CHECK (footer_column IS NULL OR footer_column IN ('corporate','help','legal')),
+  footer_order  INTEGER NOT NULL DEFAULT 0,
+  version       INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+  published_at  TEXT,
+  created_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
+  updated_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  CHECK ((kind = 'legal') = (legal_type IS NOT NULL)),
+  CHECK (status <> 'published' OR published_at IS NOT NULL)
+) STRICT;
+
+-- Every saved version of a page (what a customer accepted must stay provable after later edits).
+CREATE TABLE IF NOT EXISTS content_page_revisions (
+  id         TEXT PRIMARY KEY,
+  page_id    TEXT NOT NULL REFERENCES content_pages(id) ON DELETE CASCADE,
+  version    INTEGER NOT NULL CHECK (version >= 1),
+  title      TEXT NOT NULL,
+  body_html  TEXT NOT NULL,
+  status     TEXT NOT NULL CHECK (status IN ('draft','published','archived')),
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (page_id, version)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS seo_documents (
@@ -529,12 +565,15 @@ CREATE TABLE IF NOT EXISTS seo_documents (
   CHECK ((product_id IS NOT NULL) + (category_id IS NOT NULL) + (brand_id IS NOT NULL) + (page_id IS NOT NULL) + (route_path IS NOT NULL) = 1)
 ) STRICT;
 
+-- Site configuration as typed key/value pairs; the key registry and per-key validation live in
+-- src/modules/settings/domain/registry.ts. is_public = readable by the storefront without a session.
 CREATE TABLE IF NOT EXISTS site_settings (
-  key            TEXT PRIMARY KEY,
-  group_name     TEXT NOT NULL CHECK (group_name IN ('general','contact','branding','seo','social','checkout','shipping','legal')),
+  key            TEXT PRIMARY KEY CHECK (length(key) BETWEEN 3 AND 80 AND key NOT GLOB '*[^a-z0-9_.]*'),
+  group_name     TEXT NOT NULL CHECK (group_name IN ('general','company','contact','branding','seo','social','footer')),
   value_json     TEXT NOT NULL CHECK (json_valid(value_json)),
   is_public      INTEGER NOT NULL DEFAULT 0 CHECK (is_public IN (0,1)),
   schema_version INTEGER NOT NULL DEFAULT 1,
+  updated_by     TEXT REFERENCES users(id) ON DELETE SET NULL,
   updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 ) STRICT;
 
@@ -1086,6 +1125,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_carts_active_user          ON carts(user_id
 CREATE UNIQUE INDEX IF NOT EXISTS ux_payment_config_active    ON payment_configs(provider) WHERE is_active = 1;
 -- lookups
 CREATE INDEX IF NOT EXISTS ix_sessions_user              ON sessions(user_id, expires_at);
+CREATE INDEX IF NOT EXISTS ix_user_roles_role            ON user_roles(role_id);
+CREATE INDEX IF NOT EXISTS ix_verification_user_purpose  ON verification_tokens(user_id, purpose, consumed_at);
+CREATE INDEX IF NOT EXISTS ix_users_created              ON users(created_at);
 CREATE INDEX IF NOT EXISTS ix_addresses_user             ON addresses(user_id);
 CREATE INDEX IF NOT EXISTS ix_categories_parent          ON categories(parent_id, sort_order);
 CREATE INDEX IF NOT EXISTS ix_products_brand_status      ON products(brand_id, status);
@@ -1100,6 +1142,9 @@ CREATE INDEX IF NOT EXISTS ix_variant_prices_price       ON variant_prices(price
 CREATE INDEX IF NOT EXISTS ix_inv_movements_variant      ON inventory_movements(variant_id, created_at);
 CREATE INDEX IF NOT EXISTS ix_stock_res_status_exp       ON stock_reservations(status, expires_at);
 CREATE INDEX IF NOT EXISTS ix_stock_res_checkout         ON stock_reservations(checkout_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_content_pages_legal_type ON content_pages(legal_type) WHERE legal_type IS NOT NULL AND status <> 'archived';
+CREATE INDEX IF NOT EXISTS ix_content_pages_footer       ON content_pages(status, footer_column, footer_order);
+CREATE INDEX IF NOT EXISTS ix_site_settings_group        ON site_settings(group_name);
 CREATE INDEX IF NOT EXISTS ix_nav_items_menu             ON navigation_items(menu_id, parent_id, sort_order);
 CREATE INDEX IF NOT EXISTS ix_stories_collection         ON stories(collection_id, is_active, sort_order);
 CREATE INDEX IF NOT EXISTS ix_slides_slider              ON slides(slider_id, is_active, sort_order);

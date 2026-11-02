@@ -29,8 +29,8 @@ Seed'deki `admin@nova.local` kullanıcısının parolası dokümante değildir; 
 |---|---|
 | `npm run dev` / `dev:remote` | Local D1 (varsayılan) / Cloudflare D1'e bağlı geliştirme |
 | `npm run typecheck` · `npm run lint` | `tsc --noEmit` · ESLint |
-| `npm test` | `db:test` (41 şema, python3) + `test:core` (14) + `test:catalog` (18) + `test:identity` (9) + `test:storefront` (10) + `test:orders` (8) + `test:integrations` (6: kart ödemesi, outbox, kargo webhook) + `test:reporting` (8: dönem sınırları, KPI, gösterge paneli) + `test:services` (23 uçtan uca senaryo) — Node ≥ 22.13 |
-| `npm run test:e2e` | Playwright tarayıcı testleri (7): ayrı bir local veritabanı kurar, `next dev`'i 3210 portunda açar, Chromium'da çalıştırır |
+| `npm test` | `db:test` (43 şema, python3) + `test:core` (14) + `test:catalog` (18) + `test:identity` (9) + `test:storefront` (10) + `test:orders` (8) + `test:integrations` (6: kart ödemesi, outbox, kargo webhook) + `test:reporting` (8: dönem sınırları, KPI, gösterge paneli) + `test:content` (12: site ayarları, içerik sayfaları, yasal metinler) + `test:accounts` (11: davet, parola bağlantıları, roller, üyelik, müşteriler) + `test:services` (23 uçtan uca senaryo) — Node ≥ 22.13 |
+| `npm run test:e2e` | Playwright tarayıcı testleri (13): ayrı bir local veritabanı kurar, `next dev`'i 3210 portunda açar, Chromium'da çalıştırır |
 | `npm run db:{schema,seed,reset}:{local,remote}` | Şema / seed / sil-kur-seed |
 | `npm run db:query[:local] -- "SQL"` | Tek SQL (remote varsayılan, `:local` ile local) |
 | `npm run admin:create[:local] -- email "Ad"` | Admin oluştur / parolasını sıfırla (remote / local) |
@@ -94,7 +94,8 @@ src/
   modules/                İş modülleri (ayrıntı §4.2): platform (CSRF, rate limit, idempotency), identity (giriş, oturum, RBAC), audit, media,
                           catalog (admin: kategori, marka, ürün), storefront (vitrin okuma), pricing (fiyat motoru), cart (sepet, kupon),
                           checkout (teklif, sipariş, ödeme sonuçlandırma, süre aşımı), orders (sipariş ekranları, durum makinesi, iade),
-                          reporting (gösterge paneli: dönem, KPI, salt okunur), payments (iyzico gateway), shipping (kargo adaptörleri + webhook), outbox (worker + işleyici kaydı), notifications
+                          reporting (gösterge paneli: dönem, KPI, salt okunur), settings (site ayarları kaydı), content (sayfalar, yasal metinler,
+                          footer/checkout bağlantıları), staff (panel kullanıcıları, davet, roller), customers (üyeler, üye olma), payments (iyzico gateway), shipping (kargo adaptörleri + webhook), outbox (worker + işleyici kaydı), notifications
   lib/                    İstemci+sunucu ortak: api-client, use-field-errors, error-reporting, toast, motion, money, slug, safe-redirect, ids, types, order-rules, product-rules
   proxy.ts                Sayfa CSP'si (istek başına script nonce)
   server/                 Yalnız sunucu ("server-only"): app.ts = composition root (DI kayıtları, `route`, `resolveService`, `currentPrincipal`, `requireAdminPage`); env.ts = Worker binding + local .env
@@ -174,6 +175,12 @@ Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf b
 | **Vitrin** | Ana sayfa (hikaye şeridi, tek slider, vitrinler; client-side), kategori/marka listeleme + facet filtreler (aynı attribute OR, farklı AND, varyant eksenleri aynı SKU'da), arama, ürün detayı (SSR + JSON-LD, varyant seçici), sağ sepet çekmecesi, kupon, misafir checkout (iyzico / havale), sipariş sonuç sayfası, mağaza girişi, basit hesabım |
 | **Panel kabuğu** | Sidebar (yalnız seçili öğe mor, iç içe menü kayarak açılır, mobilde soldan drawer), üst bar (breadcrumb, ⌘K komut paleti, ortam rozeti, "Yeni" menüsü, bildirim paneli, kullanıcı menüsü/çıkış) |
 | **Gösterge paneli** `/admin` | Dönem seçimi (`?donem=bugun\|7g\|30g\|90g`, İstanbul gün sınırları, önceki eşit dönemle "aynı saate kadar" karşılaştırma); bekleyen işler (havale onayı, hazırlanacak, kargoya verilecek, tükenen → filtreli listeye link, `/admin/siparisler?sekme=`); KPI kartları (ciro = tahsil edilen, sipariş, ortalama sepet, iade; değişim oku + sparkline); satış grafiği (ciro/sipariş, saatlik/günlük, klavye ile gezilebilir, tablo görünümü); sipariş durumları, ödeme yöntemi dağılımı, en çok satanlar, kritik stok, son siparişler. Müşteri bilgisi `customers.read`, stok `catalog.read` yoksa gizli |
+| **İçerik yönetimi** `/admin/icerik` | Yasal metin kontrol listesi (mesafeli satış, ön bilgilendirme, KVKK, gizlilik, çerez, iade zorunlu; kullanım koşulları, üyelik isteğe bağlı) → eksikse “Şablondan oluştur”. Sayfa editörü: zengin metin (başlık, liste, bağlantı, alıntı, HTML modu, yapıştırılan metin temizlenir), **değişken ekle** (`{{firma.unvan}}`, `{{iletisim.eposta}}` … site ayarlarından dolar, boş olanlar uyarılır), önizleme, yayın durumu, footer sütunu + sıra, SEO, **sürüm geçmişi** (eski sürümü görüntüle / editöre yükle). Yayındaki sayfalar footer'a otomatik eklenir; checkout onay kutusu mesafeli satış + ön bilgilendirme sayfalarına bağlanır ve sürümleri siparişle kaydedilir |
+| **Site ayarları** `/admin/ayarlar` | Genel, firma bilgileri, iletişim, marka ve logo, SEO, sosyal medya, footer — formlar ayar kaydından üretilir; grup bazında güncelleme ve eşzamanlı düzenleme kontrolü (`409 settings_changed`). Vitrin header/footer, logo, vurgu rengi, sayfa başlık şablonu, favicon, paylaşım görseli, indeksleme ve yazdırılan belgelerdeki satıcı bilgisi buradan gelir |
+| **Kullanıcılar** `/admin/kullanicilar` | Panel kullanıcıları (Aktif / Davet bekleyen / Askıda). **Davet:** hesap parolasız açılır, kişi 7 gün geçerli tek kullanımlık bağlantıyla parolasını kendisi belirler (admin parola görmez/girmez). Detay: profil, roller (+ sonuç yetkiler önizlemesi), yeni davet bağlantısı, daveti iptal, parola sıfırlama bağlantısı (24 saat), tüm oturumları kapat, askıya al / etkinleştir, açık oturumlar. Kendinizi askıya alamazsınız; “Kullanıcı ve rol yönetimi” yetkisine sahip son aktif kişi bu yetkiyi kaybedemez |
+| **Roller ve yetkiler** `/admin/kullanicilar/roller` | Rol listesi + gruplu yetki matrisi (hassas yetkiler işaretli). Özel rol ekle/düzenle/sil; hazır roller silinmez, Yönetici rolü her zaman tüm yetkilere sahip. Yetki kataloğu: `src/modules/staff/domain/permissions.ts` |
+| **Müşteriler** `/admin/musteriler` | Mağaza üyeleri (personel hariç), sunucu taraflı arama (ad — Türkçe harf duyarsız —, e-posta, telefon), sıralama ve sayfalama; gruplar: sipariş verenler, henüz sipariş yok, ileti izni verenler, askıda. Detay: sipariş sayısı, harcama, ortalama sepet, son siparişler, profil + iç not (customers.write), adresler, KVKK / İYS onay geçmişi (sürümleriyle), parola sıfırlama bağlantısı, oturumları kapat, askıya al |
+| **Üye ol / parola** `/uye-ol`, `/hesap/sifre/[token]`, `/admin/sifre/[token]` | Mağaza üyeliği: parola kuralı (≥ 10 karakter, harf+rakam, yaygın/ad/e-posta içermez — sunucu ve form aynı kural), KVKK aydınlatma onayı zorunlu, e-posta/SMS ticari ileti izinleri ayrı ve işaretsiz; onaylar belge sürümüyle kaydedilir; IP başına saatte 5 üyelik. Personel ve müşteri hesapları ayrıdır: personel hesabı mağazaya, müşteri hesabı panele giriş yapamaz |
 | **Kategoriler** `/admin/kategoriler` | Ağaç + sağ drawer'da güncelle/sil, `/yeni` sayfasında ekle; tüm kolonlar, görseller R2'ye yükleme |
 | **Markalar** `/admin/markalar` | DataGrid + sağ drawer'da güncelle/sil, `/yeni` sayfasında ekle; logo/banner yükleme |
 | **Ürünler** `/admin/urunler` | DataGrid; `/yeni` ve `/[id]` **adım adım sekmeli sayfa**: Genel · Marka&Kategori · Görseller · Varyant&Stok · Özellikler · SEO. Zorunlu alanlar dolmadan ileri geçilmez. Tüm ürün tek batch'te kaydedilir |
@@ -182,7 +189,7 @@ Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf b
 | **İade** | Kısmi/tam, stoğa geri alma; havale manuel, iyzico outbox ile; tam iade → `refunded` (ödenmiş sipariş iptali budur) |
 | **Belgeler** `/admin/yazdir` | Sipariş özeti/proforma fatura + sevk irsaliyesi, A4, tekli/toplu (≤ 50). e-Fatura/e-İrsaliye **değildir** |
 | **Kargo & outbox** | Outbox worker (kilit, geri çekilme, dead), kargo adaptör arayüzü (şimdilik `manual`), imzalı kargo webhook'u (otomatik teslim) |
-| **Yer tutucu** | Kampanyalar, Vitrin (slider/hikaye), Ödeme sistemleri (iyzico/IBAN ayarı), Entegrasyonlar, Kullanıcılar/roller, Ayarlar, Denetim kayıtları → `/admin/[...module]` "Roadmap" sayfası. Veri modeli hazır. |
+| **Yer tutucu** | Kampanyalar, Vitrin (slider/hikaye), Ödeme sistemleri (iyzico/IBAN ayarı), Entegrasyonlar, Kullanıcılar/roller, Denetim kayıtları → `/admin/[...module]` "Roadmap" sayfası. Veri modeli hazır. |
 
 ## 6. Panel arayüz sistemi (yeni ekranlar bu parçalarla yapılır)
 
@@ -239,7 +246,12 @@ Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf b
 | `/api/admin/categories[/:id]` | GET · POST · PUT/DELETE | catalog.read / catalog.write, CSRF, audit |
 | `/api/admin/brands[/:id]` | GET · POST · PUT/DELETE | catalog.read / catalog.write, CSRF, audit |
 | `/api/admin/products[/:id]` | GET · POST · PUT/DELETE | catalog.read / catalog.write (+ catalog.publish yayın için), CSRF, audit |
-| `/api/admin/media` | POST multipart | catalog.write, CSRF, audit |
+| `/api/admin/media` | POST multipart | klasöre göre: categories/brands/products → catalog.write, branding → settings.write; CSRF, audit |
+| `/api/admin/content[/:id]` · `/api/admin/content/:id/revisions/:version` | GET · POST · PUT/DELETE · GET | content.write, CSRF, audit; PUT `expectedVersion` ile (409 page_changed), gövde ≤ 256 KB |
+| `/api/admin/staff[/:id]` · `/api/admin/staff/:id/actions` · `/api/admin/roles[/:id]` | GET · POST · PATCH · POST · GET/POST/PUT/DELETE | users.manage, CSRF, audit; davet ve sıfırlama yanıtı tek kullanımlık bağlantıyı içerir (`no-store`) |
+| `/api/admin/customers[/:id]` · `/api/admin/customers/:id/actions` | GET · PATCH · POST | customers.read (+ customers.write değişiklik için), CSRF, audit |
+| `/api/storefront/auth/register` · `/api/account/password` | POST | Herkese açık, CSRF; üyelik IP başına saatte 5; parola bağlantısı IP başına 15 dakikada 10, token tek kullanımlık |
+| `/api/admin/settings` · `/api/admin/settings/:group` | GET · PUT | settings.write, CSRF, audit; PUT `{ values, expectedVersion }` (409 settings_changed) |
 | `/api/admin/orders` · `/api/admin/orders/:id` | GET | orders.read (müşteri verisi customers.read yoksa maskeli) |
 | `/api/admin/orders/:id/actions` · `/api/admin/orders/bulk` | POST | işleme göre orders.write / payments.reconcile, CSRF, Idempotency-Key, audit |
 | `/api/payments/iyzico/callback` · `/api/webhooks/iyzico` | POST | Sağlayıcı yeniden doğrulaması (çerez değil), IP başına rate limit (30 / 300 dk) |
@@ -251,9 +263,9 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 
 ## 9. Testler
 
-- `npm test` → **41/41** şema + **14/14** çekirdek + **18/18** katalog + **9/9** identity + **10/10** storefront + **8/8** orders + **6/6** integrations + **8/8** reporting + **23/23** senaryo testi (Node ≥ 22.13; `--experimental-transform-types`).
+- `npm test` → **43/43** şema + **14/14** çekirdek + **18/18** katalog + **9/9** identity + **10/10** storefront + **8/8** orders + **6/6** integrations + **8/8** reporting + **12/12** content + **11/11** accounts + **23/23** senaryo testi (Node ≥ 22.13; `--experimental-transform-types`).
 - Servis testleri gerçek servis kodunu çalıştırır; `tests/integration/hooks.mjs` şunları taklit eder: `server-only`, `@opennextjs/cloudflare` (env = `globalThis.__ENV`), `next/headers` (çerez kavanozu), `next/server`, `bcryptjs` (`$2b$12$<parola>`). Zod gerçek paketle çalışır. D1 taklidi: `tests/integration/d1-sqlite.mjs` (node:sqlite, `batch` = transaction).
-- `npm run test:e2e` → **7/7** Playwright testi (`tests/e2e/`): misafir sepet → havale ile checkout → sipariş numarası; personel girişi → siparişe not → havaleyi onayla → "Ödendi"; yanlış parola tek genel hata; Türkçe slug ile kategori oluşturma; panel içi "Kayıt bulunamadı"; işlem sırasında oturum düşerse `?next=` ile girişe dönüş; gösterge panelinde dönem değiştirme ve bekleyen işten filtreli sipariş listesine geçiş.
+- `npm run test:e2e` → **13/13** Playwright testi (`tests/e2e/`): misafir sepet → havale ile checkout → sipariş numarası; personel girişi → siparişe not → havaleyi onayla → "Ödendi"; yanlış parola tek genel hata; Türkçe slug ile kategori oluşturma; panel içi "Kayıt bulunamadı"; işlem sırasında oturum düşerse `?next=` ile girişe dönüş; gösterge panelinde dönem değiştirme ve bekleyen işten filtreli sipariş listesine geçiş; firma unvanı değişince yasal metnin güncellenmesi, hatalı ayar alanı, yayınlanan yardım sayfasının footer'a otomatik gelmesi, yayındaki yasal metnin silinememesi; mağazadan üye olup admin müşteri listesinde görünme; personel daveti → kişinin kendi parolasını belirlemesi → panel girişi (bağlantı tek kullanımlık, personel hesabı mağazaya giremez).
   - **Ayrı veritabanı:** `scripts/e2e-setup.mjs` her koşuda `.wrangler/e2e`'yi silip `db/schema.sql` + `db/seed.sql` kurar, havaleyi aktif eder ve test admini ekler (`e2e-admin@nova.test`, yalnız bu klasörde). Dev sunucusu `NOVA_PERSIST_DIR=.wrangler/e2e` ile başlar (`next.config.ts` → `initOpenNextCloudflareForDev({ persist })`); geliştiricinin local D1'ine dokunulmaz.
   - **Isınma:** `tests/e2e/global-setup.ts` test edilen sayfaları önceden bir kez ister; aksi hâlde `next dev` ilk derlemede tam sayfa yenileme gönderip testleri bozar.
   - İlk kurulumda tarayıcı: `npx playwright install chromium`. Hata olursa iz/ekran görüntüsü `test-results/` altında (`npx playwright show-trace …`).
@@ -267,6 +279,9 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 - **iCloud:** proje iCloud ile eşitlenen Masaüstü'ndeyse iCloud `.next/` ve `.git/` içinde `… 2`, `… 3` kopyaları üretir (tsc'yi bozar, git'i riske atar). `tsconfig` `.next/**/* ?.ts` kopyalarını yok sayar; kalıcı çözüm projeyi iCloud dışına taşımaktır.
 
 - **Node sürümü:** makinede varsayılan Node 18 olabilir; Node ≥ 22.13 olmadan `tsc`, `next dev` ve servis testleri çalışmaz.
+- **İstemci bileşenleri modül `index`'inden değer import etmez:** `"use client"` dosyaları `@/modules/<modül>` index'inden yalnız **tip** (`import type`) alır; sabit/fonksiyon gerekiyorsa saf `domain/*` dosyasından import edin. Index, sunucu kodunu (`next/headers`, D1) da yükler; istemciye girince sayfa 500 verir (“You're importing a module that depends on next/headers”).
+- **E-posta sağlayıcısı yok:** davet ve parola sıfırlama bağlantıları şimdilik admin'e bir kez gösterilir, admin kişiye iletir. Sağlayıcı bağlanınca bağlantı oluşturulduğu anda gönderilmeli (ham token veritabanında tutulmaz, sonradan gönderilemez). Mağazada “Şifremi unuttum” da sağlayıcıya bağlı.
+- **Local D1'e dev sunucusu açıkken yazmayın:** `npm run dev` çalışırken `db:*:local` / `db:query:local` / `wrangler d1 execute --local` ile şema veya veri değiştirmek, aynı SQLite dosyasına iki ayrı süreç yazdığı için dosyayı bozabilir (belirti: her istekte `internal error; reference = …`, `sqlite3`'te `database disk image is malformed`). Önce dev sunucusunu durdurun, komutu çalıştırın, sonra yeniden başlatın. Bozulduysa `.wrangler/state` yedeğinden dönün ya da `npm run db:reset:local`.
 - **Dev sunucusu bayat modül:** `src/modules/*/http/schemas.ts` veya `src/server/app.ts` gibi paylaşılan sunucu modülleri değiştiğinde çalışan `next dev` eski kopyayı tutabiliyor (belirti: `Cannot read properties of undefined (reading 'parse')`, "Beklenmeyen bir hata"). Çözüm: dev sunucusunu yeniden başlat.
 - **SQLite ≥ 3.51:** ilişkili alt sorgunun `ORDER BY`'ında dış kolon kullanılamaz (`no such column: v.id`). Dış referansı `WHERE`'de tut.
 - **Migration yok:** `schema.sql` mevcut tabloya kolon eklemez → `ALTER TABLE` veya local reset (db/README.md §7).
@@ -274,7 +289,8 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 - iyzico: iade ucu `/v2/payment/refund` ve webhook V3 imza doğrulaması **sandbox'ta denenmedi**; canlı öncesi güncel dokümanla doğrulanmalı. iyzico `identityNumber` sabit yer tutucu (TCKN toplama işletme kararı).
 - Fiyat motoru: "X al Y bedava" hesaplanır ama hediye satırı otomatik eklenmez. Kargo KDV'si %20 varsayılır.
 - Saat dilimi: tarih filtreleri UTC gün sınırlarıyla çalışır (gösterim Europe/Istanbul).
-- Vitrin footer/checkout linkleri `/hesabim/siparisler`, `/sayfa/iade`, `/sayfa/on-bilgilendirme`, `/sayfa/mesafeli-satis` henüz 404; `gizlilik` sayfası yayında değil.
+- **Yasal metinler örnektir:** seed'deki şablonlar genel taslaktır; yayın öncesi hukuk danışmanına kontrol ettirilmeli ve Site ayarları → Firma bilgileri gerçek bilgilerle doldurulmalı.
+- **Canlı veritabanı (içerik/ayarlar):** `content_pages` ve `site_settings` tablolarının yapısı değişti, `content_page_revisions` eklendi. `schema.sql` mevcut tabloyu değiştirmez (`CREATE TABLE IF NOT EXISTS`) — canlıda bu tablolar eski hâliyle duruyorsa önce yedek alıp bu iki tabloyu (ve `seo_documents`'taki `page_id` satırlarını) yeniden oluşturmak, sonra `db:schema:remote` + ilgili seed satırlarını çalıştırmak gerekir.
 
 ## 11. Yol haritası
 
