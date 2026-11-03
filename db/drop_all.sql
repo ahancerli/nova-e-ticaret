@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS wishlist_items;
 DROP TABLE IF EXISTS shipment_events;
 DROP TABLE IF EXISTS shipment_items;
 DROP TABLE IF EXISTS integration_secrets;
+DROP TABLE IF EXISTS ai_integration;
 DROP TABLE IF EXISTS refunds;
 DROP TABLE IF EXISTS bank_transfers;
 DROP TABLE IF EXISTS payment_events;

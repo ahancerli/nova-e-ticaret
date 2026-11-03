@@ -7,7 +7,7 @@ import type { FullConfig } from "@playwright/test";
  */
 const ROUTES = [
   "/", "/urun/cocuklar-icin-dunya-atlasi", "/odeme", "/siparis/sonuc?durum=havale",
-  "/admin/giris", "/admin", "/admin/siparisler", "/admin/siparisler/ord_demo_1", "/admin/kategoriler", "/admin/kategoriler/yeni", "/admin/icerik", "/admin/icerik/yeni", "/admin/ayarlar", "/sayfa/mesafeli-satis-sozlesmesi", "/uye-ol", "/giris", "/hesabim", "/admin/kullanicilar", "/admin/musteriler", "/admin/sifre/aaaaaaaaaaaaaaaaaaaaaaaa",
+  "/admin/giris", "/admin", "/admin/siparisler", "/admin/siparisler/ord_demo_1", "/admin/kategoriler", "/admin/kategoriler/yeni", "/admin/icerik", "/admin/icerik/yeni", "/admin/ayarlar", "/sayfa/mesafeli-satis-sozlesmesi", "/uye-ol", "/giris", "/hesabim", "/admin/kullanicilar", "/admin/musteriler", "/admin/denetim", "/admin/entegrasyonlar/ai", "/admin/urunler/yeni", "/admin/sifre/aaaaaaaaaaaaaaaaaaaaaaaa",
   "/api/home", "/api/cart", "/api/admin/orders",
 ];
 

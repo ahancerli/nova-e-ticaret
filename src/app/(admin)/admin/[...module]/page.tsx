@@ -5,8 +5,6 @@ import { currentPrincipal } from "@/server/app";
 
 const MODULES: Record<string, { title: string; tables: string; api: string }> = {
   odemeler: { title: "Ödeme sistemleri", tables: "payment_configs, bank_accounts, integration_secrets, bank_transfers", api: "/api/admin/payments" },
-  entegrasyonlar: { title: "Entegrasyonlar", tables: "integrations, integration_secrets, shipping_methods", api: "/api/admin/integrations" },
-  denetim: { title: "Denetim kayıtları", tables: "audit_logs", api: "/api/admin/audit" },
 };
 
 /** Placeholder for admin modules that are modelled in the schema but not built yet (see README roadmap). */

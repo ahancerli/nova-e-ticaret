@@ -951,6 +951,23 @@ CREATE TABLE IF NOT EXISTS integration_secrets (
   UNIQUE (integration_id, payment_config_id, secret_name)
 ) STRICT;
 
+-- The shop's single AI provider (admin: Entegrasyonlar › AI entegrasyonları). One row at most (id = 'default'):
+-- choosing another provider replaces it. The API key uses the same AES-256-GCM envelope as integration_secrets
+-- (master key = SECRETS_MASTER_KEY); only its last characters are kept in clear for the panel.
+-- Separate table because adding 'ai' to integrations.kind would mean rebuilding a table other rows point at.
+CREATE TABLE IF NOT EXISTS ai_integration (
+  id                 TEXT PRIMARY KEY CHECK (id = 'default'),
+  provider           TEXT NOT NULL CHECK (provider IN ('openai','gemini','anthropic')),
+  model              TEXT NOT NULL CHECK (length(model) BETWEEN 2 AND 100),
+  api_key_ciphertext TEXT NOT NULL,
+  api_key_nonce      TEXT NOT NULL,
+  api_key_auth_tag   TEXT NOT NULL,
+  key_version        TEXT NOT NULL,
+  api_key_hint       TEXT NOT NULL CHECK (length(api_key_hint) <= 8),
+  updated_by         TEXT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS shipping_methods (
   id               TEXT PRIMARY KEY,
   code             TEXT NOT NULL UNIQUE,
@@ -1195,6 +1212,9 @@ CREATE INDEX IF NOT EXISTS ix_recent_views_visitor       ON recent_views(visitor
 CREATE INDEX IF NOT EXISTS ix_external_offers_product    ON external_offers(product_id, observed_at DESC);
 CREATE INDEX IF NOT EXISTS ix_outbox_pending             ON outbox_events(status, next_attempt_at);
 CREATE INDEX IF NOT EXISTS ix_audit_entity               ON audit_logs(entity_type, entity_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_audit_created              ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS ix_audit_actor                ON audit_logs(actor_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_audit_request              ON audit_logs(request_id);
 CREATE INDEX IF NOT EXISTS ix_rate_limit_expires         ON rate_limit_buckets(expires_at);
 
 -- =============================================================================

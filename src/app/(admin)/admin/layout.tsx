@@ -55,7 +55,16 @@ const NAV: Array<{ title: string; items: NavEntry[] }> = [
     title: "YÖNETİM",
     items: [
       { type: "link", href: "/admin/odemeler", label: "Ödeme sistemleri", perm: "payments.reconcile", icon: "payments" },
-      { type: "link", href: "/admin/entegrasyonlar", label: "Entegrasyonlar", perm: "integrations.write", icon: "integrations" },
+      {
+        type: "nest",
+        label: "Entegrasyonlar",
+        icon: "integrations",
+        children: [
+          { type: "link", href: "/admin/entegrasyonlar/ai", label: "AI entegrasyonları", perm: "integrations.write", icon: "integrations" },
+          { type: "link", href: "/admin/entegrasyonlar/sms", label: "SMS entegrasyonları", perm: "integrations.write", icon: "integrations" },
+          { type: "link", href: "/admin/entegrasyonlar/kargo", label: "Kargo entegrasyonları", perm: "integrations.write", icon: "integrations" },
+        ],
+      },
       { type: "link", href: "/admin/kullanicilar", label: "Kullanıcılar", perm: "users.manage", icon: "users" },
       { type: "link", href: "/admin/icerik", label: "İçerik yönetimi", perm: "content.write", icon: "content" },
       { type: "link", href: "/admin/ayarlar", label: "Site ayarları", perm: "settings.write", icon: "settings" },

@@ -1,6 +1,7 @@
 "use client";
 
 import { api } from "@/lib/api-client";
+import type { GenerateProductInput, GenerateProductResult } from "@/modules/ai";
 import type { SavedProduct } from "@/modules/catalog";
 
 const one = (id: string) => `/api/admin/products/${encodeURIComponent(id)}`;
@@ -11,4 +12,6 @@ export const productsApi = {
   update: (id: string, payload: unknown, expectedUpdatedAt: string) =>
     api<SavedProduct>(one(id), { method: "PUT", json: { ...(payload as object), expectedUpdatedAt }, timeoutMs: 45_000 }),
   remove: (id: string) => api<{ deleted: true }>(one(id), { method: "DELETE" }),
+  /** "AI ile ürün ekle": a draft of the selected fields; nothing is saved. Providers can take ~30 s. */
+  aiGenerate: (input: GenerateProductInput) => api<GenerateProductResult>("/api/admin/ai/product-content", { method: "POST", json: input, timeoutMs: 75_000 }),
 };

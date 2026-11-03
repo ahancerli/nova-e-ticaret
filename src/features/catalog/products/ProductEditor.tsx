@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, ArrowLeft, ArrowRight, Check, Save, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Check, Save, Sparkles, Trash2 } from "lucide-react";
 import { ClientApiError } from "@/lib/api-client";
 import { productsApi } from "./api";
 import { notify } from "@/lib/toast";
@@ -20,11 +20,13 @@ import { RelationsSection } from "./editor/RelationsSection";
 import { VariantsSection } from "./editor/VariantsSection";
 import { AttributesSection } from "./editor/AttributesSection";
 import { SeoSection } from "./editor/SeoSection";
+import { AiProductDrawer, type AiApply } from "./editor/AiProductDrawer";
 
 // ---------------------------------------------------------------------------
 // Page component
 // ---------------------------------------------------------------------------
-export function ProductEditor({ initial, meta, canPublish }: { initial: ProductEditorData | null; meta: ProductMeta; canPublish: boolean }) {
+/** `ai`: the shop's AI provider when one is configured — enables "AI ile ürün ekle". */
+export function ProductEditor({ initial, meta, canPublish, ai = null }: { initial: ProductEditorData | null; meta: ProductMeta; canPublish: boolean; ai?: { providerLabel: string } | null }) {
   const router = useRouter();
   const isEdit = !!initial;
   const [form, setForm] = useState<FormState>(() => fromData(initial));
@@ -41,6 +43,9 @@ export function ProductEditor({ initial, meta, canPublish }: { initial: ProductE
   const [confirm, setConfirm] = useState<"leave" | "delete" | null>(null);
   const [deleting, setDeleting] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  // Re-keyed on every open: each "AI ile ürün ekle" session starts empty.
+  const [aiSession, setAiSession] = useState(0);
+  const [aiOpen, setAiOpen] = useState(false);
 
   const ctx: Ctx = useMemo(() => ({ meta, canPublish, wasPublished: initial?.status === "published" }), [meta, canPublish, initial?.status]);
   const clientErrors = useMemo(() => validate(form, ctx), [form, ctx]);
@@ -129,6 +134,26 @@ export function ProductEditor({ initial, meta, canPublish }: { initial: ProductE
     }
   };
 
+  /** AI draft → form. Only returned fields change; photos join the gallery (first one becomes the cover if none). */
+  const applyAi = ({ result, images }: AiApply) => {
+    const d = result.draft;
+    setForm((s) => {
+      const known = new Set(s.media.map((m) => m.mediaId));
+      const media = [...s.media, ...images.filter((i) => !known.has(i.mediaId))];
+      return {
+        ...s,
+        ...(d.name ? { name: d.name } : {}),
+        ...(d.shortDescription ? { shortDescription: d.shortDescription } : {}),
+        ...(d.descriptionHtml ? { descriptionHtml: d.descriptionHtml } : {}),
+        ...(d.seo ? { seo: { ...s.seo, metaTitle: d.seo.metaTitle || s.seo.metaTitle, metaDescription: d.seo.metaDescription || s.seo.metaDescription } } : {}),
+        media,
+        primaryMediaId: s.primaryMediaId ?? media[0]?.mediaId ?? null,
+      };
+    });
+    setAiOpen(false);
+    notify.success("AI içeriği forma eklendi", { description: "Alanları kontrol edip ürünü kaydedin." });
+  };
+
   const leave = () => (dirty && !saving ? setConfirm("leave") : router.push("/admin/urunler"));
 
   const remove = async () => {
@@ -166,11 +191,19 @@ export function ProductEditor({ initial, meta, canPublish }: { initial: ProductE
             {initial ? <>/urun/{initial.slug} · son güncelleme {new Date(initial.updatedAt).toLocaleString("tr-TR")}</> : "Adımları sırayla tamamlayın; zorunlu alanlar doldurulmadan sonraki adıma geçilmez."}
           </p>
         </div>
-        {initial ? (
-          <Link href={`/urun/${initial.slug}`} target="_blank" className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
-            Mağazada gör
-          </Link>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {ai ? (
+            <button type="button" onClick={() => { setAiSession((n) => n + 1); setAiOpen(true); }}
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-linear-to-r from-[#7367f0] to-[#a29bfe] px-4 text-sm font-semibold text-white shadow-sm shadow-[#7367f0]/30 transition hover:brightness-105">
+              <Sparkles className="h-4 w-4" /> AI ile ürün ekle
+            </button>
+          ) : null}
+          {initial ? (
+            <Link href={`/urun/${initial.slug}`} target="_blank" className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+              Mağazada gör
+            </Link>
+          ) : null}
+        </div>
       </div>
 
       {/* Sticky step tabs */}
@@ -260,6 +293,8 @@ export function ProductEditor({ initial, meta, canPublish }: { initial: ProductE
           </div>
         </div>
       </div>
+
+      {ai ? <AiProductDrawer key={aiSession} open={aiOpen} providerLabel={ai.providerLabel} onClose={() => setAiOpen(false)} onApply={applyAi} /> : null}
 
       <AdminConfirmDialog open={confirm === "leave"} tone="primary" title={isEdit ? "Değişiklikler güncellenmedi" : "Ürün oluşturulmadı"}
         description="Sayfadan ayrılırsanız yaptığınız değişiklikler kaybolacak." confirmLabel={isEdit ? "Güncellemeden çık" : "Oluşturmadan çık"}

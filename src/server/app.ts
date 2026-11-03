@@ -18,7 +18,8 @@ import {
   type Principal,
   type Token,
 } from "@/core";
-import { registerAudit } from "@/modules/audit/audit-log";
+import { registerAi } from "@/modules/ai";
+import { registerAuditModule } from "@/modules/audit";
 import { registerCampaigns } from "@/modules/campaigns";
 import { registerCart } from "@/modules/cart";
 import { registerCatalog } from "@/modules/catalog";
@@ -62,9 +63,10 @@ registerPlatform(container);
 registerSecrets(container);
 registerOutbox(container);
 registerIdentity(container);
-registerAudit(container);
+registerAuditModule(container); // AuditLog for every module + audit log viewer
 registerStaff(container); // panel users + roles (invitation links from identity)
 registerMedia(container);
+registerAi(container); // single AI provider + "AI ile ürün ekle" (images via MediaLibrary)
 registerSettings(container);
 registerContent(container); // {{placeholders}} from settings
 registerCustomers(container); // members + storefront sign-up (consent versions from content)

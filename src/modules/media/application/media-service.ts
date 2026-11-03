@@ -65,6 +65,8 @@ export interface MediaLibrary {
   assertImage(mediaId: string, field: string): Promise<void>;
   /** Deletes an uploaded asset (row + object) once nothing references it. Seed/demo assets are never touched. */
   release(mediaId: string | null | undefined): Promise<void>;
+  /** Bytes of an uploaded image (e.g. to send to an AI provider); null when missing or not stored. */
+  readImage(mediaId: string): Promise<{ mime: string; bytes: Uint8Array } | null>;
 }
 
 export class MediaLibraryService implements MediaLibrary {
@@ -83,6 +85,13 @@ export class MediaLibraryService implements MediaLibrary {
     if (!(await this.media.delete(mediaId))) return;
     // Cleanup must never fail the user's (already committed) change; an orphan object is only logged.
     await this.storage.delete(key).catch((err: unknown) => this.logger.warn("media object delete failed", { key, error: String(err) }));
+  }
+
+  async readImage(mediaId: string): Promise<{ mime: string; bytes: Uint8Array } | null> {
+    const [key, mime] = await Promise.all([this.media.storageKeyOf(mediaId), this.media.mimeOf(mediaId)]);
+    if (!key || !mime?.startsWith("image/") || !isUploadedKey(key) || !this.storage.available) return null;
+    const obj = await this.storage.get(key);
+    return obj ? { mime, bytes: new Uint8Array(await new Response(obj.body).arrayBuffer()) } : null;
   }
 }
 

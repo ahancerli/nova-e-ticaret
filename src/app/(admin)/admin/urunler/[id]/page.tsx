@@ -1,3 +1,4 @@
+import { GetAiIntegrationToken } from "@/modules/ai";
 import { notFound } from "next/navigation";
 import { GetProductEditorToken, GetProductMetaToken } from "@/modules/catalog";
 import { requireAdminPage, resolveService } from "@/server/app";
@@ -9,11 +10,12 @@ export const dynamic = "force-dynamic";
 export default async function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireAdminPage("catalog.write");
   const { id } = await params;
-  const [product, meta] = await Promise.all([
+  const [product, meta, ai] = await Promise.all([
     resolveService(GetProductEditorToken).then((q) => q.execute(id)),
     resolveService(GetProductMetaToken).then((q) => q.execute()),
+    resolveService(GetAiIntegrationToken).then((q) => q.execute()),
   ]);
   if (!product) notFound();
   // key: navigating between two products must not reuse the previous form state.
-  return <ProductEditor key={product.id} initial={product} meta={meta} canPublish={user.permissions.has("catalog.publish")} />;
+  return <ProductEditor key={product.id} initial={product} meta={meta} canPublish={user.permissions.has("catalog.publish")} ai={ai ? { providerLabel: ai.providerLabel } : null} />;
 }

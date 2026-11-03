@@ -54,11 +54,11 @@ def setup_checkout(c, cid="co_1", cart="cart_1"):
 
 
 # --- structure ---------------------------------------------------------------
-@test("01 91 tables exist")
+@test("01 92 tables exist")
 def _():
     c = new_db()
     n = c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()[0]
-    assert n == 91, n
+    assert n == 92, n
 
 
 @test("02 all tables are STRICT")
@@ -426,6 +426,18 @@ def _():
     expect_error(c, "INSERT INTO site_settings (key, group_name, value_json) VALUES ('Site.Name', 'general', '1')", "CHECK")
     expect_error(c, "INSERT INTO site_settings (key, group_name, value_json) VALUES ('site.x', 'checkout', '1')", "CHECK")
     expect_error(c, "INSERT INTO site_settings (key, group_name, value_json) VALUES ('site.x', 'general', '{bad')", "CHECK")
+
+
+@test("44 ai integration: single row, known provider, model length")
+def _():
+    c = new_db()
+    ins = ("INSERT INTO ai_integration (id, provider, model, api_key_ciphertext, api_key_nonce, api_key_auth_tag, key_version, api_key_hint) "
+           "VALUES (?, ?, ?, 'c', 'n', 't', 'v1', '…abcd')")
+    expect_error(c, ins, ("second", "openai", "gpt-x"), "CHECK")
+    expect_error(c, ins, ("default", "mistral", "m-large"), "CHECK")
+    expect_error(c, ins, ("default", "openai", "x"), "CHECK")
+    c.execute(ins, ("default", "anthropic", "claude-sonnet-5-5"))
+    expect_error(c, ins, ("default", "openai", "gpt-x"), "UNIQUE")
 
 
 if __name__ == "__main__":
