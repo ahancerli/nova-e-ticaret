@@ -1,8 +1,10 @@
-import { UnitOfWork, ValidationError, type Clock, type Database, type IdGenerator, type Statement } from "@/core";
+import { UnitOfWork, ValidationError, type Clock, type Database, type IdGenerator, type Logger, type Statement } from "@/core";
 import type { AuditLog } from "@/modules/audit/audit-log";
+import type { MailSender } from "@/modules/mail";
+import { passwordResetEmail } from "../domain/password-reset-email";
 import { passwordProblems } from "../domain/password-policy";
 import { IdentityErrors } from "../domain/errors";
-import type { AccountTokenPurpose, AccountTokenRepository, CredentialWriter, PasswordHasher, SessionRepository, TokenService } from "./ports";
+import type { AccountTokenPurpose, AccountTokenRepository, CredentialRepository, CredentialWriter, PasswordHasher, SessionRepository, TokenService } from "./ports";
 
 /** How long a link stays usable: invitations a week (time to get to it), resets a day. */
 export const LINK_TTL_MINUTES: Record<AccountTokenPurpose, number> = { staff_invite: 7 * 24 * 60, password_reset: 24 * 60 };
@@ -103,5 +105,57 @@ export class CompleteAccountLink {
       }))
       .commit();
     return { audience: holder.isStaff ? "staff" : "customer", email: holder.email };
+  }
+}
+
+export interface RequestResetDeps {
+  db: Database;
+  credentials: CredentialRepository;
+  links: AccountLinks;
+  mailer: MailSender;
+  clock: Clock;
+  logger: Logger;
+  /** PUBLIC_SITE_URL without trailing slash (links in e-mails must be absolute). */
+  siteUrl: string;
+  isProduction: boolean;
+}
+
+/** A fresh request inside this window does not issue / send another link (mail-bombing guard). */
+export const RESET_RESEND_MINUTES = 2;
+
+/**
+ * Command: "Parolamı unuttum". Issues a single-use reset link and e-mails it through the shop's SMTP account.
+ * The HTTP layer answers the same thing whatever happens here (and runs this after the response), so neither the
+ * answer nor its timing reveals whether an account exists. Unknown, suspended or wrong-audience e-mails get nothing.
+ * Without SMTP settings the link is logged in development only (never in production logs).
+ */
+export class RequestPasswordReset {
+  constructor(private readonly deps: RequestResetDeps) {}
+
+  async execute(email: string, audience: "staff" | "customer", brand: string): Promise<"sent" | "skipped" | "throttled" | "not_configured"> {
+    const { deps } = this;
+    const account = await deps.credentials.findAccount(email.trim().toLowerCase());
+    if (!account || account.status !== "active" || account.isStaff !== (audience === "staff")) return "skipped";
+
+    const pending = await deps.links.pending(account.userId, "password_reset");
+    if (pending) {
+      const issuedAt = Date.parse(pending.expiresAt) - LINK_TTL_MINUTES.password_reset * 60_000;
+      if (deps.clock.now().getTime() - issuedAt < RESET_RESEND_MINUTES * 60_000) return "throttled";
+    }
+
+    const link = await deps.links.issue(account.userId, "password_reset");
+    const uow = new UnitOfWork(deps.db);
+    for (const st of link.statements) uow.add(st);
+    await uow.commit();
+
+    const url = `${deps.siteUrl}${accountLinkPath(audience, link.token)}`;
+    const result = await deps.mailer.send(passwordResetEmail({
+      to: account.email, name: account.displayName, link: url, brand, ttlHours: LINK_TTL_MINUTES.password_reset / 60, panel: audience === "staff",
+    }));
+    if (result === "not_configured") {
+      if (deps.isProduction) deps.logger.warn("password reset requested but SMTP is not configured", { userId: account.userId });
+      else deps.logger.info("password reset link (SMTP not configured — development only)", { resetLink: url });
+    }
+    return result;
   }
 }

@@ -1,7 +1,7 @@
 import { ClockToken, DatabaseToken, token, type Container } from "@/core";
 import type { StorefrontReadModel } from "./application/ports";
 import {
-  GetBrandPage, GetCategoryPage, GetFacets, GetHome, GetProductDetail, GetShell, ListActiveBrands, ListActiveCategories, ListCatalogProducts,
+  GetBrandPage, GetCategoryPage, GetFacets, GetHome, GetProductDetail, GetShell, ListActiveBrands, ListActiveCategories, ListCatalogProducts, SearchSuggest,
 } from "./application/storefront-queries";
 import { D1StorefrontReadModel } from "./infrastructure/d1-storefront.read-model";
 
@@ -15,6 +15,7 @@ export const GetBrandPageToken = token<GetBrandPage>("GetBrandPage");
 export const GetCategoryPageToken = token<GetCategoryPage>("GetCategoryPage");
 export const ListActiveBrandsToken = token<ListActiveBrands>("ListActiveBrands");
 export const ListActiveCategoriesToken = token<ListActiveCategories>("ListActiveCategories");
+export const SearchSuggestToken = token<SearchSuggest>("SearchSuggest");
 
 export function registerStorefront(c: Container): void {
   c.scoped(StorefrontReadModelToken, (r) => new D1StorefrontReadModel(r.resolve(DatabaseToken)));
@@ -27,4 +28,5 @@ export function registerStorefront(c: Container): void {
   c.scoped(GetCategoryPageToken, (r) => new GetCategoryPage(r.resolve(StorefrontReadModelToken)));
   c.scoped(ListActiveBrandsToken, (r) => new ListActiveBrands(r.resolve(StorefrontReadModelToken)));
   c.scoped(ListActiveCategoriesToken, (r) => new ListActiveCategories(r.resolve(StorefrontReadModelToken)));
+  c.scoped(SearchSuggestToken, (r) => new SearchSuggest(r.resolve(StorefrontReadModelToken)));
 }

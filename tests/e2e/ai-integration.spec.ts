@@ -11,7 +11,7 @@ test("AI integration: choose Claude with a key → the product editor offers “
   await page.getByRole("button", { name: "Entegrasyonu ekle" }).click();
   await expect(page.getByText("AI entegrasyonu eklendi")).toBeVisible();
   await expect(page.getByText("Bağlı", { exact: true })).toBeVisible();
-  await expect(page.getByText("…0000")).toBeVisible();
+  await expect(page.getByText("…0000", { exact: true })).toBeVisible();
 
   await page.goto("/admin/urunler/yeni");
   await page.getByRole("button", { name: "AI ile ürün ekle" }).click();

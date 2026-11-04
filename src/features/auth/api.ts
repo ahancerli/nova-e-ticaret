@@ -8,9 +8,11 @@ const base = (audience: LoginAudience) => (audience === "admin" ? "/api/admin/au
 
 /** Session endpoints. The session cookie is set / cleared by the server; nothing is stored in JS. */
 export const authApi = {
-  login: (audience: LoginAudience, credentials: { email: string; password: string }) =>
+  login: (audience: LoginAudience, credentials: { email: string; password: string; remember?: boolean }) =>
     api<{ loggedIn: true }>(`${base(audience)}/login`, { method: "POST", json: credentials }),
   logout: (audience: LoginAudience) => api<{ loggedOut: true }>(`${base(audience)}/logout`, { method: "POST" }),
+  /** "Parolamı unuttum" (panel): always answers the same; the reset link arrives by e-mail if the account exists. */
+  forgotPassword: (email: string) => api<{ requested: true }>("/api/admin/auth/forgot", { method: "POST", json: { email } }),
   /** Sets the password from an invitation / reset link (single use). */
   setPassword: (token: string, password: string) =>
     api<{ passwordSet: true; audience: "staff" | "customer"; loginPath: string }>("/api/account/password", { method: "POST", json: { token, password } }),

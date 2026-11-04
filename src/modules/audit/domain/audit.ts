@@ -23,14 +23,15 @@ export const AREA_OF_PREFIX: Record<string, Exclude<AuditArea, "all" | "other">>
   campaign: "campaigns", coupon: "campaigns",
   content: "content", showcase: "content",
   staff: "accounts", role: "accounts", customer: "accounts", account: "accounts",
-  settings: "settings", ai_integration: "settings", ai: "catalog",
+  settings: "settings", ai_integration: "settings", mail_integration: "settings", payment: "settings", bank_account: "settings", integration: "settings", ai: "catalog",
 };
 
 export const areaOf = (action: string): Exclude<AuditArea, "all"> => AREA_OF_PREFIX[action.split(".")[0] ?? ""] ?? "other";
 
 export const ENTITY_LABELS: Record<string, string> = {
   category: "Kategori", brand: "Marka", product: "Ürün", media: "Görsel", order: "Sipariş", campaign: "Kampanya", coupon: "Kupon",
-  content_page: "İçerik sayfası", showcase: "Vitrin", user: "Kullanıcı", role: "Rol", site_settings: "Site ayarları", ai_integration: "AI entegrasyonu",
+  content_page: "İçerik sayfası", showcase: "Vitrin", user: "Kullanıcı", role: "Rol", site_settings: "Site ayarları", ai_integration: "AI entegrasyonu", mail_integration: "E-posta (SMTP)",
+  payment_config: "Ödeme yöntemi", bank_account: "Banka hesabı", integration: "Entegrasyon",
 };
 
 const VERB_LABELS: Record<string, string> = {
@@ -48,12 +49,16 @@ const ACTION_LABELS: Record<string, string> = {
   "coupon.create": "Kupon oluşturuldu", "account.password_reset": "Parola yenilendi", "account.invite_accepted": "Davet kabul edildi",
   "settings.update": "Site ayarları güncellendi", "seed.insert": "Kurulum verisi",
   "ai_integration.create": "AI entegrasyonu eklendi", "ai_integration.update": "AI entegrasyonu güncellendi", "ai_integration.delete": "AI entegrasyonu kaldırıldı",
+  "mail_integration.create": "E-posta (SMTP) ayarı eklendi", "mail_integration.update": "E-posta (SMTP) ayarı güncellendi", "mail_integration.delete": "E-posta (SMTP) ayarı kaldırıldı",
   "ai.product_generate": "AI ile ürün içeriği oluşturuldu",
+  "payment.iyzico_keys": "iyzico anahtarları güncellendi", "payment.card_activate": "Kartla ödeme açıldı", "payment.card_deactivate": "Kartla ödeme kapatıldı",
+  "payment.bank_transfer_activate": "Havale / EFT açıldı", "payment.bank_transfer_deactivate": "Havale / EFT kapatıldı",
+  "integration.create": "Entegrasyon bağlandı", "integration.update": "Entegrasyon güncellendi", "integration.delete": "Entegrasyon kaldırıldı",
 };
 
 const SUBJECT_LABELS: Record<string, string> = {
   category: "Kategori", brand: "Marka", product: "Ürün", media: "Görsel", campaign: "Kampanya", coupon: "Kupon", content: "İçerik sayfası",
-  staff: "Panel kullanıcısı", role: "Rol", customer: "Müşteri", account: "Hesap", order: "Sipariş",
+  staff: "Panel kullanıcısı", role: "Rol", customer: "Müşteri", account: "Hesap", order: "Sipariş", bank_account: "Banka hesabı",
   "showcase.section": "Ana sayfa bölümü", "showcase.slider": "Slider", "showcase.slide": "Slayt", "showcase.stories": "Hikaye grubu", "showcase.story": "Hikaye",
 };
 
@@ -96,6 +101,9 @@ export function entityHref(entityType: string, entityId: string | null, opts: { 
     case "site_settings": return "/admin/ayarlar";
     case "showcase": return "/admin/vitrin";
     case "ai_integration": return "/admin/entegrasyonlar/ai";
+    case "mail_integration": return "/admin/entegrasyonlar/e-posta";
+    case "payment_config": case "bank_account": return "/admin/odemeler";
+    case "integration": return entityId === "sms" ? "/admin/entegrasyonlar/sms" : entityId === "shipping" ? "/admin/entegrasyonlar/kargo" : null;
     default: return null;
   }
 }

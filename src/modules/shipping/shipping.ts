@@ -2,17 +2,19 @@ import {
   AppError, ClockToken, ConflictError, DatabaseToken, IdGeneratorToken, Repository, UnauthorizedError, UnitOfWork, hmacHex, safeEqual, token,
   type Clock, type Container, type Database, type IdGenerator, type Statement,
 } from "@/core";
+import { IntegrationRuntimeToken, type CarrierTracking, type IntegrationRuntime } from "@/modules/integrations";
 import { addOutboxHandler } from "@/modules/outbox";
 import { SecretVaultToken, type SecretVault } from "@/modules/platform/secrets";
 
 /**
  * Carrier integration.
  *
- *   outbox "order.shipped" ──► carrier.book()                                  (tell the carrier about the parcel)
- *   carrier ──► POST /api/webhooks/shipping/:provider ──► ApplyTrackingEvents   (status updates)
+ *   outbox "order.shipped" ──► carrier.book()                                     (register the parcel → carrier_shipments)
+ *   POST /api/cron/shipping-sync ──► carrier.track() ──► tracking number + ApplyTrackingEvents   (polling carriers)
+ *   carrier ──► POST /api/webhooks/shipping/:provider ──► ApplyTrackingEvents      (carriers that push)
  *
- * A carrier is an `integrations` row (kind = 'shipping', is_active = 1, provider_code = adapter key).
- * Adding a real carrier = one ShippingCarrier class registered in CARRIERS + its secrets; nothing else changes.
+ * The carrier is the active `integrations` row of kind 'shipping' and its adapter (modules/integrations, panel:
+ * Entegrasyonlar › Kargo). Without one, shipments stay manual: staff enter the tracking number.
  */
 
 export type TrackingStatus = "in_transit" | "delivered" | "returned" | "lost";
@@ -30,21 +32,8 @@ export interface BookResult {
   providerRef?: string | null;
 }
 
-/** Strategy: one adapter per carrier. `book` must be idempotent per shipment id. */
-export interface ShippingCarrier {
-  readonly code: string;
-  book(input: { shipmentId: string; orderNumber: string; trackingNumber: string | null }): Promise<BookResult>;
-}
-
-/** Default: staff enters the tracking number in the panel; nothing to call. */
-class ManualCarrier implements ShippingCarrier {
-  readonly code = "manual";
-  async book(input: { trackingNumber: string | null }): Promise<BookResult> {
-    return { trackingNumber: input.trackingNumber };
-  }
-}
-
-export const CARRIERS: Record<string, ShippingCarrier> = { manual: new ManualCarrier() };
+/** Stable per shipment, so a retried booking reuses the key the carrier already knows. Max 20 chars. */
+export const cargoKeyOf = (shipmentId: string) => `NV${shipmentId.replace(/[^A-Za-z0-9]/g, "").slice(0, 18).toUpperCase()}`;
 
 /** Webhook replay window (seconds). */
 export const SIGNATURE_MAX_SKEW_SEC = 300;
@@ -60,9 +49,63 @@ export class ShippingRepository extends Repository {
   }
 
   shipmentToBook(shipmentId: string) {
-    return this.db.first<{ id: string; tracking_number: string | null; order_number: string }>(
-      "SELECT s.id, s.tracking_number, o.order_number FROM shipments s JOIN orders o ON o.id = s.order_id WHERE s.id = ?", shipmentId,
+    return this.db.first<{
+      id: string; tracking_number: string | null; order_number: string; customer_email: string; customer_phone: string | null;
+      recipient_name: string; phone_e164: string; province: string; district: string; line1: string; line2: string | null; pieces: number; booking: string | null;
+    }>(
+      `SELECT s.id, s.tracking_number, o.order_number, o.customer_email, o.customer_phone,
+              a.recipient_name, a.phone_e164, a.province, a.district, a.line1, a.line2,
+              (SELECT COALESCE(SUM(si.quantity), 0) FROM shipment_items si WHERE si.shipment_id = s.id) AS pieces,
+              (SELECT cs.status FROM carrier_shipments cs WHERE cs.shipment_id = s.id) AS booking
+         FROM shipments s JOIN orders o ON o.id = s.order_id
+         JOIN order_addresses a ON a.order_id = o.id AND a.kind = 'shipping'
+        WHERE s.id = ?`, shipmentId,
     );
+  }
+
+  /** Records the carrier's answer (booked / failed) — one row per shipment, last answer wins. */
+  async saveBooking(b: { shipmentId: string; integrationId: string; providerCode: string; cargoKey: string; status: "booked" | "failed"; providerRef: string | null; error: string | null; now: string }): Promise<void> {
+    await this.db.run(
+      `INSERT INTO carrier_shipments (shipment_id, integration_id, provider_code, cargo_key, status, provider_ref, last_error, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)
+       ON CONFLICT(shipment_id) DO UPDATE SET integration_id = ?2, provider_code = ?3, status = ?5, provider_ref = COALESCE(?6, provider_ref), last_error = ?7, updated_at = ?8`,
+      b.shipmentId, b.integrationId, b.providerCode, b.cargoKey, b.status, b.providerRef, b.error?.slice(0, 500) ?? null, b.now,
+    );
+  }
+
+  /** Booked parcels of `providerCode`, least recently synced first. */
+  bookingsToSync(providerCode: string, limit: number) {
+    return this.db.all<{ shipment_id: string; cargo_key: string; order_id: string; tracking_number: string | null; shipment_status: string }>(
+      `SELECT cs.shipment_id, cs.cargo_key, s.order_id, s.tracking_number, s.status AS shipment_status
+         FROM carrier_shipments cs JOIN shipments s ON s.id = cs.shipment_id
+        WHERE cs.status = 'booked' AND cs.provider_code = ?
+        ORDER BY cs.last_synced_at IS NOT NULL, cs.last_synced_at LIMIT ?`, providerCode, limit,
+    );
+  }
+
+  syncStatement(shipmentId: string, t: CarrierTracking, closed: boolean, now: string): Statement {
+    return this.db.statement(
+      `UPDATE carrier_shipments SET carrier_status = ?, last_synced_at = ?, updated_at = ?,
+              status = CASE WHEN ? THEN (CASE WHEN ? = 'cancelled' THEN 'cancelled' ELSE 'closed' END) ELSE status END
+        WHERE shipment_id = ? AND status = 'booked'`,
+      t.carrierStatus || null, now, now, closed ? 1 : 0, t.status, shipmentId,
+    );
+  }
+
+  /** First tracking number from the carrier: stored on the shipment + "shipment.tracking_assigned" (customer SMS). */
+  trackingAssignedStatements(s: { shipmentId: string; orderId: string; trackingNumber: string; trackingUrl: string | null; now: string }, ids: IdGenerator): Statement[] {
+    return [
+      this.db.statement(
+        "UPDATE shipments SET tracking_number = ?, tracking_url = COALESCE(?, tracking_url), updated_at = ? WHERE id = ? AND tracking_number IS NULL",
+        s.trackingNumber, s.trackingUrl, s.now, s.shipmentId,
+      ),
+      this.db.statement(
+        `INSERT INTO outbox_events (id, aggregate_type, aggregate_id, event_type, payload_json, dedupe_key)
+         SELECT ?, 'order', ?, 'shipment.tracking_assigned', ?, ? WHERE changes() = 1
+         ON CONFLICT(dedupe_key) DO NOTHING`,
+        ids.newId(), s.orderId, JSON.stringify({ shipmentId: s.shipmentId, trackingNumber: s.trackingNumber }), `shipment.tracking_assigned:${s.shipmentId}`,
+      ),
+    ];
   }
 
   async updateTracking(shipmentId: string, trackingNumber: string, trackingUrl: string | null, now: string): Promise<void> {
@@ -117,18 +160,84 @@ export class ShippingRepository extends Repository {
   }
 }
 
-/** Outbox command "order.shipped": registers the parcel with the active carrier. */
+/**
+ * Outbox command "order.shipped": registers the parcel with the active carrier (none → manual, nothing to call).
+ * Idempotent: an already booked shipment is skipped, and the carrier sees the same cargo key on a retry. A refusal is
+ * recorded on carrier_shipments (panel) and rethrown, so the outbox retries with backoff.
+ */
 export class BookShipment {
-  constructor(private readonly repo: ShippingRepository, private readonly clock: Clock) {}
+  constructor(private readonly repo: ShippingRepository, private readonly runtime: IntegrationRuntime, private readonly clock: Clock) {}
 
-  async execute(shipmentId: string): Promise<{ provider?: string; skipped?: string }> {
+  async execute(shipmentId: string): Promise<{ provider: string; cargoKey?: string; skipped?: string }> {
     const s = await this.repo.shipmentToBook(shipmentId);
-    if (!s) return { skipped: "shipment_missing" };
-    const row = await this.repo.activeIntegration();
-    const carrier = (row && CARRIERS[row.provider_code]) || CARRIERS.manual!;
-    const r = await carrier.book({ shipmentId: s.id, orderNumber: s.order_number, trackingNumber: s.tracking_number });
-    if (r.trackingNumber && r.trackingNumber !== s.tracking_number) await this.repo.updateTracking(s.id, r.trackingNumber, r.trackingUrl ?? null, this.clock.nowIso());
-    return { provider: carrier.code };
+    if (!s) return { provider: "manual", skipped: "shipment_missing" };
+    if (s.booking === "booked" || s.booking === "closed") return { provider: "carrier", skipped: "already_booked" };
+    const carrier = await this.runtime.carrier();
+    if (!carrier) return { provider: "manual" };
+
+    const cargoKey = cargoKeyOf(s.id);
+    const base = { shipmentId: s.id, integrationId: carrier.integrationId, providerCode: carrier.providerCode, cargoKey };
+    try {
+      const r = await carrier.connector.book(carrier.ctx, {
+        cargoKey, orderNumber: s.order_number, pieces: s.pieces,
+        receiver: {
+          name: s.recipient_name, phone: s.phone_e164 || s.customer_phone || "", email: s.customer_email,
+          province: s.province, district: s.district, address: [s.line1, s.line2].filter(Boolean).join(" "),
+        },
+      });
+      await this.repo.saveBooking({ ...base, status: "booked", providerRef: r.providerRef, error: null, now: this.clock.nowIso() });
+      return { provider: carrier.providerCode, cargoKey };
+    } catch (err) {
+      await this.repo.saveBooking({ ...base, status: "failed", providerRef: null, error: err instanceof Error ? err.message : String(err), now: this.clock.nowIso() });
+      throw err;
+    }
+  }
+}
+
+const TRACKED: Partial<Record<CarrierTracking["status"], TrackingStatus>> = { in_transit: "in_transit", delivered: "delivered", returned: "returned", lost: "lost" };
+const CLOSING = new Set<CarrierTracking["status"]>(["delivered", "returned", "lost", "cancelled"]);
+
+/**
+ * Cron command (POST /api/cron/shipping-sync): asks the active carrier about booked parcels — stores the tracking
+ * number once assigned (+ customer SMS event), applies state changes through ApplyTrackingEvents (one event per
+ * state, so repeats are ignored) and stops polling parcels in a terminal state.
+ */
+export class SyncCarrierTracking {
+  constructor(
+    private readonly db: Database, private readonly repo: ShippingRepository, private readonly runtime: IntegrationRuntime,
+    private readonly apply: ApplyTrackingEvents, private readonly clock: Clock, private readonly ids: IdGenerator,
+  ) {}
+
+  async execute(limit = 50): Promise<{ provider: string | null; checked: number; trackingAssigned: number; applied: number; closed: number }> {
+    const carrier = await this.runtime.carrier();
+    const summary = { provider: carrier?.providerCode ?? null, checked: 0, trackingAssigned: 0, applied: 0, closed: 0 };
+    if (!carrier) return summary;
+    const rows = await this.repo.bookingsToSync(carrier.providerCode, limit);
+    for (let i = 0; i < rows.length; i += 20) {
+      const chunk = rows.slice(i, i + 20);
+      const byKey = new Map(chunk.map((r) => [r.cargo_key, r]));
+      for (const t of await carrier.connector.track(carrier.ctx, chunk.map((r) => r.cargo_key))) {
+        const row = byKey.get(t.cargoKey);
+        if (!row) continue;
+        summary.checked++;
+        const now = this.clock.nowIso();
+        const closed = CLOSING.has(t.status);
+        const uow = new UnitOfWork(this.db);
+        const trackingNumber = row.tracking_number ?? t.trackingNumber;
+        if (!row.tracking_number && t.trackingNumber) {
+          uow.add(...this.repo.trackingAssignedStatements({ shipmentId: row.shipment_id, orderId: row.order_id, trackingNumber: t.trackingNumber, trackingUrl: t.trackingUrl, now }, this.ids));
+          summary.trackingAssigned++;
+        }
+        await uow.add(this.repo.syncStatement(row.shipment_id, t, closed, now)).commit();
+        if (closed) summary.closed++;
+        const status = TRACKED[t.status];
+        if (status && trackingNumber) {
+          const r = await this.apply.execute([{ eventId: `${carrier.providerCode}:${status}`, trackingNumber, status, description: t.carrierStatus, occurredAt: t.occurredAt ?? now }]);
+          summary.applied += r.applied;
+        }
+      }
+    }
+    return summary;
   }
 }
 
@@ -182,12 +291,17 @@ export class ApplyTrackingEvents {
 
 export const ShippingRepositoryToken = token<ShippingRepository>("ShippingRepository");
 export const BookShipmentToken = token<BookShipment>("BookShipment");
+export const SyncCarrierTrackingToken = token<SyncCarrierTracking>("SyncCarrierTracking");
 export const VerifyShippingWebhookToken = token<VerifyShippingWebhook>("VerifyShippingWebhook");
 export const ApplyTrackingEventsToken = token<ApplyTrackingEvents>("ApplyTrackingEvents");
 
 export function registerShipping(c: Container): void {
   c.scoped(ShippingRepositoryToken, (r) => new ShippingRepository(r.resolve(DatabaseToken)));
-  c.scoped(BookShipmentToken, (r) => new BookShipment(r.resolve(ShippingRepositoryToken), r.resolve(ClockToken)));
+  c.scoped(BookShipmentToken, (r) => new BookShipment(r.resolve(ShippingRepositoryToken), r.resolve(IntegrationRuntimeToken), r.resolve(ClockToken)));
+  c.scoped(SyncCarrierTrackingToken, (r) => new SyncCarrierTracking(
+    r.resolve(DatabaseToken), r.resolve(ShippingRepositoryToken), r.resolve(IntegrationRuntimeToken), r.resolve(ApplyTrackingEventsToken),
+    r.resolve(ClockToken), r.resolve(IdGeneratorToken),
+  ));
   c.scoped(VerifyShippingWebhookToken, (r) => new VerifyShippingWebhook(r.resolve(ShippingRepositoryToken), r.resolve(SecretVaultToken), r.resolve(ClockToken)));
   c.scoped(ApplyTrackingEventsToken, (r) => new ApplyTrackingEvents(r.resolve(DatabaseToken), r.resolve(ShippingRepositoryToken), r.resolve(ClockToken), r.resolve(IdGeneratorToken)));
 

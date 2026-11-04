@@ -1,6 +1,7 @@
 import { AuthenticatorToken, ClockToken, ConfigToken, DatabaseToken, IdGeneratorToken, LoggerToken, RateLimiterToken, token, type Container, type Resolver } from "@/core";
 import type { AccountTokenRepository, CredentialRepository, CredentialWriter, LoginListener, PasswordHasher, PermissionRepository, SessionCookies, SessionRepository, TokenService } from "./application/ports";
-import { AccountLinks, CompleteAccountLink, PeekAccountLink } from "./application/account-links";
+import { AccountLinks, CompleteAccountLink, PeekAccountLink, RequestPasswordReset } from "./application/account-links";
+import { MailSenderToken } from "@/modules/mail";
 import { AuditLogToken } from "@/modules/audit/audit-log";
 import { D1AccountReadModel, GetCustomerProfile, GetStaffRoles } from "./application/account-queries";
 import { GetCurrentPrincipal, Login, Logout } from "./application/session-use-cases";
@@ -26,6 +27,7 @@ export const AccountTokenRepositoryToken = token<AccountTokenRepository>("Accoun
 export const AccountLinksToken = token<AccountLinks>("AccountLinks");
 export const PeekAccountLinkToken = token<PeekAccountLink>("PeekAccountLink");
 export const CompleteAccountLinkToken = token<CompleteAccountLink>("CompleteAccountLink");
+export const RequestPasswordResetToken = token<RequestPasswordReset>("RequestPasswordReset");
 
 const listeners: ((r: Resolver) => LoginListener)[] = [];
 
@@ -71,6 +73,10 @@ export function registerIdentity(c: Container): void {
     db: r.resolve(DatabaseToken), tokens: r.resolve(TokenServiceToken), links: r.resolve(AccountTokenRepositoryToken),
     credentials: r.resolve(CredentialWriterToken), sessions: r.resolve(SessionRepositoryToken),
     passwords: r.resolve(PasswordHasherToken), audit: r.resolve(AuditLogToken), clock: r.resolve(ClockToken),
+  }));
+  c.scoped(RequestPasswordResetToken, (r) => new RequestPasswordReset({
+    db: r.resolve(DatabaseToken), credentials: r.resolve(CredentialRepositoryToken), links: r.resolve(AccountLinksToken), mailer: r.resolve(MailSenderToken),
+    clock: r.resolve(ClockToken), logger: r.resolve(LoggerToken), siteUrl: r.resolve(ConfigToken).publicSiteUrl, isProduction: r.resolve(ConfigToken).isProduction,
   }));
   c.scoped(LogoutToken, (r) => new Logout(r.resolve(SessionRepositoryToken), r.resolve(SessionCookiesToken), r.resolve(TokenServiceToken), r.resolve(ClockToken)));
 }

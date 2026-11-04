@@ -9,12 +9,20 @@ import { useFieldErrors } from "@/lib/use-field-errors";
 import { checkoutApi } from "./api";
 import { formatMinor } from "@/lib/money";
 import type { CheckoutLegal } from "@/modules/content";
+import type { PaymentOptions } from "@/modules/payments";
+import { BankAccounts } from "./BankAccounts";
 
-/** Guest checkout (no account required, spec R13). All amounts come from the server. */
-export function CheckoutClient({ legal }: { legal: CheckoutLegal }) {
+const METHODS = [
+  { value: "iyzico", label: "Kredi / banka kartı (iyzico)", hint: "Güvenli ödeme sayfasına yönlendirilirsiniz." },
+  { value: "bank_transfer", label: "Havale / EFT", hint: "Siparişiniz, ödemeniz banka hesabımızda doğrulandıktan sonra hazırlanır." },
+] as const;
+
+/** Guest checkout (no account required, spec R13). All amounts come from the server; only enabled payment methods are offered. */
+export function CheckoutClient({ legal, payment }: { legal: CheckoutLegal; payment: PaymentOptions }) {
   const { cart, refresh } = useCart();
   const router = useRouter();
-  const [method, setMethod] = useState<"iyzico" | "bank_transfer">("iyzico");
+  const methods = METHODS.filter((m) => (m.value === "iyzico" ? payment.card : payment.bankTransfer));
+  const [method, setMethod] = useState<"iyzico" | "bank_transfer">(methods[0]?.value ?? "iyzico");
   const [sameBilling, setSameBilling] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,12 +103,21 @@ export function CheckoutClient({ legal }: { legal: CheckoutLegal }) {
         )}
         <section className="card space-y-3 p-5" aria-labelledby="c-pay">
           <h2 id="c-pay" className="font-semibold">Ödeme yöntemi</h2>
-          {([["iyzico", "Kredi / banka kartı (iyzico)", "Güvenli ödeme sayfasına yönlendirilirsiniz."], ["bank_transfer", "Havale / EFT", "Siparişiniz, ödemeniz banka hesabımızda doğrulandıktan sonra hazırlanır."]] as const).map(([v, l, d]) => (
+          {methods.length === 0 && (
+            <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-danger">Şu an çevrim içi ödeme alınamıyor. Lütfen daha sonra tekrar deneyin veya bizimle iletişime geçin.</p>
+          )}
+          {methods.map(({ value: v, label: l, hint: d }) => (
             <label key={v} className={`flex cursor-pointer gap-3 rounded-xl border p-4 ${method === v ? "border-brand bg-brand-soft" : "border-line"}`}>
               <input type="radio" name="method" value={v} checked={method === v} onChange={() => setMethod(v)} className="mt-1 accent-brand" />
               <span><span className="block font-medium">{l}</span><span className="text-sm text-ink-soft">{d}</span></span>
             </label>
           ))}
+          {method === "bank_transfer" && payment.bankTransfer && (
+            <div className="space-y-2">
+              <p className="text-sm text-ink-soft">Siparişi onayladıktan sonra tutarı aşağıdaki hesaba gönderin; açıklamaya sipariş numaranızı yazın.</p>
+              <BankAccounts accounts={payment.bankAccounts} />
+            </div>
+          )}
           <div>
             <label htmlFor="note" className="mb-1 block text-sm font-medium">Sipariş notu (isteğe bağlı)</label>
             <textarea id="note" name="note" maxLength={1000} rows={2} className="input min-h-20 py-2" />
@@ -134,7 +151,7 @@ export function CheckoutClient({ legal }: { legal: CheckoutLegal }) {
             </span>
           </label>
           {error && <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-danger">{error}</p>}
-          <button className="btn btn-primary mt-4 w-full" disabled={busy}>{busy ? "İşleniyor…" : "Siparişi onayla"}</button>
+          <button className="btn btn-primary mt-4 w-full" disabled={busy || methods.length === 0}>{busy ? "İşleniyor…" : "Siparişi onayla"}</button>
         </div>
       </aside>
     </form>

@@ -5,7 +5,7 @@ test("admin pages require a session; wrong password gives one generic error", as
   await page.goto("/admin/siparisler");
   await expect(page).toHaveURL(/\/admin\/giris/);
   await page.getByLabel("E-posta").fill(ADMIN.email);
-  await page.getByLabel("Parola").fill("definitely-wrong");
+  await page.getByLabel("Parola", { exact: true }).fill("definitely-wrong");
   await page.getByRole("button", { name: "Giriş yap" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "E-posta veya parola hatalı." })).toBeVisible();
 });

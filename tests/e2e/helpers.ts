@@ -6,7 +6,7 @@ export const ADMIN = { email: "e2e-admin@nova.test", password: "E2e-browser-test
 export async function adminLogin(page: Page, next = "") {
   await page.goto(`/admin/giris${next ? `?next=${encodeURIComponent(next)}` : ""}`);
   await page.getByLabel("E-posta").fill(ADMIN.email);
-  await page.getByLabel("Parola").fill(ADMIN.password);
+  await page.getByLabel("Parola", { exact: true }).fill(ADMIN.password);
   await page.getByRole("button", { name: "Giriş yap" }).click();
   await expect(page).not.toHaveURL(/\/admin\/giris/);
 }

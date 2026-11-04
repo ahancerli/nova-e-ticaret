@@ -7,8 +7,18 @@ export interface Credential {
   isStaff: boolean;
 }
 
+/** Account behind an e-mail, with or without a password yet (password reset). */
+export interface AccountByEmail {
+  userId: string;
+  email: string;
+  displayName: string;
+  status: string;
+  isStaff: boolean;
+}
+
 export interface CredentialRepository {
   findByEmail(emailNormalized: string): Promise<Credential | null>;
+  findAccount(emailNormalized: string): Promise<AccountByEmail | null>;
   /** Counts failures for visibility (admin user screen); does not lock the account. */
   recordFailure(userId: string, now: string): Promise<void>;
   resetFailuresStatement(userId: string, now: string): Statement;

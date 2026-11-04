@@ -16,6 +16,8 @@ export interface CartLineSnapshot {
   cartItemId: string;
   variantId: string;
   productId: string;
+  /** For linking the cart row back to the product page. */
+  productSlug?: string;
   sku: string;
   productName: string;
   variantLabel: string;
@@ -64,7 +66,7 @@ export function priceCart(input: PricingInput): Quote {
       if (qty === 0) continue;
     }
     lines.push({
-      cartItemId: r.cartItemId, variantId: r.variantId, productId: r.productId, sku: r.sku, productName: r.productName,
+      cartItemId: r.cartItemId, variantId: r.variantId, productId: r.productId, productSlug: r.productSlug ?? null, sku: r.sku, productName: r.productName,
       variantLabel: r.variantLabel, imageUrl: r.imageUrl, quantity: qty, available: r.available,
       unitPriceMinor: r.unitPriceMinor, subtotalMinor: qty * r.unitPriceMinor, discountMinor: 0, totalMinor: 0,
       taxRateBps: r.taxRateBps, taxMinor: 0,

@@ -5,7 +5,7 @@ import type { Campaign } from "../domain/campaign-rules";
 import type { CartLineSnapshot, CouponSnapshot } from "../domain/pricing-engine";
 
 type LineRow = {
-  cart_item_id: string; variant_id: string; product_id: string; sku: string; product_name: string; variant_name: string | null;
+  cart_item_id: string; variant_id: string; product_id: string; product_slug: string; sku: string; product_name: string; variant_name: string | null;
   quantity: number; unit_price_minor: number | null; tax_rate_bps: number; available: number; is_active: number; product_status: string;
   image_url: string | null; option_labels: string | null;
 };
@@ -17,7 +17,7 @@ type CampaignRow = {
 export class D1PricingRepository extends Repository implements PricingRepository {
   async cartLines(cartId: string): Promise<CartLineSnapshot[]> {
     const rows = await this.db.all<LineRow>(
-      `SELECT ci.id AS cart_item_id, v.id AS variant_id, p.id AS product_id, v.sku, p.name AS product_name, v.name AS variant_name,
+      `SELECT ci.id AS cart_item_id, v.id AS variant_id, p.id AS product_id, p.slug AS product_slug, v.sku, p.name AS product_name, v.name AS variant_name,
               ci.quantity, vp.unit_price_minor, p.tax_rate_bps, v.is_active, p.status AS product_status,
               COALESCE((SELECT SUM(ib.on_hand - ib.reserved) FROM inventory_balances ib WHERE ib.variant_id = v.id), 0) AS available,
               -- variant image first, product gallery second. (Outer columns only in the subquery WHERE:
@@ -39,7 +39,7 @@ export class D1PricingRepository extends Repository implements PricingRepository
       DEFAULT_PRICE_LIST, cartId,
     );
     return rows.map((r) => ({
-      cartItemId: r.cart_item_id, variantId: r.variant_id, productId: r.product_id, sku: r.sku, productName: r.product_name,
+      cartItemId: r.cart_item_id, variantId: r.variant_id, productId: r.product_id, productSlug: r.product_slug, sku: r.sku, productName: r.product_name,
       variantLabel: r.option_labels ?? r.variant_name ?? "", imageUrl: r.image_url, quantity: r.quantity, unitPriceMinor: r.unit_price_minor,
       taxRateBps: r.tax_rate_bps, available: r.available, sellable: r.is_active === 1 && r.product_status === "published",
     }));

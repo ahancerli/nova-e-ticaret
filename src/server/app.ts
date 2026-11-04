@@ -19,6 +19,7 @@ import {
   type Token,
 } from "@/core";
 import { registerAi } from "@/modules/ai";
+import { registerMail } from "@/modules/mail";
 import { registerAuditModule } from "@/modules/audit";
 import { registerCampaigns } from "@/modules/campaigns";
 import { registerCart } from "@/modules/cart";
@@ -32,6 +33,7 @@ import { registerNotifications } from "@/modules/notifications/notifications";
 import { registerOrders } from "@/modules/orders";
 import { registerOutbox } from "@/modules/outbox";
 import { registerPayments } from "@/modules/payments";
+import { registerIntegrations } from "@/modules/integrations";
 import { registerPlatform } from "@/modules/platform/module";
 import { registerSecrets } from "@/modules/platform/secrets";
 import { registerPricing } from "@/modules/pricing";
@@ -67,6 +69,7 @@ registerAuditModule(container); // AuditLog for every module + audit log viewer
 registerStaff(container); // panel users + roles (invitation links from identity)
 registerMedia(container);
 registerAi(container); // single AI provider + "AI ile ürün ekle" (images via MediaLibrary)
+registerMail(container); // SMTP settings + MailSender port (identity: password reset e-mails)
 registerSettings(container);
 registerContent(container); // {{placeholders}} from settings
 registerCustomers(container); // members + storefront sign-up (consent versions from content)
@@ -79,7 +82,8 @@ registerCart(container); // also subscribes the guest-cart merge to storefront l
 registerCheckout(container);
 registerOrders(container);
 registerPayments(container); // + outbox handler refund.process
-registerShipping(container); // + outbox handler order.shipped
+registerIntegrations(container); // SMS / cargo firm catalog, settings, adapters (runtime port for shipping + notifications)
+registerShipping(container); // + outbox handler order.shipped (carrier booking), tracking sync
 registerReporting(container);
 registerNotifications(); // + customer / staff notification handlers
 

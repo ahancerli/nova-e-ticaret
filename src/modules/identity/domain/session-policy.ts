@@ -11,6 +11,8 @@ export interface SessionPolicy {
   /** Cookies accepted when reading (the first one present wins) and cleared at logout. */
   readCookies: readonly string[];
   ttlMinutes: number;
+  /** Lifetime when "Beni hatırla" is ticked at login. */
+  rememberTtlMinutes: number;
   sameSite: "lax" | "strict";
   /**
    * Which accounts may sign in. Staff and customer accounts are kept apart (as in Shopify): staff use the panel
@@ -29,6 +31,7 @@ export const SESSION_POLICIES: Record<Audience, SessionPolicy> = {
     cookie: STOREFRONT_SESSION_COOKIE,
     readCookies: [STOREFRONT_SESSION_COOKIE, LEGACY_SESSION_COOKIE],
     ttlMinutes: 60 * 24 * 7,
+    rememberTtlMinutes: 60 * 24 * 30,
     sameSite: "lax",
     accounts: "customer",
   },
@@ -37,6 +40,7 @@ export const SESSION_POLICIES: Record<Audience, SessionPolicy> = {
     cookie: ADMIN_SESSION_COOKIE,
     readCookies: [ADMIN_SESSION_COOKIE],
     ttlMinutes: 60 * 8,
+    rememberTtlMinutes: 60 * 24 * 7,
     sameSite: "strict",
     accounts: "staff",
   },

@@ -3,7 +3,7 @@ import { adminLogin } from "./helpers";
 
 /**
  * The main money path, end to end in a real browser:
- * guest adds a product → cart drawer → checkout with bank transfer → order created →
+ * guest adds a product → cart drawer → cart page → checkout with bank transfer → order created →
  * staff finds it, adds a note, reconciles the transfer → order is paid.
  */
 test.describe.serial("shop → admin", () => {
@@ -16,7 +16,11 @@ test.describe.serial("shop → admin", () => {
     const drawer = page.getByRole("dialog");
     await expect(drawer).toBeVisible();
     await expect(drawer.getByText("Çocuklar İçin Dünya Atlası")).toBeVisible();
-    await drawer.getByRole("link", { name: "Sepeti onayla" }).click();
+    await drawer.getByRole("link", { name: "Sepete git" }).click();
+
+    await expect(page).toHaveURL(/\/sepet$/);
+    await expect(page.getByRole("region", { name: "Sepetteki ürünler" }).getByText("Çocuklar İçin Dünya Atlası")).toBeVisible();
+    await page.getByRole("link", { name: "Alışverişi tamamla" }).click();
 
     await expect(page).toHaveURL(/\/odeme$/);
     await page.locator("#email").fill("e2e.musteri@example.com");

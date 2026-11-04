@@ -3,7 +3,7 @@ import { route } from "@/server/app";
 
 export const dynamic = "force-dynamic";
 
-/** Middle area of the home page is fetched client-side (spec R02). */
+/** Home sections as JSON for API clients; the storefront itself renders them on the server (features/shop). */
 export const GET = route({
   handle: ({ resolve }) => resolve(GetHomeToken).execute(),
 });

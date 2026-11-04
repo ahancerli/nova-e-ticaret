@@ -54,13 +54,14 @@ const NAV: Array<{ title: string; items: NavEntry[] }> = [
   {
     title: "YÖNETİM",
     items: [
-      { type: "link", href: "/admin/odemeler", label: "Ödeme sistemleri", perm: "payments.reconcile", icon: "payments" },
+      { type: "link", href: "/admin/odemeler", label: "Ödeme sistemleri", perm: "payments.secrets", icon: "payments" },
       {
         type: "nest",
         label: "Entegrasyonlar",
         icon: "integrations",
         children: [
           { type: "link", href: "/admin/entegrasyonlar/ai", label: "AI entegrasyonları", perm: "integrations.write", icon: "integrations" },
+          { type: "link", href: "/admin/entegrasyonlar/e-posta", label: "E-posta (SMTP)", perm: "integrations.write", icon: "integrations" },
           { type: "link", href: "/admin/entegrasyonlar/sms", label: "SMS entegrasyonları", perm: "integrations.write", icon: "integrations" },
           { type: "link", href: "/admin/entegrasyonlar/kargo", label: "Kargo entegrasyonları", perm: "integrations.write", icon: "integrations" },
         ],

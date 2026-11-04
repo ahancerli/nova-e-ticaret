@@ -161,5 +161,59 @@ await t("storefront: listing query parser bounds filters and sort; home tolerate
   assert(page.items.length > 0 && page.items[0].priceMinor <= page.items.at(-1).priceMinor, "sorted");
 });
 
+await t("storefront: shell carries the active category tree (images, children) and category links on menu items", async () => {
+  d1.raw.exec(`INSERT INTO media_assets (id, storage_key, public_url, mime_type, byte_size, alt_text) VALUES ('m_cat_menu','k/cat-menu.webp','/assets/cat-menu.webp','image/webp',10,'Moda');
+               UPDATE categories SET menu_media_id = 'm_cat_menu' WHERE slug = 'moda';
+               INSERT INTO categories (id, parent_id, name, slug, is_active) SELECT 'cat_off', id, 'Kapalı', 'kapali', 0 FROM categories WHERE slug = 'moda';`);
+  const shell = await resolve(storefront.GetShellToken).execute();
+  const moda = shell.categories.find((c: any) => c.slug === "moda");
+  assert(moda && moda.menuImageUrl === "/assets/cat-menu.webp" && moda.href === "/kategori/moda", JSON.stringify(moda));
+  const erkek = moda.children.find((c: any) => c.slug === "erkek");
+  assert(erkek?.children.some((c: any) => c.slug === "erkek-kazak"), JSON.stringify(moda.children));
+  assert(!JSON.stringify(shell.categories).includes("kapali"), "inactive category hidden");
+  const item = shell.header.find((n: any) => n.label === "Moda");
+  assert(item?.categorySlug === "moda" && shell.header.some((n: any) => n.categorySlug === null), JSON.stringify(shell.header));
+});
+await t("storefront: search suggestions — short input skips D1; products / categories / brands; LIKE wildcards are literal", async () => {
+  const none = await resolve(storefront.SearchSuggestToken).execute(" a ");
+  assert(!none.products.length && !none.categories.length, JSON.stringify(none));
+  const hits = await resolve(storefront.SearchSuggestToken).execute("atlas");
+  assert(hits.products.some((p: any) => p.slug === "cocuklar-icin-dunya-atlasi"), JSON.stringify(hits.products.map((p: any) => p.slug)));
+  const cat = await resolve(storefront.SearchSuggestToken).execute("Elektr");
+  assert(cat.categories[0]?.href === "/kategori/elektronik", JSON.stringify(cat.categories));
+  const wild = await resolve(storefront.SearchSuggestToken).execute("%_%");
+  assert(!wild.products.length && !wild.categories.length && !wild.brands.length, JSON.stringify(wild));
+});
+
+// --- GraphQL (src/server/graphql) — runs in the same request scope a route would give it -----------------
+const { runGraph } = await import(`${ROOT}/src/server/graphql/execute.ts`);
+const gql = (query: string, variables?: Record<string, unknown>, introspection = false) => {
+  const s = scope();
+  return runGraph({ query, variables }, { resolve: (tok: any) => s.resolve(tok) }, { introspection }) as Promise<any>;
+};
+await t("graphql: one request answers listing products + facets with the shared filter parser", async () => {
+  const d = await gql(`query L($f: ProductFilter) { products(filter: $f) { total pages items { slug priceMinor inStock } } facets(filter: $f) { brands { value count } price { minMinor maxMinor } } }`,
+    { f: { sort: "price_desc", page: 1, inStock: true } });
+  const prices = d.products.items.map((i: any) => i.priceMinor);
+  assert(d.products.total > 0 && prices.every((p: number, i: number) => i === 0 || prices[i - 1] >= p), JSON.stringify(prices));
+  assert(d.facets.price.maxMinor >= d.facets.price.minMinor && Array.isArray(d.facets.brands), JSON.stringify(d.facets));
+  const cat = await gql(`{ products(filter: { category: "elektronik" }) { items { slug } } categories { slug children { slug } } }`);
+  assert(cat.products.items.every((i: any) => i.slug !== "cocuklar-icin-dunya-atlasi") && cat.categories.length > 0, JSON.stringify(cat.products.items));
+});
+await t("graphql: suggestions query mirrors the use case", async () => {
+  const d = await gql(`query S($q: String!) { suggest(q: $q) { products { slug name } categories { name href } brands { name href } } }`, { q: "atlas" });
+  assert(d.suggest.products[0]?.slug === "cocuklar-icin-dunya-atlasi", JSON.stringify(d.suggest));
+});
+await t("graphql: bad syntax, unknown fields, mutations, deep nesting and bad variables are 400s; introspection only when allowed", async () => {
+  await rejects(() => gql("{ products { "), "graphql_syntax");
+  await rejects(() => gql("{ products { nope } }"), "graphql_invalid");
+  await rejects(() => gql("mutation { x }"), "graphql_invalid");
+  await rejects(() => gql("{ categories { children { children { children { children { children { slug } } } } } } }"), "graphql_invalid");
+  await rejects(() => gql("query Q($f: ProductFilter) { products(filter: $f) { total } }", { f: { sort: "DROP" } }), "graphql_invalid");
+  await rejects(() => gql("{ __schema { types { name } } }"), "graphql_invalid");
+  const intro = await gql("{ __schema { queryType { name } } }", undefined, true);
+  assert(intro.__schema.queryType.name === "Query", JSON.stringify(intro));
+});
+
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

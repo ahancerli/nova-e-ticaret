@@ -54,11 +54,11 @@ def setup_checkout(c, cid="co_1", cart="cart_1"):
 
 
 # --- structure ---------------------------------------------------------------
-@test("01 92 tables exist")
+@test("01 95 tables exist")
 def _():
     c = new_db()
     n = c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()[0]
-    assert n == 92, n
+    assert n == 95, n
 
 
 @test("02 all tables are STRICT")
@@ -438,6 +438,35 @@ def _():
     expect_error(c, ins, ("default", "openai", "x"), "CHECK")
     c.execute(ins, ("default", "anthropic", "claude-sonnet-5-5"))
     expect_error(c, ins, ("default", "openai", "gpt-x"), "UNIQUE")
+
+
+
+@test("45 provider catalog: ready firms carry form fields; JSON arrays; code format; upsert refreshes")
+def _():
+    c = new_db()
+    ready = c.execute("SELECT code FROM integration_providers WHERE support_status = 'ready' ORDER BY code").fetchall()
+    assert [r[0] for r in ready] == ["netgsm", "yurtici"], ready
+    ins = "INSERT INTO integration_providers (code, kind, name, support_status, credential_fields_json) VALUES (?, ?, ?, ?, ?)"
+    expect_error(c, ins, ("newsms", "sms", "Yeni", "ready", "[]"), "CHECK")
+    expect_error(c, ins, ("Bad-Code", "sms", "Yeni", "planned", "[]"), "CHECK")
+    expect_error(c, ins, ("newsms", "sms", "Yeni", "planned", "{}"), "CHECK")
+    expect_error(c, ins, ("newsms", "fax", "Yeni", "planned", "[]"), "CHECK")
+    c.execute("UPDATE integration_providers SET name = 'Eski ad' WHERE code = 'netgsm'")
+    c.executescript(SCHEMA)
+    assert c.execute("SELECT name FROM integration_providers WHERE code = 'netgsm'").fetchone()[0] == "Netgsm"
+
+
+@test("46 integrations: one active per kind; carrier booking unique per key, failed needs an error")
+def _():
+    c = new_db()
+    c.execute("INSERT INTO integrations (id, kind, provider_code, name, is_active) VALUES ('i1', 'sms', 'netgsm', 'Netgsm', 1)")
+    expect_error(c, "INSERT INTO integrations (id, kind, provider_code, name, is_active) VALUES ('i2', 'sms', 'twilio', 'Twilio', 1)", contains="UNIQUE")
+    c.execute("INSERT INTO integrations (id, kind, provider_code, name, is_active) VALUES ('i3', 'sms', 'twilio', 'Twilio', 0)")
+    c.execute("INSERT INTO shipments (id, order_id, shipping_method_id) VALUES ('s1', 'ord_demo_1', 'sm_std')")
+    c.execute("INSERT INTO shipments (id, order_id, shipping_method_id) VALUES ('s2', 'ord_demo_1', 'sm_std')")
+    c.execute("INSERT INTO carrier_shipments (shipment_id, provider_code, cargo_key) VALUES ('s1', 'yurtici', 'NVKEY0001')")
+    expect_error(c, "INSERT INTO carrier_shipments (shipment_id, provider_code, cargo_key) VALUES ('s2', 'yurtici', 'NVKEY0001')", contains="UNIQUE")
+    expect_error(c, "INSERT INTO carrier_shipments (shipment_id, provider_code, cargo_key, status) VALUES ('s2', 'yurtici', 'NVKEY0002', 'failed')", contains="CHECK")
 
 
 if __name__ == "__main__":

@@ -4,8 +4,7 @@ import { notFound } from "next/navigation";
 import { GetProductDetailToken } from "@/modules/storefront";
 import { resolveService } from "@/server/app";
 import { sanitizeRichHtml } from "@/core";
-import { VariantPicker } from "@/features/storefront/VariantPicker";
-import { ProductCard } from "@/features/storefront/ProductCard";
+import { ProductGrid, VariantPicker } from "@/features/shop";
 
 const getProductBySlug = async (slug: string) => (await resolveService(GetProductDetailToken)).execute(slug);
 
@@ -66,7 +65,7 @@ export default async function ProductPage({ params }: Props) {
       {p.related.length > 0 && (
         <section className="mt-12" aria-labelledby="related">
           <h2 id="related" className="mb-4 text-xl font-bold">Bunlar da ilgini çekebilir</h2>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-5">{p.related.map((r) => <ProductCard key={r.id} p={r} />)}</div>
+          <ProductGrid products={p.related} />
         </section>
       )}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />

@@ -55,6 +55,8 @@ export interface LoginCommand {
   req: Request;
   /** Per-IP bucket name; defaults to "<audience>-login-fail". The legacy endpoint keeps "login-fail". */
   ipBucket?: string;
+  /** "Beni hatırla": the audience's longer session lifetime. */
+  remember?: boolean;
 }
 
 /**
@@ -85,7 +87,7 @@ export class Login {
 
     const token = deps.tokens.newToken();
     const now = deps.clock.now();
-    const expiresAt = deps.clock.addMinutesIso(policy.ttlMinutes, now);
+    const expiresAt = deps.clock.addMinutesIso(cmd.remember ? policy.rememberTtlMinutes : policy.ttlMinutes, now);
     await new UnitOfWork(deps.db)
       .add(deps.sessions.createStatement({ id: deps.ids.newId(), userId: credential.userId, tokenHash: await deps.tokens.hash(token), expiresAt, ipHash: ipKey }))
       .add(deps.credentials.resetFailuresStatement(credential.userId, now.toISOString()))

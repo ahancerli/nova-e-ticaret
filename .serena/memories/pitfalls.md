@@ -1,9 +1,11 @@
 # Pitfalls
 - iCloud duplicates: project lives on iCloud-synced Desktop; files like `page 2.tsx`, `api 2.ts`, `module 2.ts`, `* 2.test.ts` appear (74 identical copies removed in commit a941400, 2026-11-04; they reappear while the repo stays on iCloud). They are stale copies — never edit/import them; search results may show both. `tsconfig` only ignores `.next/**/* ?.ts`.
+- `globals.css` must keep `@import "tailwindcss" source("..")` (scan src/ only): default root scan watches `.next/dev/logs` (written every request by Next 16) → endless dev reloads / e2e hangs.
 - Don't write to local D1 (`db:*:local`, `wrangler d1 execute --local`) while `npm run dev` runs → SQLite corruption (`database disk image is malformed`). Stop dev first.
 - `wrangler.jsonc` `vars` (APP_ENV, PUBLIC_SITE_URL) leak into local dev; `.env.local` values take precedence (`buildConfig`). Production without SESSION_SECRET/SECRETS_MASTER_KEY/CRON_SECRET → `ConfigError` at startup.
 - SQLite ≥3.51: correlated subquery `ORDER BY` can't reference outer columns; keep outer refs in `WHERE`.
-- `schema.sql` is `CREATE TABLE IF NOT EXISTS` → column changes don't apply to existing DBs.
-- No email provider: invite/reset links shown once to admin.
-- iyzico refund endpoint & webhook V3 signature not sandbox-verified. `buy_x_get_y` exists in schema but not offered in panel. Date filters use UTC day bounds in places (display Europe/Istanbul).
+- `schema.sql` is fully re-runnable (tables, indexes, triggers all `IF NOT EXISTS`; catalog rows upsert) → `db:schema:*` adds new tables to an existing DB, but column changes don't apply (need `ALTER TABLE`). Keep new DDL idempotent.
+- Outgoing mail = shop SMTP account (`modules/mail`, panel Entegrasyonlar › E-posta). Panel "Parolamı unuttum" e-mails the reset link (identity `RequestPasswordReset`, run in `after()` for no enumeration); raw tokens never go to DB/outbox. Without SMTP the link is logged only when not production. Invite links are still shown to the admin. Gmail needs an app password. STARTTLS upgrade on Workers not yet verified live (465/SSL is safe).
+- iyzico refund endpoint, webhook V3 signature and the panel key test (`IyzicoBinProbe`, `/payment/bin/check`) not sandbox-verified.
+- `ux_payment_config_active` (one active `payment_configs` row per provider): in one batch deactivate the others BEFORE activating, else UNIQUE fails. `integration_secrets` UNIQUE has a NULL column → no upsert; delete + insert. `buy_x_get_y` exists in schema but not offered in panel. Date filters use UTC day bounds in places (display Europe/Istanbul).
 - Seed `admin@nova.local` password undocumented → use `admin:create:local`.

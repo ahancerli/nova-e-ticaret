@@ -43,7 +43,7 @@ test("invite a panel user → they set their own password → panel sign-in; sto
   await invitee.getByRole("button", { name: "Hesabımı etkinleştir" }).click();
   await invitee.getByRole("link", { name: "Giriş sayfasına git" }).click();
   await expect(invitee.getByLabel("E-posta")).toHaveValue(email);
-  await invitee.getByLabel("Parola").fill("Yesil-Yaprak-55");
+  await invitee.getByLabel("Parola", { exact: true }).fill("Yesil-Yaprak-55");
   await invitee.getByRole("button", { name: "Giriş yap" }).click();
   await expect(invitee).toHaveURL(/\/admin$/);
 
@@ -53,7 +53,7 @@ test("invite a panel user → they set their own password → panel sign-in; sto
   await invitee.context().clearCookies();
   await invitee.goto("/giris");
   await invitee.getByLabel("E-posta").fill(email);
-  await invitee.getByLabel("Parola").fill("Yesil-Yaprak-55");
+  await invitee.getByLabel("Parola", { exact: true }).fill("Yesil-Yaprak-55");
   await invitee.getByRole("button", { name: "Giriş yap" }).click();
   await expect(invitee.getByRole("alert").filter({ hasText: "E-posta veya parola hatalı." })).toBeVisible();
 });

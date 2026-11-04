@@ -1,4 +1,4 @@
-import type { Facets, HomeData, ProductCard, ProductDetail } from "@/lib/types";
+import type { CategoryNode, Facets, HomeData, ProductCard, ProductDetail, SearchSuggestions } from "@/lib/types";
 
 export const SORT_KEYS = ["newest", "price_asc", "price_desc", "name"] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
@@ -8,13 +8,16 @@ export interface NavItem {
   id: string;
   label: string;
   href: string;
+  /** Set when the item points at a category: the header opens that category's subtree as a mega menu. */
+  categorySlug: string | null;
   children: NavItem[];
 }
 
-/** Header / footer navigation menus (site settings and footer pages come from their own modules). */
+/** Header / footer navigation menus + category tree (site settings and footer pages come from their own modules). */
 export interface ShellData {
   header: NavItem[];
   footer: NavItem[];
+  categories: CategoryNode[];
 }
 
 export interface ListParams {
@@ -51,6 +54,7 @@ export interface StorefrontReadModel {
   activeBrands(): Promise<{ slug: string; name: string }[]>;
   activeCategories(): Promise<{ id: string; parentId: string | null; slug: string; name: string }[]>;
   shell(): Promise<ShellData>;
+  suggest(q: string): Promise<SearchSuggestions>;
   home(now: string): Promise<HomeData>;
   listProducts(p: ListParams): Promise<ProductPage>;
   facets(p: Omit<ListParams, "sort" | "page">): Promise<Facets>;

@@ -1,2 +1,4 @@
-/** Public surface of the shipping module (carriers, booking, tracking webhook). */
-export { ApplyTrackingEventsToken, BookShipmentToken, CARRIERS, VerifyShippingWebhookToken, registerShipping, type ShippingCarrier, type TrackingEvent } from "./shipping";
+/** Public surface of the shipping module (carrier booking, tracking sync, tracking webhook). */
+export {
+  ApplyTrackingEventsToken, BookShipmentToken, SyncCarrierTrackingToken, VerifyShippingWebhookToken, cargoKeyOf, registerShipping, type TrackingEvent,
+} from "./shipping";

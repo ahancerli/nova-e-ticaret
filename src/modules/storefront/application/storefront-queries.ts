@@ -1,5 +1,5 @@
 import type { Clock } from "@/core";
-import type { Facets, HomeData, ProductDetail } from "@/lib/types";
+import type { Facets, HomeData, ProductDetail, SearchSuggestions } from "@/lib/types";
 import type { CategoryPageData, ListParams, ProductPage, ShellData, StorefrontReadModel } from "./ports";
 
 /** Query: settings + header/footer navigation for the SSR shell. */
@@ -80,5 +80,16 @@ export class ListActiveCategories {
 
   execute() {
     return this.read.activeCategories();
+  }
+}
+
+/** Query: search-as-you-type (products, categories, brands). Short input answers empty without touching D1. */
+export class SearchSuggest {
+  constructor(private readonly read: StorefrontReadModel) {}
+
+  execute(q: string): Promise<SearchSuggestions> {
+    const term = q.trim().slice(0, 100);
+    if (term.length < 2) return Promise.resolve({ products: [], categories: [], brands: [] });
+    return this.read.suggest(term);
   }
 }

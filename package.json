@@ -32,7 +32,7 @@
 		"admin:create": "D1_MODE=remote node scripts/create-admin.mjs",
 		"admin:create:local": "D1_MODE=local node scripts/create-admin.mjs",
 		"deps:latest": "npx --yes npm-check-updates@latest -u && npm install",
-		"test": "npm run db:test && npm run test:core && npm run test:catalog && npm run test:identity && npm run test:storefront && npm run test:orders && npm run test:integrations && npm run test:reporting && npm run test:content && npm run test:accounts && npm run test:campaigns && npm run test:showcase && npm run test:audit && npm run test:ai && npm run test:services",
+		"test": "npm run db:test && npm run test:core && npm run test:catalog && npm run test:identity && npm run test:storefront && npm run test:orders && npm run test:integrations && npm run test:reporting && npm run test:content && npm run test:accounts && npm run test:campaigns && npm run test:showcase && npm run test:audit && npm run test:ai && npm run test:mail && npm run test:payments && npm run test:providers && npm run test:services",
 		"test:services": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/services.test.ts",
 		"test:core": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/unit/core.test.ts",
 		"test:catalog": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/catalog.test.ts",
@@ -47,6 +47,9 @@
 		"test:showcase": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/showcase.test.ts",
 		"test:audit": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/audit.test.ts",
 		"test:ai": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/ai.test.ts",
+		"test:mail": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/mail.test.ts",
+		"test:payments": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/payments.test.ts",
+		"test:providers": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/providers.test.ts",
 		"test:e2e": "playwright test"
 	},
 	"dependencies": {
@@ -55,6 +58,7 @@
 		"ag-grid-community": "^36.2.0",
 		"ag-grid-react": "^36.2.0",
 		"bcryptjs": "^3.0.3",
+		"graphql": "^17.0.2",
 		"lucide-react": "^1.66.0",
 		"next": "^16.4.3",
 		"react": "^19.3.1",

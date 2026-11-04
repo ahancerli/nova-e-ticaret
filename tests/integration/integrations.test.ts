@@ -6,9 +6,10 @@ import { makeD1 } from "./d1-sqlite.mjs";
 const ROOT = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 const core = await import(`${ROOT}/src/core/index.ts`);
 const mod = (p: string) => import(`${ROOT}/src/modules/${p}.ts`);
-const [identity, identityModule, pricing, cart, checkout, orders, platform, secrets, audit, outbox, payments, shipping, notifications] = await Promise.all([
+const [identity, identityModule, pricing, cart, checkout, orders, platform, secrets, audit, outbox, payments, shipping, notifications, integrations, settings] = await Promise.all([
   mod("identity/index"), mod("identity/module"), mod("pricing/index"), mod("cart/index"), mod("checkout/index"), mod("orders/index"),
   mod("platform/module"), mod("platform/secrets"), mod("audit/audit-log"), mod("outbox/index"), mod("payments/index"), mod("shipping/index"), mod("notifications/notifications"),
+  mod("integrations/index"), mod("settings/index"),
 ]);
 const {
   Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger,
@@ -68,6 +69,8 @@ cart.registerCart(root);
 checkout.registerCheckout(root);
 orders.registerOrders(root);
 payments.registerPayments(root);
+settings.registerSettings(root);
+integrations.registerIntegrations(root);
 shipping.registerShipping(root);
 notifications.registerNotifications();
 root.singleton(identityModule.SessionCookiesToken, () => cookies);
@@ -148,7 +151,8 @@ await t("outbox: unknown event type goes dead at once; a throwing handler backs 
 // --- carrier webhook + tracking -------------------------------------------------------------------
 const WEBHOOK_SECRET = "carrier-webhook-secret";
 const sealed = await encryptSecret(MASTER, WEBHOOK_SECRET);
-d1.raw.exec("INSERT INTO integrations (id, kind, provider_code, name, is_active) VALUES ('int_ship', 'shipping', 'testcargo', 'Test Kargo', 1)");
+// one active integration per kind (ux_integration_active_kind): the seed's demo carrier steps aside
+d1.raw.exec("UPDATE integrations SET is_active = 0 WHERE kind = 'shipping'; INSERT INTO integrations (id, kind, provider_code, name, is_active) VALUES ('int_ship', 'shipping', 'testcargo', 'Test Kargo', 1)");
 d1.raw.prepare("INSERT INTO integration_secrets (id, integration_id, secret_name, ciphertext, nonce, auth_tag, key_version) VALUES ('sec_ship', 'int_ship', 'webhook_secret', ?, ?, ?, 'v1')")
   .run(sealed.ciphertext, sealed.nonce, sealed.authTag);
 

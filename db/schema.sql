@@ -1,6 +1,6 @@
 -- =============================================================================
 -- NOVA E-COMMERCE — SINGLE DDL SCRIPT (Cloudflare D1 / SQLite)
--- 87 STRICT tables · 47 indexes · 23 triggers
+-- 95 STRICT tables · 60 indexes · 25 triggers
 -- Data rules, status transitions and value vocabularies used by the app: db/README.md
 --
 -- Apply:
@@ -968,6 +968,64 @@ CREATE TABLE IF NOT EXISTS ai_integration (
   updated_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 ) STRICT;
 
+-- Outgoing e-mail over SMTP (password reset, later order mails). One row; the SMTP password is sealed with
+-- AES-256-GCM (master key = SECRETS_MASTER_KEY) — it cannot be hashed because the server must present it to the
+-- mail server. The panel never reads it back.
+CREATE TABLE IF NOT EXISTS mail_integration (
+  id                  TEXT PRIMARY KEY CHECK (id = 'default'),
+  host                TEXT NOT NULL CHECK (length(host) BETWEEN 3 AND 253),
+  port                INTEGER NOT NULL CHECK (port BETWEEN 1 AND 65535),
+  security            TEXT NOT NULL CHECK (security IN ('ssl','starttls')),
+  username            TEXT NOT NULL CHECK (length(username) BETWEEN 1 AND 254),
+  password_ciphertext TEXT NOT NULL,
+  password_nonce      TEXT NOT NULL,
+  password_auth_tag   TEXT NOT NULL,
+  key_version         TEXT NOT NULL,
+  from_email          TEXT NOT NULL CHECK (instr(from_email, '@') > 1 AND length(from_email) <= 254),
+  from_name           TEXT NOT NULL CHECK (length(from_name) BETWEEN 1 AND 100),
+  updated_by          TEXT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+) STRICT;
+
+-- Catalog of third-party providers offered in the panel (Entegrasyonlar › SMS / Kargo). Reference data: the upsert
+-- below keeps it in sync on every schema run. support_status 'ready' = an adapter ships with the app
+-- (src/modules/integrations/infrastructure/connectors); 'planned' = listed, but choosing it is refused with
+-- provider_not_integrated ("firmaya bilgi verin"). credential_fields_json drives the panel form:
+-- [{key, label, type: text|password|select, required, secret, placeholder?, hint?, options?, pattern?, maxLength?, default?}]
+-- secret fields go to integration_secrets (secret_name = key), the others to integrations.public_config_json.
+CREATE TABLE IF NOT EXISTS integration_providers (
+  code                   TEXT PRIMARY KEY CHECK (length(code) BETWEEN 2 AND 40 AND code NOT GLOB '*[^a-z0-9_]*'),
+  kind                   TEXT NOT NULL CHECK (kind IN ('shipping','sms','email','external_search','accounting')),
+  name                   TEXT NOT NULL CHECK (length(name) BETWEEN 2 AND 80),
+  description            TEXT CHECK (description IS NULL OR length(description) <= 300),
+  website                TEXT CHECK (website IS NULL OR website GLOB 'https://*'),
+  support_status         TEXT NOT NULL DEFAULT 'planned' CHECK (support_status IN ('ready','planned')),
+  credential_fields_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(credential_fields_json) AND json_type(credential_fields_json) = 'array'),
+  capabilities_json      TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(capabilities_json) AND json_type(capabilities_json) = 'array'),
+  sort_order             INTEGER NOT NULL DEFAULT 0,
+  is_listed              INTEGER NOT NULL DEFAULT 1 CHECK (is_listed IN (0,1)),
+  CHECK (support_status = 'planned' OR json_array_length(credential_fields_json) > 0)
+) STRICT;
+
+-- One booking per shipment at the carrier. cargo_key is OUR reference sent to the carrier (stable per shipment, so an
+-- outbox retry never books twice); the carrier's tracking number lands on shipments when it is assigned.
+-- status: booked → closed (terminal tracking state reached, sync stops) | cancelled; failed = carrier refused (last_error).
+CREATE TABLE IF NOT EXISTS carrier_shipments (
+  shipment_id    TEXT PRIMARY KEY REFERENCES shipments(id) ON DELETE CASCADE,
+  integration_id TEXT REFERENCES integrations(id) ON DELETE SET NULL,
+  provider_code  TEXT NOT NULL,
+  cargo_key      TEXT NOT NULL CHECK (length(cargo_key) BETWEEN 4 AND 40),
+  status         TEXT NOT NULL DEFAULT 'booked' CHECK (status IN ('booked','failed','cancelled','closed')),
+  carrier_status TEXT CHECK (carrier_status IS NULL OR length(carrier_status) <= 200),
+  provider_ref   TEXT,
+  last_error     TEXT CHECK (last_error IS NULL OR length(last_error) <= 500),
+  last_synced_at TEXT,
+  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE (provider_code, cargo_key),
+  CHECK (status <> 'failed' OR last_error IS NOT NULL)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS shipping_methods (
   id               TEXT PRIMARY KEY,
   code             TEXT NOT NULL UNIQUE,
@@ -1166,6 +1224,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_addresses_default_ship     ON addresses(use
 CREATE UNIQUE INDEX IF NOT EXISTS ux_addresses_default_bill     ON addresses(user_id) WHERE is_default_billing = 1;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_carts_active_user          ON carts(user_id) WHERE status = 'active' AND user_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_payment_config_active    ON payment_configs(provider) WHERE is_active = 1;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_integration_active_kind   ON integrations(kind) WHERE is_active = 1;
+CREATE INDEX IF NOT EXISTS ix_integration_providers_kind        ON integration_providers(kind, sort_order);
+CREATE INDEX IF NOT EXISTS ix_carrier_shipments_sync            ON carrier_shipments(status, last_synced_at);
 -- lookups
 CREATE INDEX IF NOT EXISTS ix_sessions_user              ON sessions(user_id, expires_at);
 CREATE INDEX IF NOT EXISTS ix_user_roles_role            ON user_roles(role_id);
@@ -1248,7 +1309,7 @@ DROP TRIGGER IF EXISTS trg_batch_guard_pass;
 
 -- category tree: no cycles (insert can only create a cycle via self-reference, blocked by CHECK;
 -- kept for completeness when ids are reused)
-CREATE TRIGGER trg_categories_no_cycle_ins
+CREATE TRIGGER IF NOT EXISTS trg_categories_no_cycle_ins
 BEFORE INSERT ON categories
 WHEN NEW.parent_id IS NOT NULL
 BEGIN
@@ -1256,7 +1317,7 @@ BEGIN
   WHERE NOT EXISTS (SELECT 1 FROM categories WHERE id = NEW.parent_id);
 END;
 
-CREATE TRIGGER trg_categories_no_cycle_upd
+CREATE TRIGGER IF NOT EXISTS trg_categories_no_cycle_upd
 BEFORE UPDATE OF parent_id ON categories
 WHEN NEW.parent_id IS NOT NULL
 BEGIN
@@ -1271,7 +1332,7 @@ BEGIN
   );
 END;
 
-CREATE TRIGGER trg_nav_items_no_cycle_upd
+CREATE TRIGGER IF NOT EXISTS trg_nav_items_no_cycle_upd
 BEFORE UPDATE OF parent_id ON navigation_items
 WHEN NEW.parent_id IS NOT NULL
 BEGIN
@@ -1286,7 +1347,7 @@ BEGIN
   );
 END;
 
-CREATE TRIGGER trg_nav_items_same_menu
+CREATE TRIGGER IF NOT EXISTS trg_nav_items_same_menu
 BEFORE INSERT ON navigation_items
 WHEN NEW.parent_id IS NOT NULL
 BEGIN
@@ -1295,7 +1356,7 @@ BEGIN
 END;
 
 -- typed attribute values: filled column must match attribute data_type
-CREATE TRIGGER trg_pav_type_ins
+CREATE TRIGGER IF NOT EXISTS trg_pav_type_ins
 BEFORE INSERT ON product_attribute_values
 BEGIN
   SELECT RAISE(ABORT, 'attribute_type_mismatch')
@@ -1312,7 +1373,7 @@ BEGIN
     AND (SELECT data_type FROM attribute_definitions WHERE id = NEW.attribute_id) <> 'multiselect';
 END;
 
-CREATE TRIGGER trg_pav_type_upd
+CREATE TRIGGER IF NOT EXISTS trg_pav_type_upd
 BEFORE UPDATE ON product_attribute_values
 BEGIN
   SELECT RAISE(ABORT, 'attribute_type_mismatch')
@@ -1327,7 +1388,7 @@ BEGIN
 END;
 
 -- SKU option must use an axis assigned to the variant's product
-CREATE TRIGGER trg_variant_options_axis
+CREATE TRIGGER IF NOT EXISTS trg_variant_options_axis
 BEFORE INSERT ON variant_options
 BEGIN
   SELECT RAISE(ABORT, 'variant_axis_not_assigned')
@@ -1339,7 +1400,7 @@ BEGIN
 END;
 
 -- atomic stock reservation
-CREATE TRIGGER trg_stock_res_check
+CREATE TRIGGER IF NOT EXISTS trg_stock_res_check
 BEFORE INSERT ON stock_reservations
 WHEN NEW.status = 'reserved'
 BEGIN
@@ -1348,7 +1409,7 @@ BEGIN
                   WHERE variant_id = NEW.variant_id AND warehouse_id = NEW.warehouse_id), 0) < NEW.quantity;
 END;
 
-CREATE TRIGGER trg_stock_res_apply
+CREATE TRIGGER IF NOT EXISTS trg_stock_res_apply
 AFTER INSERT ON stock_reservations
 WHEN NEW.status = 'reserved'
 BEGIN
@@ -1359,7 +1420,7 @@ BEGIN
    WHERE variant_id = NEW.variant_id AND warehouse_id = NEW.warehouse_id;
 END;
 
-CREATE TRIGGER trg_stock_res_guard
+CREATE TRIGGER IF NOT EXISTS trg_stock_res_guard
 BEFORE UPDATE ON stock_reservations
 BEGIN
   SELECT RAISE(ABORT, 'reservation_immutable_fields')
@@ -1368,7 +1429,7 @@ BEGIN
   WHERE OLD.status <> 'reserved' AND NEW.status <> OLD.status;
 END;
 
-CREATE TRIGGER trg_stock_res_transition
+CREATE TRIGGER IF NOT EXISTS trg_stock_res_transition
 AFTER UPDATE OF status ON stock_reservations
 WHEN OLD.status = 'reserved' AND NEW.status <> 'reserved'
 BEGIN
@@ -1381,34 +1442,34 @@ BEGIN
 END;
 
 -- append-only ledgers
-CREATE TRIGGER trg_inv_movements_no_update BEFORE UPDATE ON inventory_movements
+CREATE TRIGGER IF NOT EXISTS trg_inv_movements_no_update BEFORE UPDATE ON inventory_movements
 BEGIN SELECT RAISE(ABORT, 'append_only'); END;
-CREATE TRIGGER trg_inv_movements_no_delete BEFORE DELETE ON inventory_movements
+CREATE TRIGGER IF NOT EXISTS trg_inv_movements_no_delete BEFORE DELETE ON inventory_movements
 BEGIN SELECT RAISE(ABORT, 'append_only'); END;
-CREATE TRIGGER trg_order_events_no_update BEFORE UPDATE ON order_events
+CREATE TRIGGER IF NOT EXISTS trg_order_events_no_update BEFORE UPDATE ON order_events
 BEGIN SELECT RAISE(ABORT, 'append_only'); END;
-CREATE TRIGGER trg_order_events_no_delete BEFORE DELETE ON order_events
+CREATE TRIGGER IF NOT EXISTS trg_order_events_no_delete BEFORE DELETE ON order_events
 BEGIN SELECT RAISE(ABORT, 'append_only'); END;
-CREATE TRIGGER trg_audit_no_update BEFORE UPDATE ON audit_logs
+CREATE TRIGGER IF NOT EXISTS trg_audit_no_update BEFORE UPDATE ON audit_logs
 BEGIN SELECT RAISE(ABORT, 'append_only'); END;
-CREATE TRIGGER trg_audit_no_delete BEFORE DELETE ON audit_logs
+CREATE TRIGGER IF NOT EXISTS trg_audit_no_delete BEFORE DELETE ON audit_logs
 BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 
 -- order snapshots are immutable after placement
-CREATE TRIGGER trg_order_amounts_immutable
+CREATE TRIGGER IF NOT EXISTS trg_order_amounts_immutable
 BEFORE UPDATE OF subtotal_minor, discount_minor, shipping_minor, tax_minor, total_minor, currency, checkout_id, order_number ON orders
 BEGIN
   SELECT RAISE(ABORT, 'order_snapshot_immutable');
 END;
 
-CREATE TRIGGER trg_order_items_immutable
+CREATE TRIGGER IF NOT EXISTS trg_order_items_immutable
 BEFORE UPDATE ON order_items
 BEGIN
   SELECT RAISE(ABORT, 'order_snapshot_immutable');
 END;
 
 -- campaign capacity (last-unit race is decided inside one D1 write)
-CREATE TRIGGER trg_campaign_capacity
+CREATE TRIGGER IF NOT EXISTS trg_campaign_capacity
 BEFORE INSERT ON campaign_allocations
 WHEN NEW.status = 'reserved'
 BEGIN
@@ -1420,7 +1481,7 @@ BEGIN
 END;
 
 -- coupon global and per-customer limits
-CREATE TRIGGER trg_coupon_limits
+CREATE TRIGGER IF NOT EXISTS trg_coupon_limits
 BEFORE INSERT ON coupon_redemptions
 WHEN NEW.status = 'reserved'
 BEGIN
@@ -1437,7 +1498,7 @@ BEGIN
 END;
 
 -- a "selected" campaign needs at least one include target before activation
-CREATE TRIGGER trg_campaign_activate_targets
+CREATE TRIGGER IF NOT EXISTS trg_campaign_activate_targets
 BEFORE UPDATE OF is_active ON campaigns
 WHEN NEW.is_active = 1 AND NEW.target_mode = 'selected'
 BEGIN
@@ -1448,7 +1509,7 @@ BEGIN
 END;
 
 -- a paid payment can only move to refund states
-CREATE TRIGGER trg_payment_paid_terminal
+CREATE TRIGGER IF NOT EXISTS trg_payment_paid_terminal
 BEFORE UPDATE OF status ON payments
 WHEN OLD.status = 'paid' AND NEW.status NOT IN ('paid','refunded','partially_refunded')
 BEGIN
@@ -1456,16 +1517,45 @@ BEGIN
 END;
 
 -- batch guard: abort the batch when the guarded statement did not change the expected number of rows
-CREATE TRIGGER trg_batch_guard_fail
+CREATE TRIGGER IF NOT EXISTS trg_batch_guard_fail
 BEFORE INSERT ON batch_guards
 WHEN NEW.actual <> NEW.expected
 BEGIN
   SELECT RAISE(ABORT, 'batch_guard_failed:' || NEW.guard);
 END;
 
-CREATE TRIGGER trg_batch_guard_pass
+CREATE TRIGGER IF NOT EXISTS trg_batch_guard_pass
 BEFORE INSERT ON batch_guards
 WHEN NEW.actual = NEW.expected
 BEGIN
   SELECT RAISE(IGNORE);
 END;
+
+-- Provider catalog (see integration_providers). Upsert: re-running the schema refreshes names, fields and status.
+INSERT INTO integration_providers (code, kind, name, description, website, support_status, credential_fields_json, capabilities_json, sort_order) VALUES
+ ('yurtici','shipping','Yurtiçi Kargo','Gönderi kaydı (createShipment), takip numarası ve durum sorgulama (queryShipment), iptal.','https://www.yurticikargo.com','ready',
+  '[{"key":"environment","label":"Ortam","type":"select","required":true,"secret":false,"default":"test","options":[{"value":"test","label":"Test (testws.yurticikargo.com)"},{"value":"live","label":"Canlı"}],"hint":"Canlıya geçmeden önce Yurtiçi''nin verdiği test kullanıcısıyla deneyin."},{"key":"username","label":"Web servis kullanıcı adı","type":"text","required":true,"secret":false,"placeholder":"YKTEST","maxLength":60,"hint":"Yurtiçi Kargo müşteri temsilcinizden alınır (gönderici ödemeli hesap)."},{"key":"password","label":"Web servis şifresi","type":"password","required":true,"secret":true,"maxLength":100}]',
+  '["create_shipment","tracking"]',10),
+ ('aras','shipping','Aras Kargo','Gönderi kaydı ve takip.','https://www.araskargo.com.tr','planned','[]','[]',20),
+ ('mng','shipping','MNG Kargo (DHL eCommerce)','Gönderi kaydı ve takip.','https://www.mngkargo.com.tr','planned','[]','[]',30),
+ ('ptt','shipping','PTT Kargo','Gönderi kaydı ve barkod.','https://www.ptt.gov.tr','planned','[]','[]',40),
+ ('surat','shipping','Sürat Kargo','Gönderi kaydı ve takip.','https://www.suratkargo.com.tr','planned','[]','[]',50),
+ ('hepsijet','shipping','HepsiJET','Gönderi kaydı ve takip.','https://www.hepsijet.com','planned','[]','[]',60),
+ ('kolaygelsin','shipping','Kolay Gelsin','Gönderi kaydı ve takip.','https://www.kolaygelsin.com','planned','[]','[]',70),
+ ('sendeo','shipping','Sendeo','Gönderi kaydı ve takip.','https://www.sendeo.com.tr','planned','[]','[]',80),
+ ('ups','shipping','UPS Kargo','Gönderi kaydı ve takip.','https://www.ups.com.tr','planned','[]','[]',90),
+ ('dhl_express','shipping','DHL Express','Yurt dışı gönderi kaydı ve takip.','https://www.dhl.com','planned','[]','[]',100),
+ ('netgsm','sms','Netgsm','Sipariş ve kargo bildirimleri (REST v2, Türkçe karakter).','https://www.netgsm.com.tr','ready',
+  '[{"key":"usercode","label":"Kullanıcı adı (abone no)","type":"text","required":true,"secret":false,"placeholder":"850XXXXXXX","maxLength":30,"pattern":"^[0-9A-Za-z._-]{3,30}$"},{"key":"password","label":"API şifresi","type":"password","required":true,"secret":true,"maxLength":100,"hint":"Netgsm panelinde API yetkisi verilen alt kullanıcının şifresi."},{"key":"msgheader","label":"Gönderici adı (SMS başlığı)","type":"text","required":true,"secret":false,"placeholder":"MAGAZAADI","maxLength":11,"hint":"Netgsm''de onaylı başlığınız; harfi harfine aynı yazılmalı."}]',
+  '["send_sms","turkish_chars"]',10),
+ ('iletimerkezi','sms','İleti Merkezi','Toplu ve bilgilendirme SMS''i.','https://www.iletimerkezi.com','planned','[]','[]',20),
+ ('mutlucell','sms','Mutlucell','Toplu ve bilgilendirme SMS''i.','https://www.mutlucell.com.tr','planned','[]','[]',30),
+ ('verimor','sms','Verimor','Toplu ve bilgilendirme SMS''i.','https://www.verimor.com.tr','planned','[]','[]',40),
+ ('jetsms','sms','JetSMS','Toplu ve bilgilendirme SMS''i.','https://www.jetsms.com.tr','planned','[]','[]',50),
+ ('vatansms','sms','Vatan SMS','Toplu ve bilgilendirme SMS''i.','https://www.vatansms.com','planned','[]','[]',60),
+ ('organiksms','sms','Organik SMS','Toplu ve bilgilendirme SMS''i.','https://www.organikhaberlesme.com','planned','[]','[]',70),
+ ('twilio','sms','Twilio','Uluslararası SMS.','https://www.twilio.com','planned','[]','[]',80)
+ON CONFLICT (code) DO UPDATE SET
+  kind = excluded.kind, name = excluded.name, description = excluded.description, website = excluded.website,
+  support_status = excluded.support_status, credential_fields_json = excluded.credential_fields_json,
+  capabilities_json = excluded.capabilities_json, sort_order = excluded.sort_order;

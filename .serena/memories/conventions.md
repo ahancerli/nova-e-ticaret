@@ -19,5 +19,9 @@
 - UI copy: create → "Oluştur/Ekle", existing → "Güncelle" (never "Kaydet"). Admin accent `#7367f0`, cards `rounded-2xl border-slate-200 shadow-sm`.
 - Order actions: `src/lib/order-rules.ts` (`ORDER_ACTIONS`) + `OrderAction` class in `modules/orders/application/actions` + list in `orders/module.ts` + schema.
 - No inline `<script>`; CSP sources added in `src/proxy.ts`. Rich HTML rendered only through `sanitizeRichHtml`.
+## Storefront (features/shop)
+- SSR by default (header, mega menu = CSS group-hover/focus-within, footer, home sections); client islands only for interaction. One `ui/ProductCard` everywhere. Inside shop, client files import relative paths, never the shop `index.ts` (it pulls server code).
+- Hybrid data: server components call query services via `resolveService`; browser reads go through `/api/graphql` (read-only, one request per screen). Writes stay REST. New graph field = SDL + `rootValue` in `src/server/graphql/schema.ts` + document in `features/shop/data/graph.ts`; filters reuse `parseListQuery`.
+- Listing: first page SSR (`loadListing`), URL changes via `window.history.pushState` (no server round trip) → one GraphQL refetch; pages pass `key` per scope (slug / search term).
 ## Style
 - Dense code, few comments (comments explain why). Comments/identifiers English.

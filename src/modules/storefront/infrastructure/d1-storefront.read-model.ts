@@ -1,5 +1,5 @@
 import { Repository, placeholders } from "@/core";
-import type { Facets, HomeData, ProductDetail } from "@/lib/types";
+import type { CategoryNode, Facets, HomeData, ProductDetail, SearchSuggestions } from "@/lib/types";
 import { DEFAULT_PRICE_LIST } from "@/modules/catalog/domain/product";
 import type { ListParams, NavItem, ShellData, StorefrontReadModel } from "../application/ports";
 import { HOME_SECTION_LOADERS, type HomeSectionRow } from "./home-sections";
@@ -7,6 +7,8 @@ import { CARD_SELECT, PAGE_SIZE, SORTS, toCard, type CardRow } from "./product-c
 
 const rows = <T>(r: D1Result | undefined) => (r?.results ?? []) as T[];
 type NavRow = { id: string; parent_id: string | null; label: string; href: string | null; category_slug: string | null; brand_slug: string | null; menu: string };
+type CategoryRow = { id: string; parent_id: string | null; slug: string; name: string; image_url: string | null; menu_image_url: string | null };
+const likeOf = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
 export class D1StorefrontReadModel extends Repository implements StorefrontReadModel {
   // --- simple pages ----------------------------------------------------------------------------------
@@ -35,21 +37,35 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
 
   // --- shell (SSR header / footer) ---------------------------------------------------------------
   async shell(): Promise<ShellData> {
-    const nav = await this.db.all<NavRow>(
-      `SELECT ni.id, ni.parent_id, ni.label, ni.href, c.slug AS category_slug, b.slug AS brand_slug, m.code AS menu
-         FROM navigation_items ni
-         JOIN navigation_menus m ON m.id = ni.menu_id AND m.is_active = 1
-         LEFT JOIN categories c ON c.id = ni.category_id
-         LEFT JOIN brands b ON b.id = ni.brand_id
-        WHERE ni.is_active = 1
-        ORDER BY ni.sort_order, ni.label`,
-    );
+    const [navRes, catRes] = await this.db.batch([
+      this.db.statement(
+        `SELECT ni.id, ni.parent_id, ni.label, ni.href, c.slug AS category_slug, b.slug AS brand_slug, m.code AS menu
+           FROM navigation_items ni
+           JOIN navigation_menus m ON m.id = ni.menu_id AND m.is_active = 1
+           LEFT JOIN categories c ON c.id = ni.category_id
+           LEFT JOIN brands b ON b.id = ni.brand_id
+          WHERE ni.is_active = 1
+          ORDER BY ni.sort_order, ni.label`,
+      ),
+      this.db.statement(
+        `SELECT c.id, c.parent_id, c.slug, c.name, im.public_url AS image_url, mm.public_url AS menu_image_url
+           FROM categories c
+           LEFT JOIN media_assets im ON im.id = c.image_media_id
+           LEFT JOIN media_assets mm ON mm.id = c.menu_media_id
+          WHERE c.is_active = 1
+          ORDER BY c.sort_order, c.name`,
+      ),
+    ]);
+    const nav = rows<NavRow>(navRes);
     const build = (menu: string) => {
       const mine = nav.filter((x) => x.menu === menu);
       const byId = new Map<string, NavItem>();
       const roots: NavItem[] = [];
       for (const r of mine) {
-        byId.set(r.id, { id: r.id, label: r.label, children: [], href: r.href ?? (r.category_slug ? `/kategori/${r.category_slug}` : r.brand_slug ? `/marka/${r.brand_slug}` : "#") });
+        byId.set(r.id, {
+          id: r.id, label: r.label, categorySlug: r.category_slug, children: [],
+          href: r.href ?? (r.category_slug ? `/kategori/${r.category_slug}` : r.brand_slug ? `/marka/${r.brand_slug}` : "#"),
+        });
       }
       for (const r of mine) {
         const parent = r.parent_id ? byId.get(r.parent_id) : undefined;
@@ -57,7 +73,22 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
       }
       return roots;
     };
-    return { header: build("header"), footer: build("footer") };
+    return { header: build("header"), footer: build("footer"), categories: categoryTree(rows<CategoryRow>(catRes)) };
+  }
+
+  async suggest(q: string): Promise<SearchSuggestions> {
+    const like = likeOf(q);
+    const [products, categories, brands] = await this.db.batch([
+      this.db.statement(`${CARD_SELECT} WHERE p.status = 'published' AND (p.name LIKE ? ESCAPE '\\' OR b.name LIKE ? ESCAPE '\\')
+                          ORDER BY p.published_at DESC, p.id LIMIT 6`, like, like),
+      this.db.statement("SELECT slug, name FROM categories WHERE is_active = 1 AND name LIKE ? ESCAPE '\\' ORDER BY sort_order, name LIMIT 5", like),
+      this.db.statement("SELECT slug, name FROM brands WHERE is_active = 1 AND name LIKE ? ESCAPE '\\' ORDER BY name COLLATE NOCASE LIMIT 5", like),
+    ]);
+    return {
+      products: rows<CardRow>(products).map(toCard),
+      categories: rows<{ slug: string; name: string }>(categories).map((c) => ({ name: c.name, href: `/kategori/${c.slug}` })),
+      brands: rows<{ slug: string; name: string }>(brands).map((b) => ({ name: b.name, href: `/marka/${b.slug}` })),
+    };
   }
 
   // --- home ------------------------------------------------------------------------------------------
@@ -103,7 +134,7 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
     if (p.brand) { where.push("b.slug = ?"); params.push(p.brand); }
     if (p.q) {
       where.push("(p.name LIKE ? ESCAPE '\\' OR b.name LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND (v.sku = ? OR v.barcode = ?)))");
-      const like = `%${p.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      const like = likeOf(p.q);
       params.push(like, like, p.q, p.q);
     }
     if (p.inStock) {
@@ -266,4 +297,16 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
       breadcrumb: rows<{ name: string; slug: string }>(breadcrumb),
     };
   }
+}
+
+/** Flat active rows → tree. A child whose parent is inactive is dropped with it (unreachable in the storefront). */
+function categoryTree(list: CategoryRow[]): CategoryNode[] {
+  const byId = new Map<string, CategoryNode>();
+  for (const r of list) byId.set(r.id, { id: r.id, slug: r.slug, name: r.name, href: `/kategori/${r.slug}`, imageUrl: r.image_url, menuImageUrl: r.menu_image_url, children: [] });
+  const roots: CategoryNode[] = [];
+  for (const r of list) {
+    if (!r.parent_id) roots.push(byId.get(r.id)!);
+    else byId.get(r.parent_id)?.children.push(byId.get(r.id)!);
+  }
+  return roots;
 }

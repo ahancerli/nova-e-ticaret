@@ -1,6 +1,6 @@
 import { Repository, type Statement } from "@/core";
 import type {
-  AccountTokenHolder, AccountTokenPurpose, AccountTokenRepository, ActiveSession, Credential, CredentialRepository, CredentialWriter, PermissionRepository, SessionRepository,
+  AccountByEmail, AccountTokenHolder, AccountTokenPurpose, AccountTokenRepository, ActiveSession, Credential, CredentialRepository, CredentialWriter, PermissionRepository, SessionRepository,
 } from "../application/ports";
 
 export class D1CredentialRepository extends Repository implements CredentialRepository, CredentialWriter {
@@ -13,6 +13,15 @@ export class D1CredentialRepository extends Repository implements CredentialRepo
       emailNormalized,
     );
     return r ? { userId: r.id, status: r.status, passwordHash: r.password_hash, isStaff: r.is_staff === 1 } : null;
+  }
+
+  async findAccount(emailNormalized: string): Promise<AccountByEmail | null> {
+    const r = await this.db.first<{ id: string; email_normalized: string; display_name: string; status: string; is_staff: number }>(
+      `SELECT u.id, u.email_normalized, u.display_name, u.status, EXISTS(SELECT 1 FROM staff_profiles s WHERE s.user_id = u.id) AS is_staff
+         FROM users u WHERE u.email_normalized = ?`,
+      emailNormalized,
+    );
+    return r ? { userId: r.id, email: r.email_normalized, displayName: r.display_name, status: r.status, isStaff: r.is_staff === 1 } : null;
   }
 
   async recordFailure(userId: string, now: string): Promise<void> {

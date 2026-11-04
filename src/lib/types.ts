@@ -51,10 +51,29 @@ export interface HomeData {
   sections: HomeSection[];
 }
 
+/** Active category tree for the storefront (mega menu, mobile menu, category directory). */
+export interface CategoryNode {
+  id: string;
+  slug: string;
+  name: string;
+  href: string;
+  imageUrl: string | null;
+  /** Wide visual shown inside the mega menu panel (Kategoriler → "Menü görseli"). */
+  menuImageUrl: string | null;
+  children: CategoryNode[];
+}
+
+export interface SearchSuggestions {
+  products: ProductCard[];
+  categories: { name: string; href: string }[];
+  brands: { name: string; href: string }[];
+}
+
 export interface QuoteLine {
   cartItemId: string;
   variantId: string;
   productId: string;
+  productSlug: string | null;
   sku: string;
   productName: string;
   variantLabel: string;

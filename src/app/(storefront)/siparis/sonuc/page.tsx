@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { BankAccounts } from "@/features/checkout/BankAccounts";
+import { GetPaymentOptionsToken } from "@/modules/payments";
+import { resolveService } from "@/server/app";
 
 export const metadata = { title: "Sipariş durumu", robots: { index: false } };
 
@@ -7,6 +10,7 @@ export default async function OrderResultPage({ searchParams }: { searchParams: 
   const success = durum === "basarili";
   const transfer = durum === "havale";
   const safeNo = no && /^NV[0-9A-Z]{6,20}$/.test(no) ? no : null;
+  const accounts = transfer ? (await (await resolveService(GetPaymentOptionsToken)).execute()).bankAccounts : [];
   return (
     <div className="container-page max-w-xl py-16 text-center">
       <div className={`mx-auto grid h-16 w-16 place-items-center rounded-full text-3xl ${success || transfer ? "bg-green-50 text-success" : "bg-red-50 text-danger"}`} aria-hidden>
@@ -23,6 +27,7 @@ export default async function OrderResultPage({ searchParams }: { searchParams: 
             ? "Havale/EFT açıklamasına sipariş numaranızı yazın. Ödemeniz kontrol edildikten sonra siparişiniz hazırlanır; havale bildirimi tek başına onay anlamına gelmez."
             : "Kartınızdan çekim yapılmadıysa sepetinizden tekrar deneyebilirsiniz. Sorun devam ederse bizimle iletişime geçin."}
       </p>
+      {accounts.length > 0 && <div className="mt-6"><BankAccounts accounts={accounts} orderNo={safeNo} /></div>}
       <Link href="/" className="btn btn-primary mt-8">Alışverişe devam et</Link>
     </div>
   );

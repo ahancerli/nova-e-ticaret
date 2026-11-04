@@ -4,5 +4,5 @@ export { parseListQuery } from "./http/list-query";
 export { PAGE_SIZE } from "./infrastructure/product-cards";
 export {
   GetBrandPageToken, GetCategoryPageToken, GetFacetsToken, GetHomeToken, GetProductDetailToken, GetShellToken,
-  ListActiveBrandsToken, ListActiveCategoriesToken, ListCatalogProductsToken, registerStorefront,
+  ListActiveBrandsToken, ListActiveCategoriesToken, ListCatalogProductsToken, SearchSuggestToken, registerStorefront,
 } from "./module";
