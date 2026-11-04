@@ -122,7 +122,7 @@ await t("paging and direction: stable order, oldest first with dir=asc", async (
   assert(p1.rows.length === 5 && p2.rows.length === 3 && p1.total === 8, `${p1.rows.length}/${p2.rows.length}`);
   assert(new Set([...p1.rows, ...p2.rows].map((r: any) => r.id)).size === 8, "no duplicates across pages");
   const asc = await list({ dir: "asc" });
-  assert(asc.rows.at(-1).id === "al_7", "newest last");
+  assert(ids(asc.rows).at(-1) === "al_7", "newest last");
 });
 
 await t("detail: redacted diff, IP flag, entries of the same request, record history; unknown id → null", async () => {
