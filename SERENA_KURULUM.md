@@ -129,7 +129,12 @@ Claude projeyi bir kez tarar ve notları yazar. Bu projede onboarding **2026-11-
 ## Günlük kullanım
 
 - Yeni oturumda Claude önce `core` notunu okur, gerekirse ilgili nota iner; kodda sembol araçlarıyla yalnız gereken gövdeleri açar.
-- Mimari değişince notları güncelletin: *"Serena notlarını şu değişikliğe göre güncelle: …"*. Not bağlantılarını kontrol: proje kökünde `serena memories check`.
+- **Notlar kendiliğinden güncel tutulur:** `CLAUDE.md` Claude'a, mimariyi etkileyen bir işin sonunda ilgili notu aynı işte
+  güncellemesini söyler. Unutursa `.claude/settings.json`'daki **Stop hook'u** (`.claude/hooks/serena-memory-check.sh`) devreye girer:
+  `src/core/`, `src/server/`, `src/modules/*/module.ts|index.ts`, `db/schema.sql`, `package.json`, `wrangler.jsonc` gibi dosyalar
+  değiştiyse (commit edilmemiş veya push edilmemiş) ve `.serena/memories/` değişmediyse Claude'u bir kez durdurup notları kontrol ettirir.
+  Aynı değişiklik için tekrar uyarmaz. Hook'u görmek/kapatmak için Claude Code'da `/hooks`.
+- Elle de isteyebilirsiniz: *"Serena notlarını şu değişikliğe göre güncelle: …"*. Not bağlantılarını kontrol: proje kökünde `serena memories check`.
 - Serena'yı güncellemek: `uv tool upgrade serena-agent`. Claude Code CLI kendini günceller.
 - Serena'yı bu projeden kaldırmak: `claude mcp remove serena`. Tamamen kaldırmak: `uv tool uninstall serena-agent`.
 

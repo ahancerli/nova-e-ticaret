@@ -1,5 +1,5 @@
 # Pitfalls
-- iCloud duplicates: project lives on iCloud-synced Desktop; files like `page 2.tsx`, `api 2.ts`, `module 2.ts`, `* 2.test.ts` appear (≈70 committed in git as of 2026-11). They are stale copies — never edit/import them; search results may show both. `tsconfig` only ignores `.next/**/* ?.ts`.
+- iCloud duplicates: project lives on iCloud-synced Desktop; files like `page 2.tsx`, `api 2.ts`, `module 2.ts`, `* 2.test.ts` appear (74 identical copies removed in commit a941400, 2026-11-04; they reappear while the repo stays on iCloud). They are stale copies — never edit/import them; search results may show both. `tsconfig` only ignores `.next/**/* ?.ts`.
 - Don't write to local D1 (`db:*:local`, `wrangler d1 execute --local`) while `npm run dev` runs → SQLite corruption (`database disk image is malformed`). Stop dev first.
 - `wrangler.jsonc` `vars` (APP_ENV, PUBLIC_SITE_URL) leak into local dev; `.env.local` values take precedence (`buildConfig`). Production without SESSION_SECRET/SECRETS_MASTER_KEY/CRON_SECRET → `ConfigError` at startup.
 - SQLite ≥3.51: correlated subquery `ORDER BY` can't reference outer columns; keep outer refs in `WHERE`.
