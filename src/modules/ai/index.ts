@@ -3,5 +3,5 @@ export * from "./domain/providers";
 export { extractJsonObject, parseProductDraft } from "./domain/product-draft";
 export { aiIntegrationDeleteSchema, aiIntegrationSchema, aiProductGenerateSchema } from "./http/schemas";
 export {
-  AiClientFactoryToken, GenerateProductContentToken, GetAiIntegrationToken, RemoveAiIntegrationToken, SaveAiIntegrationToken, TestAiIntegrationToken, registerAi,
+  AiClientFactoryToken, GenerateProductContentToken, GetAiIntegrationToken, ListAiModelsToken, RemoveAiIntegrationToken, SaveAiIntegrationToken, TestAiIntegrationToken, registerAi,
 } from "./module";

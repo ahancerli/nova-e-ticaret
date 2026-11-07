@@ -5,7 +5,9 @@ import { OrderActionKit } from "./application/actions/order-action";
 import { DeliverAction, CancelAction, NoteAction, ReconcileAction, TransitionAction } from "./application/actions/status-actions";
 import { RefundAction, ShipAction } from "./application/actions/fulfilment-actions";
 import { BulkOrderAction, GetOrderDetail, ListOrders, ListShippingMethods, RunOrderAction, SettleRefund, type OrderReadModel } from "./application/order-use-cases";
+import { GetCustomerOrder, ListCustomerOrders } from "./application/customer-orders";
 import type { OrderRepository } from "./application/ports";
+import { D1CustomerOrderReadModel } from "./infrastructure/d1-customer-orders";
 import { D1OrderReadModel } from "./infrastructure/d1-order.read-model";
 import { D1OrderRepository } from "./infrastructure/d1-order.repository";
 
@@ -13,6 +15,8 @@ export const OrderRepositoryToken = token<OrderRepository>("OrderRepository");
 export const OrderReadModelToken = token<OrderReadModel>("OrderReadModel");
 export const ListOrdersToken = token<ListOrders>("ListOrders");
 export const GetOrderDetailToken = token<GetOrderDetail>("GetOrderDetail");
+export const ListCustomerOrdersToken = token<ListCustomerOrders>("ListCustomerOrders");
+export const GetCustomerOrderToken = token<GetCustomerOrder>("GetCustomerOrder");
 export const ListShippingMethodsToken = token<ListShippingMethods>("ListShippingMethods");
 export const SettleRefundToken = token<SettleRefund>("SettleRefund");
 export const OrderActionKitToken = token<OrderActionKit>("OrderActionKit");
@@ -21,6 +25,8 @@ export const BulkOrderActionToken = token<BulkOrderAction>("BulkOrderAction");
 
 export function registerOrders(c: Container): void {
   c.scoped(OrderRepositoryToken, (r) => new D1OrderRepository(r.resolve(DatabaseToken)));
+  c.scoped(ListCustomerOrdersToken, (r) => new ListCustomerOrders(new D1CustomerOrderReadModel(r.resolve(DatabaseToken))));
+  c.scoped(GetCustomerOrderToken, (r) => new GetCustomerOrder(new D1CustomerOrderReadModel(r.resolve(DatabaseToken))));
   c.scoped(OrderReadModelToken, (r) => new D1OrderReadModel(r.resolve(DatabaseToken)));
   c.scoped(ListOrdersToken, (r) => new ListOrders(r.resolve(OrderReadModelToken)));
   c.scoped(GetOrderDetailToken, (r) => new GetOrderDetail(r.resolve(OrderReadModelToken)));

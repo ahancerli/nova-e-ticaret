@@ -1,5 +1,5 @@
 import type { Statement } from "@/core";
-import type { AiProvider } from "../domain/providers";
+import type { AiModelOption, AiProvider } from "../domain/providers";
 
 export interface SealedKey {
   ciphertext: string;
@@ -25,6 +25,13 @@ export interface AiIntegrationRepository {
   deleteStatement(expectedUpdatedAt: string): Statement;
 }
 
+/** The ai_models catalog (reference data maintained in db/schema.sql). */
+export interface AiModelRepository {
+  /** Non-retired models, by provider then sort order. */
+  listSelectable(): Promise<AiModelOption[]>;
+  find(provider: AiProvider, modelId: string): Promise<AiModelOption | null>;
+}
+
 export interface AiImage {
   mime: string;
   base64: string;
@@ -41,9 +48,20 @@ export interface AiRequest {
   json: boolean;
 }
 
-/** One provider's HTTP API (Strategy). Throws AiErrors (key rejected, rate limited, provider failed). */
+/** What a provider's models endpoint says about one model. */
+export interface AiModelInfo {
+  id: string;
+  displayName: string | null;
+  /** Shutdown announced (Claude `lifecycle: deprecated`, OpenAI `shutdown_date`). */
+  deprecated: boolean;
+  retiresAt: string | null;
+}
+
+/** One provider's HTTP API (Strategy). Throws AiErrors (key rejected, quota, model not found, busy, …). */
 export interface AiTextClient {
   generate(req: AiRequest): Promise<string>;
+  /** Health check: GET the model from the provider's models endpoint — proves key + model, costs no tokens. */
+  checkModel(apiKey: string, model: string): Promise<AiModelInfo>;
 }
 
 export type AiClientFactory = (provider: AiProvider) => AiTextClient;

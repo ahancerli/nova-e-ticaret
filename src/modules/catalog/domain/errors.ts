@@ -27,3 +27,18 @@ export const ProductErrors = {
   variantGainedHistory: (sku: string) =>
     new ConflictError("variant_has_history", `${sku} varyantı bu sırada sipariş/stok geçmişi kazandı ve silinemez. Sayfayı yenileyin.`),
 };
+
+export const AttributeErrors = {
+  notFound: () => new NotFoundError("attribute_not_found", "Özellik bulunamadı."),
+  optionNotFound: () => new NotFoundError("attribute_option_not_found", "Değer bulunamadı."),
+  invalid: (fieldErrors: Record<string, string>) =>
+    new ValidationError("invalid_attribute", Object.values(fieldErrors)[0] ?? "Özellik geçersiz.", { fieldErrors: Object.fromEntries(Object.entries(fieldErrors).map(([k, v]) => [k, [v]])) }),
+  codeTaken: (code: string) => new ConflictError("attribute_code_taken", `“${code}” kodlu bir özellik zaten var.`, { fieldErrors: { code: ["Bu kod kullanılıyor."] } }),
+  valueTaken: (label: string) => new ConflictError("attribute_value_taken", `“${label}” değeri bu özellikte zaten var.`, { fieldErrors: { label: ["Bu değer zaten var."] } }),
+  inUse: (n: number) => new ConflictError("attribute_in_use", `Bu özellik ${n} üründe kullanılıyor; silinemez. Ürünlerden kaldırın veya filtreden gizleyin.`),
+  typeLocked: () => ValidationError.field("dataType", "Ürünlerde kullanılan bir özelliğin tipi veya varyant ekseni değiştirilemez.", "attribute_type_locked"),
+  optionInUse: () => new ConflictError("attribute_option_in_use", "Bu değer ürünlerde kullanılıyor; silinemez. Pasif yapabilirsiniz (yeni varyantlarda çıkmaz)."),
+  unknownCategory: () => ValidationError.field("categories", "Seçilen kategorilerden biri bulunamadı.", "unknown_category"),
+  barcodePrefix: () => ValidationError.field("prefix", "Önek 3–10 haneli bir sayı olmalı.", "invalid_barcode_prefix"),
+};
+

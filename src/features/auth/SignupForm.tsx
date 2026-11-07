@@ -14,7 +14,7 @@ import { PasswordField } from "./PasswordField";
  * Storefront sign-up. KVKK: the notice acknowledgement is required; commercial messages (İYS) are separate,
  * unticked opt-ins. The person chooses the password (same policy as the server).
  */
-export function SignupForm({ legal }: { legal: SignupLegal }) {
+export function SignupForm({ legal, next = "/hesabim?hosgeldin=1" }: { legal: SignupLegal; next?: string }) {
   const router = useRouter();
   const [f, setF] = useState({ firstName: "", lastName: "", email: "", phone: "", password: "", kvkkAccepted: false, marketingEmail: false, marketingSms: false });
   const [busy, setBusy] = useState(false);
@@ -37,7 +37,7 @@ export function SignupForm({ legal }: { legal: SignupLegal }) {
     errors.clear();
     try {
       await authApi.register(f);
-      router.push("/hesabim?hosgeldin=1");
+      router.push(next);
       router.refresh();
     } catch (err) {
       const n = errors.fromError(err);
@@ -81,7 +81,7 @@ export function SignupForm({ legal }: { legal: SignupLegal }) {
 
       {error ? <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
       <button type="submit" className="btn btn-primary w-full" disabled={busy || !f.kvkkAccepted}>{busy ? "Bekleyin…" : "Üye ol"}</button>
-      <p className="text-center text-sm text-ink-soft">Zaten üye misiniz? <Link href="/giris" className="font-medium text-brand hover:underline">Giriş yapın</Link></p>
+      <p className="text-center text-sm text-ink-soft">Zaten üye misiniz? <Link href={next.startsWith("/hesabim") ? "/giris" : `/giris?next=${encodeURIComponent(next)}`} className="font-medium text-brand hover:underline">Giriş yapın</Link></p>
     </form>
   );
 }

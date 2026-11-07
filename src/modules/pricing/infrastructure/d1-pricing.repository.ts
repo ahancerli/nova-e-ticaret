@@ -1,24 +1,27 @@
 import { Repository, chunk, placeholders } from "@/core";
 import { DEFAULT_PRICE_LIST } from "@/modules/catalog/domain/product";
+import { badgeText } from "@/modules/campaigns/domain/campaign";
 import type { PricingRepository } from "../application/pricing";
 import type { Campaign } from "../domain/campaign-rules";
-import type { CartLineSnapshot, CouponSnapshot } from "../domain/pricing-engine";
+import type { CartLineSnapshot, CouponSnapshot, PricingPolicySnapshot } from "../domain/pricing-engine";
 
 type LineRow = {
   cart_item_id: string; variant_id: string; product_id: string; product_slug: string; sku: string; product_name: string; variant_name: string | null;
-  quantity: number; unit_price_minor: number | null; tax_rate_bps: number; available: number; is_active: number; product_status: string;
+  quantity: number; unit_price_minor: number | null; min_price_minor: number | null; tax_rate_bps: number; available: number; is_active: number; product_status: string;
   image_url: string | null; option_labels: string | null;
 };
 type CampaignRow = {
   id: string; name: string; kind: string; percentage_bps: number | null; amount_minor: number | null; buy_quantity: number | null;
   pay_quantity: number | null; priority: number; stack_policy: string; min_subtotal_minor: number; max_discount_minor: number | null; rule_version: number;
+  requires_coupon: number; first_order_only: number; condition_min_quantity: number; badge_label: string | null; badge_emoji: string | null; badge_url: string | null;
+  tiers_json: string;
 };
 
 export class D1PricingRepository extends Repository implements PricingRepository {
   async cartLines(cartId: string): Promise<CartLineSnapshot[]> {
     const rows = await this.db.all<LineRow>(
       `SELECT ci.id AS cart_item_id, v.id AS variant_id, p.id AS product_id, p.slug AS product_slug, v.sku, p.name AS product_name, v.name AS variant_name,
-              ci.quantity, vp.unit_price_minor, p.tax_rate_bps, v.is_active, p.status AS product_status,
+              ci.quantity, vp.unit_price_minor, vp.min_price_minor, p.tax_rate_bps, v.is_active, p.status AS product_status,
               COALESCE((SELECT SUM(ib.on_hand - ib.reserved) FROM inventory_balances ib WHERE ib.variant_id = v.id), 0) AS available,
               -- variant image first, product gallery second. (Outer columns only in the subquery WHERE:
               -- SQLite ≥ 3.51 rejects them in a correlated subquery's ORDER BY.)
@@ -40,23 +43,72 @@ export class D1PricingRepository extends Repository implements PricingRepository
     );
     return rows.map((r) => ({
       cartItemId: r.cart_item_id, variantId: r.variant_id, productId: r.product_id, productSlug: r.product_slug, sku: r.sku, productName: r.product_name,
-      variantLabel: r.option_labels ?? r.variant_name ?? "", imageUrl: r.image_url, quantity: r.quantity, unitPriceMinor: r.unit_price_minor,
+      variantLabel: r.option_labels ?? r.variant_name ?? "", imageUrl: r.image_url, quantity: r.quantity, unitPriceMinor: r.unit_price_minor, minPriceMinor: r.min_price_minor,
       taxRateBps: r.tax_rate_bps, available: r.available, sellable: r.is_active === 1 && r.product_status === "published",
     }));
   }
 
   async activeCampaigns(now: string, couponCampaignId: string | null): Promise<Campaign[]> {
     const rows = await this.db.all<CampaignRow>(
-      `SELECT * FROM campaigns
-        WHERE is_active = 1 AND starts_at <= ? AND (ends_at IS NULL OR ends_at > ?) AND (requires_coupon = 0 OR id = ?)
-        ORDER BY priority DESC, id`,
+      `SELECT c.*, COALESCE(c.offer_type, c.kind) AS kind,
+              (SELECT m.public_url FROM media_assets m WHERE m.id = c.badge_media_id) AS badge_url,
+              (SELECT json_group_array(json_object('minQuantity', t.min_quantity, 'percentageBps', t.percentage_bps)) FROM campaign_tiers t WHERE t.campaign_id = c.id) AS tiers_json
+         FROM campaigns c
+        WHERE c.is_active = 1 AND c.starts_at <= ? AND (c.ends_at IS NULL OR c.ends_at > ?) AND (c.requires_coupon = 0 OR c.id = ?)
+        ORDER BY c.priority DESC, c.id`,
       now, now, couponCampaignId,
     );
-    return rows.map((r) => ({
-      id: r.id, name: r.name, kind: r.kind, percentageBps: r.percentage_bps, amountMinor: r.amount_minor, buyQuantity: r.buy_quantity,
-      payQuantity: r.pay_quantity, priority: r.priority, stackPolicy: r.stack_policy === "combinable" ? "combinable" : "exclusive",
-      minSubtotalMinor: r.min_subtotal_minor, maxDiscountMinor: r.max_discount_minor, ruleVersion: r.rule_version,
-    }));
+    return rows.map((r) => {
+      const tiers = (JSON.parse(r.tiers_json || "[]") as Campaign["tiers"]).sort((a, b) => a.minQuantity - b.minQuantity);
+      const c = {
+        id: r.id, name: r.name, kind: r.kind, percentageBps: r.percentage_bps, amountMinor: r.amount_minor, buyQuantity: r.buy_quantity,
+        payQuantity: r.pay_quantity, priority: r.priority, stackPolicy: r.stack_policy === "combinable" ? "combinable" as const : "exclusive" as const,
+        minSubtotalMinor: r.min_subtotal_minor, maxDiscountMinor: r.max_discount_minor, ruleVersion: r.rule_version,
+        requiresCoupon: r.requires_coupon === 1, firstOrderOnly: r.first_order_only === 1, tiers, conditionMinQuantity: r.condition_min_quantity,
+      };
+      return { ...c, badge: { label: badgeText({ ...c, badgeLabel: r.badge_label }), emoji: r.badge_emoji, imageUrl: r.badge_url } };
+    });
+  }
+
+  /** Cross-sell condition scopes: which of the products count toward which campaign's condition (categories with descendants). */
+  async conditionEligibility(campaignIds: string[], productIds: string[]): Promise<Map<string, Set<string>>> {
+    const out = new Map<string, Set<string>>();
+    if (!campaignIds.length || !productIds.length) return out;
+    for (const products of chunk(productIds, 40)) {
+      for (const campaigns of chunk(campaignIds, 100 - 2 * products.length)) {
+        const rows = await this.db.all<{ campaign_id: string; product_id: string }>(
+          `WITH RECURSIVE prod_cats(product_id, category_id) AS (
+             SELECT product_id, category_id FROM product_categories WHERE product_id IN (${placeholders(products.length)})
+             UNION SELECT pc.product_id, c.parent_id FROM prod_cats pc JOIN categories c ON c.id = pc.category_id WHERE c.parent_id IS NOT NULL
+           )
+           SELECT DISTINCT x.campaign_id, p.id AS product_id
+             FROM campaign_conditions x JOIN products p ON p.id IN (${placeholders(products.length)})
+            WHERE x.campaign_id IN (${placeholders(campaigns.length)})
+              AND (x.product_id = p.id OR x.brand_id = p.brand_id
+                   OR EXISTS (SELECT 1 FROM prod_cats pc WHERE pc.product_id = p.id AND pc.category_id = x.category_id))`,
+          ...products, ...products, ...campaigns,
+        );
+        for (const r of rows) {
+          if (!out.has(r.product_id)) out.set(r.product_id, new Set());
+          out.get(r.product_id)!.add(r.campaign_id);
+        }
+      }
+    }
+    return out;
+  }
+
+  async policy(): Promise<PricingPolicySnapshot> {
+    const r = await this.db.first<{ conflict_strategy: string; max_discount_bps: number }>("SELECT conflict_strategy, max_discount_bps FROM pricing_policy WHERE id = 1");
+    return { conflictStrategy: r?.conflict_strategy === "best_deal" ? "best_deal" : "priority", maxDiscountBps: r?.max_discount_bps ?? 5000 };
+  }
+
+  /** The cart belongs to a signed-in customer with no order that was placed and kept (cancelled ones do not count). */
+  async isFirstOrder(cartId: string): Promise<boolean> {
+    const r = await this.db.first<{ first: number }>(
+      `SELECT c.user_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.user_id = c.user_id AND o.status <> 'cancelled') AS first
+         FROM carts c WHERE c.id = ?`, cartId,
+    );
+    return r?.first === 1;
   }
 
   /** Targeting in SQL: include lists OR-ed, exclude always wins, category targets include descendants. */
@@ -94,16 +146,30 @@ export class D1PricingRepository extends Repository implements PricingRepository
     return out;
   }
 
+  async floors(productIds: string[]) {
+    const out: { productId: string; variantId: string; priceMinor: number; minPriceMinor: number }[] = [];
+    for (const part of chunk(productIds, 80)) {
+      const rows = await this.db.all<{ product_id: string; variant_id: string; unit_price_minor: number; min_price_minor: number }>(
+        `SELECT v.product_id, v.id AS variant_id, vp.unit_price_minor, vp.min_price_minor
+           FROM product_variants v JOIN variant_prices vp ON vp.variant_id = v.id AND vp.price_list_id = ?
+          WHERE v.product_id IN (${placeholders(part.length)}) AND v.is_active = 1 AND vp.min_price_minor IS NOT NULL`,
+        DEFAULT_PRICE_LIST, ...part,
+      );
+      out.push(...rows.map((r) => ({ productId: r.product_id, variantId: r.variant_id, priceMinor: r.unit_price_minor, minPriceMinor: r.min_price_minor })));
+    }
+    return out;
+  }
+
   async usableCoupon(codeNormalized: string, now: string): Promise<CouponSnapshot | null> {
-    const r = await this.db.first<{ id: string; campaign_id: string; code_normalized: string }>(
-      `SELECT id, campaign_id, code_normalized FROM coupons
+    const r = await this.db.first<{ id: string; campaign_id: string; code_normalized: string; allow_with_promotions: number }>(
+      `SELECT id, campaign_id, code_normalized, allow_with_promotions FROM coupons
         WHERE code_normalized = ? AND is_active = 1
           AND (starts_at IS NULL OR starts_at <= ?) AND (ends_at IS NULL OR ends_at > ?)
           AND (max_redemptions IS NULL OR (SELECT COUNT(*) FROM coupon_redemptions r
                  WHERE r.coupon_id = coupons.id AND r.status IN ('reserved','committed')) < max_redemptions)`,
       codeNormalized, now, now,
     );
-    return r ? { id: r.id, campaignId: r.campaign_id, codeNormalized: r.code_normalized } : null;
+    return r ? { id: r.id, campaignId: r.campaign_id, codeNormalized: r.code_normalized, allowWithPromotions: r.allow_with_promotions === 1 } : null;
   }
 
   async cheapestShipping() {

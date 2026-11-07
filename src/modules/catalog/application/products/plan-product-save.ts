@@ -61,6 +61,7 @@ export interface PlannedVariant {
   isDefault: boolean;
   priceMinor: number;
   compareAtMinor: number | null;
+  minPriceMinor: number | null;
   stock: StockChange;
 }
 
@@ -219,6 +220,7 @@ export function planProductSave(args: {
       isDefault: false,
       priceMinor: v.priceMinor,
       compareAtMinor: v.compareAtMinor ?? null,
+      minPriceMinor: v.minPriceMinor ?? null,
       stock,
     };
     return { planned, wantsDefault: v.isDefault && v.isActive };

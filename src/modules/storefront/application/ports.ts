@@ -1,4 +1,4 @@
-import type { CategoryNode, Facets, HomeData, ProductCard, ProductDetail, SearchSuggestions } from "@/lib/types";
+import type { CategoryNode, Facets, HomeData, ProductCard, ProductDetail, PromotionBadge, SearchSuggestions } from "@/lib/types";
 
 export const SORT_KEYS = ["newest", "price_asc", "price_desc", "name"] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
@@ -59,4 +59,9 @@ export interface StorefrontReadModel {
   listProducts(p: ListParams): Promise<ProductPage>;
   facets(p: Omit<ListParams, "sort" | "page">): Promise<Facets>;
   productBySlug(slug: string): Promise<ProductDetail | null>;
+}
+
+/** Campaign badges + single-unit campaign price per product (implemented by the pricing module). */
+export interface ProductPromotions {
+  execute(items: { productId: string; priceMinor: number | null; variantId?: string }[]): Promise<{ badges: PromotionBadge[]; campaignPriceMinor: number | null }[]>;
 }

@@ -249,13 +249,13 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
                    WHERE vo.variant_id = v.id) AS options
             FROM product_variants v LEFT JOIN variant_prices vp ON vp.variant_id = v.id AND vp.price_list_id = ?
            WHERE v.product_id = ? AND v.is_active = 1 ORDER BY v.is_default DESC, v.sku`, DEFAULT_PRICE_LIST, product.id),
-      st(`SELECT d.code, d.label, ao.value_code, ao.label AS option_label, ao.color_hex
+      st(`SELECT d.code, d.label, d.display_style, ao.value_code, ao.label AS option_label, ao.color_hex
             FROM product_variant_axes ax JOIN attribute_definitions d ON d.id = ax.attribute_id
             JOIN attribute_options ao ON ao.attribute_id = d.id
            WHERE ax.product_id = ?
              AND EXISTS (SELECT 1 FROM variant_options vo JOIN product_variants v ON v.id = vo.variant_id
                           WHERE v.product_id = ax.product_id AND v.is_active = 1 AND vo.option_id = ao.id)
-           ORDER BY ax.sort_order, ao.sort_order`, product.id),
+           ORDER BY ax.sort_order, ao.sort_order, ao.numeric_value, ao.label`, product.id),
       st(`SELECT d.code, d.label, d.unit, d.data_type, pav.text_value, pav.number_value, pav.boolean_value, ao.label AS option_label
             FROM product_attribute_values pav JOIN attribute_definitions d ON d.id = pav.attribute_id
             LEFT JOIN attribute_options ao ON ao.id = pav.option_id
@@ -270,8 +270,8 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
     ]);
 
     const axisMap = new Map<string, ProductDetail["axes"][number]>();
-    for (const r of rows<{ code: string; label: string; value_code: string; option_label: string; color_hex: string | null }>(axes)) {
-      if (!axisMap.has(r.code)) axisMap.set(r.code, { code: r.code, label: r.label, options: [] });
+    for (const r of rows<{ code: string; label: string; display_style: "button" | "swatch" | "dropdown"; value_code: string; option_label: string; color_hex: string | null }>(axes)) {
+      if (!axisMap.has(r.code)) axisMap.set(r.code, { code: r.code, label: r.label, style: r.display_style, options: [] });
       axisMap.get(r.code)!.options.push({ value: r.value_code, label: r.option_label, colorHex: r.color_hex });
     }
     type AttrRow = { code: string; label: string; unit: string | null; data_type: string; text_value: string | null; number_value: number | null; boolean_value: number | null; option_label: string | null };
@@ -288,9 +288,10 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
       shortDescription: product.short_description, descriptionHtml: product.description_html,
       media: rows<{ variant_id: string | null; public_url: string; alt_text: string }>(media).map((m) => ({ variantId: m.variant_id, url: m.public_url, alt: m.alt_text })),
       variants: rows<VariantRow>(variants).map((v) => ({
-        id: v.id, sku: v.sku, isDefault: v.is_default === 1, priceMinor: v.unit_price_minor, compareAtMinor: v.compare_at_minor,
+        id: v.id, sku: v.sku, isDefault: v.is_default === 1, priceMinor: v.unit_price_minor, compareAtMinor: v.compare_at_minor, campaignPriceMinor: null,
         available: Math.max(0, v.available), options: JSON.parse(v.options ?? "{}"),
       })),
+      promotions: [],
       axes: [...axisMap.values()],
       specs: [...specs.values()].map((s) => ({ label: s.label, value: s.values.join(", ") })),
       related: rows<CardRow>(related).map(toCard),

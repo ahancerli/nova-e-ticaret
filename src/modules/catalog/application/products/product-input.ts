@@ -15,6 +15,8 @@ const variantInput = z
     options: z.record(entityId, entityId).default({}),
     priceMinor: z.number().int().min(0).max(1_000_000_000),
     compareAtMinor: z.number().int().min(1).max(1_000_000_000).optional().nullable(),
+    /** Floor price: campaigns never sell a unit below it. */
+    minPriceMinor: z.number().int().min(0).max(1_000_000_000).optional().nullable(),
     stock: z.number().int().min(0).max(1_000_000),
     /** Existing variants: the stock the editor loaded. Unchanged stock is not written; changed stock is guarded on it. */
     expectedStock: z.number().int().min(0).max(1_000_000).optional(),
@@ -26,7 +28,8 @@ const variantInput = z
     depthMm: optInt(0, 100_000),
   })
   .strict()
-  .refine((v) => v.compareAtMinor == null || v.compareAtMinor > v.priceMinor, { path: ["compareAtMinor"], message: "Eski fiyat, satış fiyatından büyük olmalı." });
+  .refine((v) => v.compareAtMinor == null || v.compareAtMinor > v.priceMinor, { path: ["compareAtMinor"], message: "Eski fiyat, satış fiyatından büyük olmalı." })
+  .refine((v) => v.minPriceMinor == null || v.minPriceMinor <= v.priceMinor, { path: ["minPriceMinor"], message: "Taban fiyat, satış fiyatından büyük olamaz." });
 
 export const productSaveSchema = z
   .object({

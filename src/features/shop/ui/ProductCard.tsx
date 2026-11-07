@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ProductCard as Card } from "@/lib/types";
+import { PromoBadge } from "@/components/ui/PromoBadge";
 import { AddToCartButton } from "./AddToCartButton";
 import { Price, discountPercent } from "./Price";
 import { Rating } from "./Rating";
@@ -16,7 +17,12 @@ export function ProductCard({ p, priority = false }: { p: Card; priority?: boole
         {/* eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset; next/image optimisation is not configured */}
         <img src={p.imageUrl ?? "/demo/placeholder.svg"} alt="" loading={priority ? "eager" : "lazy"}
           className="h-full w-full object-contain p-3 transition duration-300 group-hover:scale-[1.03]" />
-        {pct > 0 && <span className="absolute left-2 top-2 rounded-md bg-brand px-1.5 py-0.5 text-[11px] font-bold text-white">%{pct} indirim</span>}
+        {(pct > 0 || p.promotions.length > 0) && (
+          <span className="absolute inset-x-2 top-2 flex flex-col items-start gap-1">
+            {pct > 0 && <span className="rounded-md bg-ink px-1.5 py-0.5 text-[11px] font-bold text-white">%{pct} indirim</span>}
+            {p.promotions.slice(0, 2).map((b) => <PromoBadge key={b.campaignId} badge={b} />)}
+          </span>
+        )}
         {!p.inStock && <span className="absolute inset-x-0 bottom-0 bg-ink/70 py-1 text-center text-xs font-semibold text-white">Tükendi</span>}
       </Link>
       <div className="flex flex-1 flex-col gap-1.5 px-3 pb-3">
@@ -27,7 +33,7 @@ export function ProductCard({ p, priority = false }: { p: Card; priority?: boole
         </h3>
         <Rating value={p.rating} count={p.ratingCount} />
         <div className="-mx-3 -mb-3 mt-auto flex items-end justify-between gap-2 border-t border-line/70 bg-ground/60 px-3 py-2.5">
-          <Price priceMinor={p.priceMinor} compareAtMinor={p.compareAtMinor} />
+          <Price priceMinor={p.priceMinor} compareAtMinor={p.compareAtMinor} campaignPriceMinor={p.campaignPriceMinor} />
           {/* z-10: stays clickable above the card-wide link overlay */}
           <div className="relative z-10">
             <AddToCartButton name={p.name} slug={p.slug} variantId={p.defaultVariantId} hasVariants={p.hasVariants} inStock={p.inStock} />

@@ -28,7 +28,29 @@ export interface MailSettingsView {
   updatedBy: string | null;
 }
 
+/** What a delivery-list row is about (mail_deliveries.purpose). */
+export type MailPurpose = "password_reset" | "test" | "other";
+export type MailDeliveryStatus = "sent" | "failed" | "not_configured" | "throttled";
+
+/** One row of "Son gönderimler" (panel). */
+export interface MailDeliveryView {
+  id: string;
+  purpose: MailPurpose;
+  recipient: string;
+  status: MailDeliveryStatus;
+  smtpHost: string | null;
+  stage: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  /** SMTP server's own answer: the accept line (queue id) or the rejection. */
+  serverReply: string | null;
+  latencyMs: number | null;
+  createdAt: string;
+}
+
 export interface MailMessage {
+  /** For the delivery list; default "other". */
+  purpose?: MailPurpose;
   to: string;
   toName?: string;
   subject: string;

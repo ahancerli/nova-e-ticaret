@@ -2,26 +2,30 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Bot, CheckCircle2, ExternalLink, KeyRound, PlugZap, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, Bot, CheckCircle2, ExternalLink, KeyRound, PlugZap, Sparkles, Trash2 } from "lucide-react";
 import { notify } from "@/lib/toast";
 import { useFieldErrors } from "@/lib/use-field-errors";
 import { AdminConfirmDialog } from "@/components/admin/AdminConfirmDialog";
 import { Field, inputCls } from "@/components/admin/form";
 import { AdminBadge, AdminCard, AdminCardTitle, AdminPageHeader } from "@/components/admin/ui";
-import { AI_PROVIDERS, AI_PROVIDER_KEYS, type AiIntegrationView, type AiProvider } from "@/modules/ai/domain/providers";
+import { AI_PROVIDERS, AI_PROVIDER_KEYS, type AiIntegrationView, type AiModelCatalog, type AiModelOption, type AiProvider } from "@/modules/ai/domain/providers";
 import { integrationsApi } from "./api";
 
 const dt = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Istanbul" });
+const dayFmt = new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+const retiresText = (d: string | null) => (d ? `${dayFmt.format(new Date(`${d}T00:00:00Z`))} tarihinde kapanacak` : "kullanımdan kalkıyor");
+/** Catalog default = first active row (the list comes sorted, deprecated last). */
+const defaultModelOf = (models: AiModelOption[]) => models.find((m) => m.status === "active")?.id ?? models[0]?.id ?? "";
 
 /**
  * AI entegrasyonları: exactly one provider (OpenAI, Gemini or Claude) with its model and API key.
  * The key is write-only: the panel shows its last characters and never reads it back.
  */
-export function AiIntegrationManager({ initial }: { initial: AiIntegrationView | null }) {
+export function AiIntegrationManager({ initial, models }: { initial: AiIntegrationView | null; models: AiModelCatalog }) {
   const router = useRouter();
   const errors = useFieldErrors();
   const [provider, setProvider] = useState<AiProvider>(initial?.provider ?? "anthropic");
-  const [model, setModel] = useState(initial?.model ?? AI_PROVIDERS.anthropic.defaultModel);
+  const [model, setModel] = useState(initial?.model ?? defaultModelOf(models.anthropic));
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -31,10 +35,14 @@ export function AiIntegrationManager({ initial }: { initial: AiIntegrationView |
   const def = AI_PROVIDERS[provider];
   const sameProvider = initial?.provider === provider;
   const switching = !!initial && !sameProvider;
+  const options = models[provider];
+  // The stored model may have left the catalog; keep it selectable so a key change does not force a model change.
+  const storedUnlisted = sameProvider && !options.some((m) => m.id === initial!.model);
+  const selected = options.find((m) => m.id === model);
 
   const pick = (p: AiProvider) => {
     setProvider(p);
-    setModel(initial?.provider === p ? initial.model : AI_PROVIDERS[p].defaultModel);
+    setModel(initial?.provider === p ? initial.model : defaultModelOf(models[p]));
     setApiKey("");
     errors.clear();
   };
@@ -58,8 +66,12 @@ export function AiIntegrationManager({ initial }: { initial: AiIntegrationView |
   const test = async () => {
     setTesting(true);
     try {
-      const r = await integrationsApi.ai.test();
-      notify.success("Bağlantı çalışıyor", { description: `${r.data.provider} · ${r.data.model} · ${(r.data.latencyMs / 1000).toFixed(1)} sn` });
+      const r = (await integrationsApi.ai.test()).data;
+      const sec = (ms: number) => `${(ms / 1000).toFixed(1)} sn`;
+      notify.success("Bağlantı çalışıyor", {
+        description: `${r.provider} · ${r.displayName ?? r.model} — anahtar ve model doğrulandı (${sec(r.modelCheckMs)}), deneme yanıtı alındı (${sec(r.generationMs)})`,
+      });
+      if (r.deprecated) notify.warning(`${r.model} ${retiresText(r.retiresAt)}`, { description: "Listeden güncel bir model seçip güncelleyin." });
     } catch (err) {
       notify.error(err, { fallback: "Bağlantı denenemedi." });
     } finally {
@@ -142,10 +154,21 @@ export function AiIntegrationManager({ initial }: { initial: AiIntegrationView |
           ) : null}
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="ai-model" label="Model" required error={errors.get("model")} hint="Listeden seçin veya sağlayıcının güncel model adını yazın.">
-              <input id="ai-model" className={`${inputCls} h-10 font-mono`} list="ai-models" value={model} maxLength={100} aria-invalid={errors.has("model")}
-                onChange={(e) => { setModel(e.target.value); errors.clear("model"); }} />
-              <datalist id="ai-models">{def.models.map((m) => <option key={m} value={m} />)}</datalist>
+            <Field id="ai-model" label="Model" required error={errors.get("model")}
+              hint={selected?.status === "deprecated" ? undefined : selected?.note ?? (storedUnlisted && model === initial!.model ? "Kayıtlı model artık listede yok; listeden yenisini seçin." : undefined)}>
+              <select id="ai-model" className={`${inputCls} h-10`} value={model} aria-invalid={errors.has("model")}
+                onChange={(e) => { setModel(e.target.value); errors.clear("model"); }}>
+                {!options.length && !storedUnlisted ? <option value="">Bu sağlayıcı için model tanımlı değil</option> : null}
+                {storedUnlisted ? <option value={initial!.model}>{initial!.model} (kayıtlı)</option> : null}
+                {options.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}{m.status === "deprecated" ? " — kullanımdan kalkıyor" : ""}</option>
+                ))}
+              </select>
+              {selected?.status === "deprecated" ? (
+                <p className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-700">
+                  <AlertTriangle className="mt-px h-3.5 w-3.5 flex-none" /> {selected.label} {retiresText(selected.retiresAt)}. {selected.note}
+                </p>
+              ) : null}
             </Field>
             <Field id="ai-key" label="API anahtarı" required={!sameProvider} error={errors.get("apiKey")}
               hint={sameProvider ? `Kayıtlı anahtar ${initial!.keyHint}. Değiştirmeyecekseniz boş bırakın.` : "Anahtar şifrelenerek saklanır ve bir daha gösterilmez."}>
@@ -162,7 +185,7 @@ export function AiIntegrationManager({ initial }: { initial: AiIntegrationView |
             <a href={def.keyUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-[#5b4fe0] hover:underline">
               {def.label} API anahtarı nereden alınır? <ExternalLink className="h-3.5 w-3.5" />
             </a>
-            <button type="submit" disabled={saving}
+            <button type="submit" disabled={saving || !model}
               className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#7367f0] px-5 text-sm font-semibold text-white shadow-sm shadow-[#7367f0]/30 hover:bg-[#6559df] disabled:opacity-60">
               <Sparkles className="h-4 w-4" />
               {saving ? (initial ? "Güncelleniyor…" : "Ekleniyor…") : initial ? "Güncelle" : "Entegrasyonu ekle"}

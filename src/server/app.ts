@@ -21,6 +21,9 @@ import {
 import { registerAi } from "@/modules/ai";
 import { registerMail } from "@/modules/mail";
 import { registerAuditModule } from "@/modules/audit";
+import { registerBulk } from "@/modules/bulk";
+import { registerMarketplaces } from "@/modules/marketplaces";
+import { registerMessaging } from "@/modules/messaging";
 import { registerCampaigns } from "@/modules/campaigns";
 import { registerCart } from "@/modules/cart";
 import { registerCatalog } from "@/modules/catalog";
@@ -77,6 +80,9 @@ registerCatalog(container);
 registerStorefront(container);
 registerPricing(container);
 registerCampaigns(container);
+registerBulk(container);
+registerMessaging(container);
+registerMarketplaces(container);
 registerShowcase(container);
 registerCart(container); // also subscribes the guest-cart merge to storefront logins
 registerCheckout(container);

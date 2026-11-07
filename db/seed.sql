@@ -410,9 +410,9 @@ INSERT OR IGNORE INTO content_page_revisions (id, page_id, version, title, body_
 <ul><li>Ödemesi onaylanan siparişler 1–2 iş günü içinde kargoya verilir.</li><li>Teslimat süresi bulunduğunuz ile göre genellikle 1–3 iş günüdür.</li><li>Belirli tutarın üzerindeki siparişlerde kargo ücretsizdir; güncel tutar sepette gösterilir.</li></ul>
 <p>Teslimatla ilgili sorularınız için: {{iletisim.eposta}}</p>','published','2026-10-01T09:00:00.000Z');
 
--- Campaign: 3 al 2 öde on kitchen category (inactive by default) -------------------
-INSERT OR IGNORE INTO campaigns (id, name, kind, buy_quantity, pay_quantity, target_mode, starts_at, priority) VALUES
- ('cmp_3al2','Mutfakta 3 al 2 öde','buy_x_pay_y',3,2,'selected','2026-10-01T00:00:00.000Z',10);
+-- Campaign: 3 al 2 öde on the kitchen category (active, with a storefront badge) ----
+INSERT OR IGNORE INTO campaigns (id, name, kind, offer_type, buy_quantity, pay_quantity, target_mode, starts_at, priority, is_active, badge_emoji, badge_label) VALUES
+ ('cmp_3al2','Mutfakta 3 al 2 öde','buy_x_pay_y','buy_x_pay_y',3,2,'selected','2026-10-01T00:00:00.000Z',10,1,'🔥','3 Al 2 Öde');
 INSERT OR IGNORE INTO campaign_categories (campaign_id, category_id, mode) VALUES ('cmp_3al2','c_mutfak','include');
 
 -- Identity, auth and profile seeds -------------------------------------------------
@@ -486,12 +486,6 @@ INSERT OR IGNORE INTO seo_documents
  ('seo_route_campaigns',NULL,NULL,NULL,NULL,'/kampanyalar','Kampanyalar | nova.','Guncel kampanyalar ve firsatlar.',NULL,'m_hero1',0);
 
 -- Campaign, coupon and checkout seeds --------------------------------------------
-INSERT OR IGNORE INTO campaign_products (campaign_id, product_id, mode) VALUES
- ('cmp_3al2','p_pan','include');
-
-INSERT OR IGNORE INTO campaign_brands (campaign_id, brand_id, mode) VALUES
- ('cmp_3al2','b_daily','include');
-
 INSERT OR IGNORE INTO campaign_reward_products (campaign_id, variant_id) VALUES
  ('cmp_3al2','v_pan');
 
@@ -545,20 +539,23 @@ INSERT OR IGNORE INTO order_events
  VALUES
  ('oe_demo_1','ord_demo_1','placed',NULL,'awaiting_transfer','Siparis olusturuldu.','u_customer','idem_order_event_1');
 
+-- re-runnable: a BEFORE INSERT trigger would fire (and may abort) even for a row OR IGNORE then skips
 INSERT OR IGNORE INTO stock_reservations
  (id, checkout_id, order_id, variant_id, warehouse_id, quantity, status, expires_at, idempotency_key)
- VALUES
- ('sr_demo_1','co_demo_1','ord_demo_1','v_pan','wh_main',1,'reserved','2099-01-01T00:00:00.000Z','idem_stock_res_1');
+ SELECT 'sr_demo_1','co_demo_1','ord_demo_1','v_pan','wh_main',1,'reserved','2099-01-01T00:00:00.000Z','idem_stock_res_1'
+ WHERE NOT EXISTS (SELECT 1 FROM stock_reservations WHERE id = 'sr_demo_1');
 
+-- re-runnable: a BEFORE INSERT trigger would fire (and may abort) even for a row OR IGNORE then skips
 INSERT OR IGNORE INTO campaign_allocations
  (id, campaign_id, checkout_id, order_id, units, discount_minor, status, expires_at)
- VALUES
- ('ca_demo_1','cmp_3al2','co_demo_1','ord_demo_1',1,10000,'reserved','2099-01-01T00:00:00.000Z');
+ SELECT 'ca_demo_1','cmp_3al2','co_demo_1','ord_demo_1',1,10000,'reserved','2099-01-01T00:00:00.000Z'
+ WHERE NOT EXISTS (SELECT 1 FROM campaign_allocations WHERE id = 'ca_demo_1');
 
+-- re-runnable: a BEFORE INSERT trigger would fire (and may abort) even for a row OR IGNORE then skips
 INSERT OR IGNORE INTO coupon_redemptions
  (id, coupon_id, checkout_id, order_id, customer_key_hash, status, expires_at)
- VALUES
- ('cr_demo_1','cpn_demo_1','co_demo_1','ord_demo_1','cust_hash_demo_1','reserved','2099-01-01T00:00:00.000Z');
+ SELECT 'cr_demo_1','cpn_demo_1','co_demo_1','ord_demo_1','cust_hash_demo_1','reserved','2099-01-01T00:00:00.000Z'
+ WHERE NOT EXISTS (SELECT 1 FROM coupon_redemptions WHERE id = 'cr_demo_1');
 
 -- Payments and logistics seeds ----------------------------------------------------
 INSERT OR IGNORE INTO bank_accounts
@@ -657,3 +654,5 @@ INSERT OR IGNORE INTO audit_logs
 INSERT OR IGNORE INTO rate_limit_buckets (bucket_key, window_start, attempts, expires_at) VALUES
  ('login:127.0.0.1','2026-10-12T10:00:00.000Z',1,'2026-10-12T10:15:00.000Z');
 
+-- Variant display (2026-11-07): colours are picked with swatches.
+UPDATE attribute_definitions SET display_style = 'swatch' WHERE id = 'a_color' AND display_style = 'button';

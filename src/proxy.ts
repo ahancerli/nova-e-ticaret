@@ -12,6 +12,9 @@ import { NextResponse, type NextRequest } from "next/server";
 export function proxy(request: NextRequest) {
   const nonce = btoa(crypto.randomUUID());
   const isDev = process.env.NODE_ENV === "development";
+  // The panel may show the storefront in a frame (Vitrin › Önizleme) but is never framed itself;
+  // storefront pages can only be framed by this origin (clickjacking from other sites stays blocked).
+  const isAdmin = request.nextUrl.pathname.startsWith("/admin");
 
   const directives: Record<string, string[]> = {
     "default-src": ["'self'"],
@@ -20,11 +23,11 @@ export function proxy(request: NextRequest) {
     "img-src": ["'self'", "data:", "blob:", "https:"],
     "font-src": ["'self'", "data:"],
     "connect-src": ["'self'", ...(isDev ? ["ws:", "wss:"] : [])],
-    "frame-src": ["'none'"],
+    "frame-src": [isAdmin ? "'self'" : "'none'"],
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],
-    "frame-ancestors": ["'none'"],
+    "frame-ancestors": [isAdmin ? "'none'" : "'self'"],
   };
   const csp = Object.entries(directives)
     .map(([name, values]) => `${name} ${values.join(" ")}`)

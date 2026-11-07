@@ -20,7 +20,7 @@ const day = new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "short", y
 export function CouponsPanel({ campaign }: { campaign: CampaignDetail }) {
   const router = useRouter();
   const [mode, setMode] = useState<"single" | "batch">("single");
-  const [f, setF] = useState({ code: "", count: "20", prefix: "", maxRedemptions: "", perCustomer: "1", endsAt: "" });
+  const [f, setF] = useState({ code: "", count: "20", prefix: "", maxRedemptions: "", perCustomer: "1", endsAt: "", allowWithPromotions: true });
   const [busy, setBusy] = useState(false);
   const errors = useFieldErrors();
   const set = (p: Partial<typeof f>) => setF((s) => ({ ...s, ...p }));
@@ -29,7 +29,7 @@ export function CouponsPanel({ campaign }: { campaign: CampaignDetail }) {
     setBusy(true);
     errors.clear();
     try {
-      const common = { maxRedemptions: f.maxRedemptions ? Number(f.maxRedemptions) : null, perCustomerLimit: Number(f.perCustomer) || 1, endsAt: localInputToIso(f.endsAt) };
+      const common = { maxRedemptions: f.maxRedemptions ? Number(f.maxRedemptions) : null, perCustomerLimit: Number(f.perCustomer) || 1, endsAt: localInputToIso(f.endsAt), allowWithPromotions: f.allowWithPromotions };
       const r = await campaignsApi.createCoupons(campaign.id, mode === "single" ? { ...common, code: f.code } : { ...common, generate: { count: Number(f.count) || 1, prefix: f.prefix || undefined } });
       notify.success(r.data.codes.length === 1 ? `“${r.data.codes[0]}” kuponu eklendi` : `${r.data.codes.length} kupon üretildi`);
       set({ code: "" });
@@ -87,6 +87,10 @@ export function CouponsPanel({ campaign }: { campaign: CampaignDetail }) {
           <Field id="cp-max" label="Toplam kullanım" hint="Boş = sınırsız"><input id="cp-max" type="number" min={1} className={inputCls} value={f.maxRedemptions} onChange={(e) => set({ maxRedemptions: e.target.value })} /></Field>
           <Field id="cp-per" label="Kişi başı"><input id="cp-per" type="number" min={1} className={inputCls} value={f.perCustomer} onChange={(e) => set({ perCustomer: e.target.value })} /></Field>
         </div>
+        <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-700">
+          <input type="checkbox" className="mt-0.5 size-4 accent-[#7367f0]" checked={f.allowWithPromotions} onChange={(e) => set({ allowWithPromotions: e.target.checked })} />
+          <span>Kampanyalı sepette de kullanılabilsin<span className="block text-xs text-slate-500">Kapalıysa, sepete otomatik bir kampanya indirimi uygulanmışken bu kod kabul edilmez.</span></span>
+        </label>
         <button type="button" onClick={create} disabled={busy || (mode === "single" && f.code.trim().length < 3)}
           className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
           {mode === "single" ? <Plus className="size-4" /> : <Sparkles className="size-4" />}{busy ? "Bekleyin…" : mode === "single" ? "Kuponu ekle" : "Kodları üret"}
@@ -103,7 +107,7 @@ export function CouponsPanel({ campaign }: { campaign: CampaignDetail }) {
                     <span className="flex items-center gap-1.5 font-mono text-slate-800">{k.code}
                       <button type="button" aria-label={`${k.code} kopyala`} onClick={() => navigator.clipboard.writeText(k.code).then(() => notify.success("Kod kopyalandı"))} className="text-slate-400 hover:text-slate-700"><Copy className="size-3.5" /></button>
                     </span>
-                    <span className="text-xs text-slate-500">Kişi başı {k.perCustomerLimit}{k.endsAt ? ` · ${day.format(new Date(k.endsAt))} tarihine kadar` : ""}</span>
+                    <span className="text-xs text-slate-500">Kişi başı {k.perCustomerLimit}{k.endsAt ? ` · ${day.format(new Date(k.endsAt))} tarihine kadar` : ""}{k.allowWithPromotions ? "" : " · kampanyalarla birleşmez"}</span>
                   </td>
                   <td className="px-3 py-2.5 tabular-nums text-slate-700">{k.used}{k.maxRedemptions != null ? ` / ${k.maxRedemptions}` : ""}{k.reserved ? <span className="text-xs text-slate-400"> (+{k.reserved} sepette)</span> : null}</td>
                   <td className="px-3 py-2.5"><AdminBadge tone={k.isActive ? "green" : "slate"}>{k.isActive ? "Aktif" : "Pasif"}</AdminBadge></td>

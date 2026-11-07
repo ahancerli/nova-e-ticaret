@@ -6,6 +6,7 @@ import { makeD1 } from "./d1-sqlite.mjs";
 const ROOT = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 const core = await import(`${ROOT}/src/core/index.ts`);
 const campaigns = await import(`${ROOT}/src/modules/campaigns/index.ts`);
+const media = await import(`${ROOT}/src/modules/media/index.ts`);
 const { registerAudit } = await import(`${ROOT}/src/modules/audit/audit-log.ts`);
 const { Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, FixedClock, CryptoIdGenerator, JsonLogger } = core;
 
@@ -28,6 +29,7 @@ const root = new Container()
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
   .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
 registerAudit(root);
+media.registerMedia(root);
 campaigns.registerCampaigns(root);
 const resolve = (tok: any): any => root.createScope().provide(EnvToken, { DB: d1 }).resolve(tok);
 const actor = { userId: "u_admin", requestId: "req-cmp" };
@@ -37,6 +39,8 @@ const base = {
   targets: { products: [], brands: [], categories: [{ id: "c_moda", mode: "include" }] },
   startsAt: "2026-11-01T00:00:00.000Z", endsAt: "2026-11-30T21:00:00.000Z", priority: 5, stackPolicy: "exclusive",
   minSubtotalMinor: 0, maxDiscountMinor: null, capacityUnits: null, requiresCoupon: false, isActive: true,
+  tiers: [], conditions: { products: [], brands: [], categories: [] }, conditionMinQuantity: 1, firstOrderOnly: false,
+  badgeLabel: null, badgeEmoji: null, badgeMediaId: null,
 };
 
 await t("status and labels: draft / scheduled / active / ended; value labels per kind", () => {
@@ -108,7 +112,54 @@ await t("list: summaries with status, coupon counts and results", async () => {
   const rows = await resolve(campaigns.ListCampaignsToken).execute();
   const mine = rows.find((r: any) => r.id === id);
   assert(mine && mine.couponCount === 50 && mine.status === "active", json(mine));
-  assert(rows.some((r: any) => r.id === "cmp_3al2" && r.status === "draft"), "seed campaign is a draft");
+  assert(rows.some((r: any) => r.id === "cmp_3al2" && r.status === "active" && r.badgeEmoji === "🔥" && r.badgeLabel === "3 Al 2 Öde"), "seed campaign is live with a badge");
+});
+
+await t("new kinds: tiered stored as 'percentage' + offer type; cross-sell needs a known condition; values of other kinds dropped", async () => {
+  const create = (over: Record<string, unknown>) => resolve(campaigns.CreateCampaignToken).execute({ ...base, percentageBps: null, ...over }, actor);
+  await rejects(() => create({ kind: "tiered_quantity", tiers: [] }), "invalid_campaign");
+  await rejects(() => create({ kind: "tiered_quantity", tiers: [{ minQuantity: 2, percentageBps: 2000 }, { minQuantity: 3, percentageBps: 1000 }] }), "invalid_campaign");
+  const tiered = (await create({ kind: "tiered_quantity", tiers: [{ minQuantity: 3, percentageBps: 2000 }, { minQuantity: 2, percentageBps: 1000 }], conditions: { products: ["p_pan"], brands: [], categories: [] } })).id;
+  const row = d1.raw.prepare("SELECT kind, offer_type, percentage_bps FROM campaigns WHERE id = ?").get(tiered) as any;
+  assert(row.kind === "percentage" && row.offer_type === "tiered_quantity" && row.percentage_bps === 2000, json(row));
+  const t1 = await resolve(campaigns.GetCampaignToken).execute(tiered);
+  assert(t1.kind === "tiered_quantity" && json(t1.tiers.map((x: any) => x.minQuantity)) === "[2,3]" && t1.conditions.products.length === 0 && t1.valueLabel === "2 adette %10, 3 adette %20", json(t1));
+  await rejects(() => create({ kind: "cross_sell", percentageBps: 5000 }), "invalid_campaign");
+  await rejects(() => create({ kind: "cross_sell", percentageBps: 5000, conditions: { products: ["p_yok"], brands: [], categories: [] } }), "unknown_condition");
+  const cross = (await create({ kind: "cross_sell", percentageBps: 5000, conditionMinQuantity: 2, conditions: { products: [], brands: [], categories: ["c_mutfak", "c_mutfak"] } })).id;
+  const c2 = await resolve(campaigns.GetCampaignToken).execute(cross);
+  assert(c2.kind === "cross_sell" && json(c2.conditions.categories) === json(["c_mutfak"]) && c2.conditionMinQuantity === 2, json(c2));
+  // switching kind drops the tiers / conditions
+  clock.advanceMinutes(1);
+  await resolve(campaigns.UpdateCampaignToken).execute(cross, { ...base, targets: c2.targets, kind: "cart_percentage", percentageBps: 1000, conditions: c2.conditions, expectedUpdatedAt: c2.updatedAt }, actor);
+  assert((d1.raw.prepare("SELECT COUNT(*) n FROM campaign_conditions WHERE campaign_id = ?").get(cross) as any).n === 0, "conditions dropped");
+  assert((await resolve(campaigns.GetCampaignToken).execute(cross)).ruleVersion === 2, "rule change bumps the version");
+});
+await t("badge: emoji + label stored; the image must be an uploaded image and is released when replaced", async () => {
+  await rejects(() => resolve(campaigns.CreateCampaignToken).execute({ ...base, badgeEmoji: "<b>" }, actor), "invalid_campaign");
+  await rejects(() => resolve(campaigns.CreateCampaignToken).execute({ ...base, badgeMediaId: "yok" }, actor), "invalid_media");
+  d1.raw.exec(`INSERT INTO media_assets (id, storage_key, public_url, mime_type, byte_size) VALUES ('m_badge', 'campaigns/00000000-0000-0000-0000-00000000000a.png', '/assets/campaigns/a.png', 'image/png', 10)`);
+  const idB = (await resolve(campaigns.CreateCampaignToken).execute({ ...base, badgeEmoji: "🎁", badgeLabel: "  Hediye  ", badgeMediaId: "m_badge" }, actor)).id;
+  const c = await resolve(campaigns.GetCampaignToken).execute(idB);
+  assert(c.badgeEmoji === "🎁" && c.badgeLabel === "Hediye" && c.badgeMediaId === "m_badge" && c.badgeImageUrl === "/assets/campaigns/a.png", json(c));
+  clock.advanceMinutes(1);
+  await resolve(campaigns.UpdateCampaignToken).execute(idB, { ...base, targets: c.targets, badgeEmoji: "🎁", badgeMediaId: null, expectedUpdatedAt: c.updatedAt }, actor);
+  assert(!d1.raw.prepare("SELECT 1 FROM media_assets WHERE id = 'm_badge'").get(), "unreferenced badge image released");
+});
+await t("pricing policy: defaults, update is audited and guarded on the loaded version", async () => {
+  const p = await resolve(campaigns.GetPricingPolicyToken).execute();
+  assert(p.conflictStrategy === "priority" && p.maxDiscountBps === 5000, json(p));
+  const r = await resolve(campaigns.UpdatePricingPolicyToken).execute({ conflictStrategy: "best_deal", maxDiscountBps: 4000, expectedUpdatedAt: p.updatedAt }, actor);
+  await rejects(() => resolve(campaigns.UpdatePricingPolicyToken).execute({ conflictStrategy: "priority", maxDiscountBps: 4000, expectedUpdatedAt: p.updatedAt }, actor), "pricing_policy_changed");
+  const q = await resolve(campaigns.GetPricingPolicyToken).execute();
+  assert(q.conflictStrategy === "best_deal" && q.maxDiscountBps === 4000 && q.updatedAt === r.updatedAt, json(q));
+  assert(d1.raw.prepare("SELECT 1 FROM audit_logs WHERE action = 'pricing_policy.update'").get(), "audited");
+});
+await t("coupons: allow-with-promotions flag stored (default on)", async () => {
+  await resolve(campaigns.CreateCouponsToken).execute(id, { code: "TEKBASINA", perCustomerLimit: 1, allowWithPromotions: false }, actor);
+  await resolve(campaigns.CreateCouponsToken).execute(id, { code: "HEPSIYLE", perCustomerLimit: 1 }, actor);
+  const c = await resolve(campaigns.GetCampaignToken).execute(id);
+  assert(c.coupons.find((k: any) => k.code === "TEKBASINA").allowWithPromotions === false && c.coupons.find((k: any) => k.code === "HEPSIYLE").allowWithPromotions === true, "flags");
 });
 
 console.log(`${pass}/${pass + fail} passed`);

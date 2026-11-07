@@ -5,8 +5,13 @@ import { CreateBrand, DeleteBrand, UpdateBrand, type BrandCommandDeps } from "./
 import { GetBrand, ListBrands } from "./application/brands/brand-queries";
 import { CreateCategory, DeleteCategory, UpdateCategory, type CategoryCommandDeps } from "./application/categories/category-commands";
 import { GetCategoryDetail, ListCategoryTree } from "./application/categories/category-queries";
-import type { BrandRepository, CategoryRepository } from "./application/ports";
-import { CreateProduct, DeleteProduct, UpdateProduct, type ProductCommandDeps } from "./application/products/product-commands";
+import {
+  AddAttributeOptions, ApplyAttributeTemplate, CreateAttribute, DeleteAttribute, DeleteAttributeOption, GenerateBarcodes, GetBarcodeSettings, ListAttributes,
+  ReorderAttributeOptions, SetAttributeCategories, SetBarcodePrefix, UpdateAttribute, UpdateAttributeOption, type AttributeDeps,
+} from "./application/attributes/attribute-commands";
+import type { AttributeRepository, BrandRepository, CategoryRepository } from "./application/ports";
+import { D1AttributeRepository } from "./infrastructure/d1-attribute.repository";
+import { CheckProductSave, CreateProduct, DeleteProduct, UpdateProduct, type ProductCommandDeps } from "./application/products/product-commands";
 import { GetProductEditor, GetProductMeta, ListProducts } from "./application/products/product-queries";
 import type { ProductReadModel, ProductRepository } from "./application/products/ports";
 import { D1ProductReadModel } from "./infrastructure/d1-product-read-model";
@@ -20,6 +25,20 @@ export const ProductRepositoryToken = token<ProductRepository>("ProductRepositor
 export const ProductReadModelToken = token<ProductReadModel>("ProductReadModel");
 
 export const ListCategoryTreeToken = token<ListCategoryTree>("ListCategoryTree");
+export const AttributeRepositoryToken = token<AttributeRepository>("AttributeRepository");
+export const ListAttributesToken = token<ListAttributes>("ListAttributes");
+export const CreateAttributeToken = token<CreateAttribute>("CreateAttribute");
+export const ApplyAttributeTemplateToken = token<ApplyAttributeTemplate>("ApplyAttributeTemplate");
+export const UpdateAttributeToken = token<UpdateAttribute>("UpdateAttribute");
+export const DeleteAttributeToken = token<DeleteAttribute>("DeleteAttribute");
+export const AddAttributeOptionsToken = token<AddAttributeOptions>("AddAttributeOptions");
+export const UpdateAttributeOptionToken = token<UpdateAttributeOption>("UpdateAttributeOption");
+export const DeleteAttributeOptionToken = token<DeleteAttributeOption>("DeleteAttributeOption");
+export const ReorderAttributeOptionsToken = token<ReorderAttributeOptions>("ReorderAttributeOptions");
+export const SetAttributeCategoriesToken = token<SetAttributeCategories>("SetAttributeCategories");
+export const GetBarcodeSettingsToken = token<GetBarcodeSettings>("GetBarcodeSettings");
+export const SetBarcodePrefixToken = token<SetBarcodePrefix>("SetBarcodePrefix");
+export const GenerateBarcodesToken = token<GenerateBarcodes>("GenerateBarcodes");
 export const GetCategoryDetailToken = token<GetCategoryDetail>("GetCategoryDetail");
 export const CreateCategoryToken = token<CreateCategory>("CreateCategory");
 export const UpdateCategoryToken = token<UpdateCategory>("UpdateCategory");
@@ -36,6 +55,7 @@ export const GetProductEditorToken = token<GetProductEditor>("GetProductEditor")
 export const GetProductMetaToken = token<GetProductMeta>("GetProductMeta");
 export const CreateProductToken = token<CreateProduct>("CreateProduct");
 export const UpdateProductToken = token<UpdateProduct>("UpdateProduct");
+export const CheckProductSaveToken = token<CheckProductSave>("CheckProductSave");
 export const DeleteProductToken = token<DeleteProduct>("DeleteProduct");
 
 const categoryDeps = (r: Resolver): CategoryCommandDeps => ({
@@ -71,6 +91,21 @@ export function registerCatalog(c: Container): void {
   c.scoped(BrandRepositoryToken, (r) => new D1BrandRepository(r.resolve(DatabaseToken)));
 
   c.scoped(ListCategoryTreeToken, (r) => new ListCategoryTree(r.resolve(CategoryRepositoryToken)));
+  c.scoped(AttributeRepositoryToken, (r) => new D1AttributeRepository(r.resolve(DatabaseToken)));
+  const attrDeps = (r: Resolver): AttributeDeps => ({ db: r.resolve(DatabaseToken), attributes: r.resolve(AttributeRepositoryToken), audit: r.resolve(AuditLogToken), ids: r.resolve(IdGeneratorToken) });
+  c.scoped(ListAttributesToken, (r) => new ListAttributes(r.resolve(AttributeRepositoryToken)));
+  c.scoped(CreateAttributeToken, (r) => new CreateAttribute(attrDeps(r)));
+  c.scoped(ApplyAttributeTemplateToken, (r) => new ApplyAttributeTemplate(attrDeps(r)));
+  c.scoped(UpdateAttributeToken, (r) => new UpdateAttribute(attrDeps(r)));
+  c.scoped(DeleteAttributeToken, (r) => new DeleteAttribute(attrDeps(r)));
+  c.scoped(AddAttributeOptionsToken, (r) => new AddAttributeOptions(attrDeps(r)));
+  c.scoped(UpdateAttributeOptionToken, (r) => new UpdateAttributeOption(attrDeps(r)));
+  c.scoped(DeleteAttributeOptionToken, (r) => new DeleteAttributeOption(attrDeps(r)));
+  c.scoped(ReorderAttributeOptionsToken, (r) => new ReorderAttributeOptions(attrDeps(r)));
+  c.scoped(SetAttributeCategoriesToken, (r) => new SetAttributeCategories(attrDeps(r)));
+  c.scoped(GetBarcodeSettingsToken, (r) => new GetBarcodeSettings(r.resolve(AttributeRepositoryToken)));
+  c.scoped(SetBarcodePrefixToken, (r) => new SetBarcodePrefix(attrDeps(r)));
+  c.scoped(GenerateBarcodesToken, (r) => new GenerateBarcodes(r.resolve(AttributeRepositoryToken)));
   c.scoped(GetCategoryDetailToken, (r) => new GetCategoryDetail(r.resolve(CategoryRepositoryToken)));
   c.scoped(CreateCategoryToken, (r) => new CreateCategory(categoryDeps(r)));
   c.scoped(UpdateCategoryToken, (r) => new UpdateCategory(categoryDeps(r)));
@@ -89,5 +124,6 @@ export function registerCatalog(c: Container): void {
   c.scoped(GetProductMetaToken, (r) => new GetProductMeta(r.resolve(ProductReadModelToken), r.resolve(ListCategoryTreeToken)));
   c.scoped(CreateProductToken, (r) => new CreateProduct(productDeps(r)));
   c.scoped(UpdateProductToken, (r) => new UpdateProduct(productDeps(r)));
+  c.scoped(CheckProductSaveToken, (r) => new CheckProductSave(productDeps(r)));
   c.scoped(DeleteProductToken, (r) => new DeleteProduct(productDeps(r)));
 }

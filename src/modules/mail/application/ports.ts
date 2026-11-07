@@ -1,5 +1,5 @@
 import type { Statement } from "@/core";
-import type { MailMessage, SmtpSecurity } from "../domain/mail";
+import type { MailDeliveryStatus, MailDeliveryView, MailMessage, MailPurpose, SmtpSecurity } from "../domain/mail";
 
 export interface SealedPassword {
   ciphertext: string;
@@ -38,9 +38,27 @@ export interface SmtpServer {
   password: string;
 }
 
-/** Delivers one MIME message (Strategy; tests replace it). Throws MailErrors. */
+/** Delivers one MIME message (Strategy; tests replace it). Throws classified MailErrors; returns the server's accept line. */
 export interface SmtpTransport {
-  send(server: SmtpServer, envelope: { from: string; to: string }, mime: string): Promise<void>;
+  send(server: SmtpServer, envelope: { from: string; to: string }, mime: string): Promise<{ serverReply: string }>;
+}
+
+export interface MailDeliveryRecord {
+  purpose: MailPurpose;
+  recipient: string;
+  status: MailDeliveryStatus;
+  smtpHost?: string | null;
+  stage?: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  serverReply?: string | null;
+  latencyMs?: number | null;
+}
+
+export interface MailDeliveryRepository {
+  /** Insert + prune rows older than `pruneBefore`. */
+  recordStatements(row: MailDeliveryRecord & { id: string; now: string }, pruneBefore: string): Statement[];
+  latest(limit: number): Promise<MailDeliveryView[]>;
 }
 
 /**
@@ -49,4 +67,6 @@ export interface SmtpTransport {
  */
 export interface MailSender {
   send(message: MailMessage): Promise<"sent" | "not_configured">;
+  /** Records a mail that was deliberately not sent (e.g. reset requested again within the resend window). */
+  note(purpose: MailPurpose, recipient: string, status: "throttled"): Promise<void>;
 }

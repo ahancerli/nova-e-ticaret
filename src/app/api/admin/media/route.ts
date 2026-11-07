@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 /** Who may upload into which folder: catalog images vs. site branding (logo, favicon, share image). */
 const FOLDER_PERMISSION: Record<MediaFolder, string> = {
-  categories: "catalog.write", brands: "catalog.write", products: "catalog.write", branding: "settings.write", showcase: "storefront.write",
+  categories: "catalog.write", brands: "catalog.write", products: "catalog.write", branding: "settings.write", showcase: "storefront.write", campaigns: "campaigns.write",
 };
 
 /** Multipart overhead allowance on top of the image limit. */
@@ -21,8 +21,10 @@ export const POST = route({
   auth: { audience: "admin" },
   csrf: "multipart",
   handle: async (ctx) => {
-    // Reject oversized bodies before buffering them.
-    if (Number(ctx.req.headers.get("content-length") ?? "0") > MAX_IMAGE_BYTES + MULTIPART_OVERHEAD) {
+    // Reject oversized bodies before buffering them; a body without a declared length (chunked) could be unbounded.
+    const length = ctx.req.headers.get("content-length");
+    if (!length) throw new BadRequestError("length_required", "Yükleme boyutu bildirilmedi.");
+    if (Number(length) > MAX_IMAGE_BYTES + MULTIPART_OVERHEAD) {
       throw new PayloadTooLargeError("file_too_large", "Görsel en fazla 5 MB olabilir.", { fieldErrors: { file: ["Görsel en fazla 5 MB olabilir."] } });
     }
     const form = await ctx.req.formData().catch(() => {

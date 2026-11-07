@@ -272,6 +272,11 @@ CREATE TABLE IF NOT EXISTS attribute_definitions (
   is_variant_axis INTEGER NOT NULL DEFAULT 0 CHECK (is_variant_axis IN (0,1)),
   is_filterable   INTEGER NOT NULL DEFAULT 0 CHECK (is_filterable IN (0,1)),
   is_comparable   INTEGER NOT NULL DEFAULT 1 CHECK (is_comparable IN (0,1)),
+  -- Added 2026-11-07 (existing DBs: db/migrations/2026-11-07-variants-marketplaces.sql). How a variant axis is picked on the
+  -- product page: buttons (Beden 38, 39 …), colour swatches, or a dropdown for long lists (halı ölçüleri).
+  display_style   TEXT NOT NULL DEFAULT 'button' CHECK (display_style IN ('button','swatch','dropdown')),
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  description     TEXT CHECK (description IS NULL OR length(description) <= 300),
   CHECK (is_variant_axis = 0 OR data_type = 'select')
 ) STRICT;
 
@@ -283,6 +288,10 @@ CREATE TABLE IF NOT EXISTS attribute_options (
   color_hex       TEXT CHECK (color_hex IS NULL OR (length(color_hex) = 7 AND color_hex GLOB '#[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]')),
   swatch_media_id TEXT REFERENCES media_assets(id) ON DELETE SET NULL,
   sort_order      INTEGER NOT NULL DEFAULT 0,
+  -- Added 2026-11-07: numeric meaning of the option (shoe size 38.5, 6 m²) for sorting / range filters; inactive options
+  -- stay on existing variants but are not offered for new ones.
+  numeric_value   REAL,
+  is_active       INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
   UNIQUE (attribute_id, value_code),
   UNIQUE (id, attribute_id)
 ) STRICT;
@@ -353,6 +362,8 @@ CREATE TABLE IF NOT EXISTS variant_prices (
   unit_price_minor INTEGER NOT NULL CHECK (unit_price_minor >= 0),
   compare_at_minor INTEGER CHECK (compare_at_minor IS NULL OR compare_at_minor > unit_price_minor),
   updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  -- Floor price: no campaign may sell a unit below it (margin protection). Added 2026-11.
+  min_price_minor  INTEGER CHECK (min_price_minor IS NULL OR (min_price_minor >= 0 AND min_price_minor <= unit_price_minor)),
   PRIMARY KEY (variant_id, price_list_id)
 ) STRICT;
 
@@ -629,6 +640,16 @@ CREATE TABLE IF NOT EXISTS campaigns (
   rule_version       INTEGER NOT NULL DEFAULT 1 CHECK (rule_version >= 1),
   created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  -- Added 2026-11 (existing DBs: db/migrations/2026-11-06-campaign-engine.sql). Column constraints only, so ALTER ADD works.
+  -- offer_type = what the panel and the pricing engine use; NULL on older rows = same as `kind`. `kind` stays the storage
+  -- mechanic because its CHECK cannot change on a live D1 (a table rebuild would CASCADE-delete coupons and targets):
+  -- cart_percentage / tiered_quantity / cross_sell are stored as kind 'percentage'.
+  offer_type             TEXT CHECK (offer_type IS NULL OR offer_type IN ('percentage','cart_percentage','amount','fixed_price','buy_x_pay_y','tiered_quantity','cross_sell','free_shipping')),
+  first_order_only       INTEGER NOT NULL DEFAULT 0 CHECK (first_order_only IN (0,1)),
+  condition_min_quantity INTEGER NOT NULL DEFAULT 1 CHECK (condition_min_quantity BETWEEN 1 AND 100),
+  badge_label            TEXT CHECK (badge_label IS NULL OR length(badge_label) BETWEEN 1 AND 40),
+  badge_emoji            TEXT CHECK (badge_emoji IS NULL OR length(badge_emoji) BETWEEN 1 AND 16),
+  badge_media_id         TEXT REFERENCES media_assets(id) ON DELETE SET NULL,
   CHECK (ends_at IS NULL OR ends_at > starts_at),
   CHECK (kind <> 'percentage'  OR percentage_bps IS NOT NULL),
   CHECK (kind NOT IN ('amount','fixed_price') OR amount_minor IS NOT NULL),
@@ -663,6 +684,39 @@ CREATE TABLE IF NOT EXISTS campaign_reward_products (
   PRIMARY KEY (campaign_id, variant_id)
 ) STRICT;
 
+-- Quantity tiers of a 'tiered_quantity' campaign: the same product bought min_quantity+ times gets percentage_bps off
+-- every unit (highest reached tier wins). percentage_bps on the campaign row = the top tier (kind CHECK).
+CREATE TABLE IF NOT EXISTS campaign_tiers (
+  campaign_id    TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  min_quantity   INTEGER NOT NULL CHECK (min_quantity BETWEEN 2 AND 999),
+  percentage_bps INTEGER NOT NULL CHECK (percentage_bps BETWEEN 1 AND 10000),
+  PRIMARY KEY (campaign_id, min_quantity)
+) STRICT;
+
+-- Trigger scope of a 'cross_sell' campaign ("ayakkabı alana bakım spreyi %50"): the cart needs at least
+-- campaigns.condition_min_quantity units from these products / brands / categories (categories include descendants);
+-- the discount then goes to the campaign's own targets. Exactly one reference per row.
+CREATE TABLE IF NOT EXISTS campaign_conditions (
+  campaign_id TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+  product_id  TEXT REFERENCES products(id) ON DELETE CASCADE,
+  brand_id    TEXT REFERENCES brands(id) ON DELETE CASCADE,
+  category_id TEXT REFERENCES categories(id) ON DELETE CASCADE,
+  CHECK ((product_id IS NOT NULL) + (brand_id IS NOT NULL) + (category_id IS NOT NULL) = 1)
+) STRICT;
+
+-- Shop-wide campaign rules (one row, reference data upserted at the end of this file).
+--   conflict_strategy 'priority': higher priority applies first; a non-stackable ("Birleşmez") campaign locks the units it
+--                                 discounts, so lower ones cannot touch them.
+--                     'best_deal': among non-stackable campaigns the one giving the customer the most applies first.
+--   max_discount_bps: total discount of a cart (shipping excluded) may not exceed this share of the cart (margin guard).
+CREATE TABLE IF NOT EXISTS pricing_policy (
+  id                INTEGER PRIMARY KEY CHECK (id = 1),
+  conflict_strategy TEXT NOT NULL DEFAULT 'priority' CHECK (conflict_strategy IN ('priority','best_deal')),
+  max_discount_bps  INTEGER NOT NULL DEFAULT 5000 CHECK (max_discount_bps BETWEEN 100 AND 10000),
+  updated_by        TEXT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS coupons (
   id                 TEXT PRIMARY KEY,
   campaign_id        TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
@@ -672,7 +726,9 @@ CREATE TABLE IF NOT EXISTS coupons (
   starts_at          TEXT,
   ends_at            TEXT,
   is_active          INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
-  created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  -- 0 = refused while an automatic campaign already discounts the cart (coupon exclusion). Added 2026-11.
+  allow_with_promotions INTEGER NOT NULL DEFAULT 1 CHECK (allow_with_promotions IN (0,1))
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS coupon_redemptions (
@@ -698,6 +754,279 @@ CREATE TABLE IF NOT EXISTS campaign_allocations (
   expires_at     TEXT NOT NULL,
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   UNIQUE (campaign_id, checkout_id)
+) STRICT;
+
+-- -----------------------------------------------------------------------------
+-- 4b. BULK OPERATIONS (Toplu işlemler: Excel, XML / REST product feeds)
+-- -----------------------------------------------------------------------------
+-- One row per bulk run (an Excel import or one product-feed sync). Rows themselves are never stored: Excel files are
+-- read in the browser and only the validated values reach the server; every product change goes through the product
+-- save use case (stock ledger, guards, audit). summary_json = counts + the first row errors for the history screen.
+CREATE TABLE IF NOT EXISTS bulk_jobs (
+  id            TEXT PRIMARY KEY,
+  kind          TEXT NOT NULL CHECK (kind IN ('excel_create','excel_update','excel_images','excel_prices','excel_stock','feed')),
+  source        TEXT NOT NULL CHECK (length(source) BETWEEN 1 AND 300),
+  feed_id       TEXT REFERENCES product_feeds(id) ON DELETE SET NULL,
+  match_key     TEXT CHECK (match_key IS NULL OR match_key IN ('barcode','sku','accounting_code','manufacturer_code')),
+  status        TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running','completed','failed')),
+  total_rows    INTEGER NOT NULL DEFAULT 0 CHECK (total_rows >= 0),
+  created_rows  INTEGER NOT NULL DEFAULT 0 CHECK (created_rows >= 0),
+  updated_rows  INTEGER NOT NULL DEFAULT 0 CHECK (updated_rows >= 0),
+  skipped_rows  INTEGER NOT NULL DEFAULT 0 CHECK (skipped_rows >= 0),
+  error_rows    INTEGER NOT NULL DEFAULT 0 CHECK (error_rows >= 0),
+  summary_json  TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(summary_json) AND length(summary_json) <= 20000),
+  created_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  finished_at   TEXT
+) STRICT;
+
+-- A supplier product feed (XML or REST/JSON URL) mapped onto our product fields. mapping_json: { "<field>": "<source path>" }
+-- (field = name, price, stock, images, …; path from the feed analyser). The key path's value is matched against
+-- match_key (barcode / sku / accounting_code / manufacturer_code). An optional request header (e.g. an API key) is
+-- sealed with AES-256-GCM like other integration secrets and never read back by the panel.
+-- schedule_minutes NULL = manual only; the cron route (/api/cron/feeds-sync) runs due feeds in budgeted slices,
+-- run_cursor = index of the next feed item of an unfinished pass.
+CREATE TABLE IF NOT EXISTS product_feeds (
+  id               TEXT PRIMARY KEY,
+  name             TEXT NOT NULL CHECK (length(name) BETWEEN 2 AND 120),
+  format           TEXT NOT NULL CHECK (format IN ('xml','json')),
+  url              TEXT NOT NULL CHECK (url GLOB 'https://*' AND length(url) <= 2000),
+  item_path        TEXT NOT NULL CHECK (length(item_path) <= 300),
+  match_key        TEXT NOT NULL CHECK (match_key IN ('barcode','sku','accounting_code','manufacturer_code')),
+  key_path         TEXT NOT NULL CHECK (length(key_path) BETWEEN 1 AND 300),
+  mapping_json     TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(mapping_json) AND length(mapping_json) <= 10000),
+  options_json     TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(options_json) AND length(options_json) <= 4000),
+  header_name      TEXT CHECK (header_name IS NULL OR (length(header_name) BETWEEN 1 AND 100 AND header_name NOT GLOB '*[^A-Za-z0-9-]*')),
+  header_secret_json TEXT CHECK (header_secret_json IS NULL OR json_valid(header_secret_json)),
+  schedule_minutes INTEGER CHECK (schedule_minutes IS NULL OR schedule_minutes IN (60, 180, 360, 720, 1440)),
+  is_active        INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+  run_cursor       INTEGER NOT NULL DEFAULT 0 CHECK (run_cursor >= 0),
+  pass_started_at  TEXT,
+  next_run_at      TEXT,
+  last_run_at      TEXT,
+  last_status      TEXT CHECK (last_status IS NULL OR last_status IN ('ok','partial','failed')),
+  last_message     TEXT CHECK (last_message IS NULL OR length(last_message) <= 500),
+  last_job_id      TEXT,
+  created_by       TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  CHECK ((header_name IS NULL) = (header_secret_json IS NULL))
+) STRICT;
+
+-- What a feed last wrote per item: unchanged items (same content_hash) are skipped, images are downloaded again only
+-- when their URL list changes (image_hash), items missing from a whole pass can get stock 0 (last_seen_at).
+CREATE TABLE IF NOT EXISTS product_feed_items (
+  feed_id      TEXT NOT NULL REFERENCES product_feeds(id) ON DELETE CASCADE,
+  key_value    TEXT NOT NULL CHECK (length(key_value) BETWEEN 1 AND 120),
+  product_id   TEXT REFERENCES products(id) ON DELETE CASCADE,
+  content_hash TEXT NOT NULL,
+  image_hash   TEXT,
+  last_seen_at TEXT NOT NULL,
+  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (feed_id, key_value)
+) STRICT;
+
+-- -----------------------------------------------------------------------------
+-- 4c. INTEGRATIONS: change capture, message bus, marketplaces
+-- -----------------------------------------------------------------------------
+-- Change data capture: triggers (end of file) append one row per catalog change, whoever wrote it (panel, Excel,
+-- feeds, orders, cancellations). The relay (/api/cron/integrations) coalesces rows into Kafka topics — product
+-- info / stock / price / images — and advances integration_relay_state; relayed rows are pruned after 7 days.
+CREATE TABLE IF NOT EXISTS catalog_change_log (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind       TEXT NOT NULL CHECK (kind IN ('content','stock','price','images')),
+  product_id TEXT NOT NULL,
+  variant_id TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS integration_relay_state (
+  id             INTEGER PRIMARY KEY CHECK (id = 1),
+  last_change_id INTEGER NOT NULL DEFAULT 0 CHECK (last_change_id >= 0),
+  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+) STRICT;
+
+-- Database implementation of the message bus (INTEGRATION_BUS=database: local development, tests, small shops).
+-- Same semantics as Kafka: an append-only log per topic and a committed position per consumer group.
+-- With INTEGRATION_BUS=kafka these two tables stay empty.
+CREATE TABLE IF NOT EXISTS integration_messages (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  topic        TEXT NOT NULL CHECK (length(topic) BETWEEN 1 AND 200),
+  msg_key      TEXT CHECK (msg_key IS NULL OR length(msg_key) <= 200),
+  payload_json TEXT NOT NULL CHECK (json_valid(payload_json) AND length(payload_json) <= 100000),
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS integration_consumer_offsets (
+  consumer_group TEXT NOT NULL CHECK (length(consumer_group) BETWEEN 1 AND 100),
+  topic          TEXT NOT NULL CHECK (length(topic) BETWEEN 1 AND 200),
+  last_id        INTEGER NOT NULL DEFAULT 0 CHECK (last_id >= 0),
+  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (consumer_group, topic)
+) STRICT;
+
+-- A shop's account on a marketplace (Trendyol today; Hepsiburada, N11, Çiçeksepeti use the same rows).
+-- credentials_sealed_json = AES-256-GCM sealed {apiKey, apiSecret} (never read back by the panel).
+-- *_minutes = how often orders are pulled and stock / price / product info are pushed; next_*_at = when next due.
+-- orders_synced_until = epoch-ms watermark of pulled orders (pulls overlap it, duplicates are dropped by marketplace_orders).
+-- channel_cart_id = internal cart that marketplace orders hang on (orders → checkout_sessions → carts).
+CREATE TABLE IF NOT EXISTS marketplace_connections (
+  id                   TEXT PRIMARY KEY,
+  provider             TEXT NOT NULL CHECK (provider IN ('trendyol','hepsiburada','n11','ciceksepeti')),
+  name                 TEXT NOT NULL CHECK (length(name) BETWEEN 2 AND 80),
+  environment          TEXT NOT NULL DEFAULT 'production' CHECK (environment IN ('production','stage')),
+  seller_id            TEXT NOT NULL CHECK (length(seller_id) BETWEEN 1 AND 40 AND seller_id NOT GLOB '*[^0-9A-Za-z_-]*'),
+  credentials_sealed_json TEXT NOT NULL CHECK (json_valid(credentials_sealed_json)),
+  settings_json        TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(settings_json) AND length(settings_json) <= 4000),
+  is_active            INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0,1)),
+  order_pull_minutes   INTEGER NOT NULL DEFAULT 5 CHECK (order_pull_minutes IN (1,5,10,15,30,60)),
+  stock_push_minutes   INTEGER NOT NULL DEFAULT 5 CHECK (stock_push_minutes IN (1,5,10,15,30,60)),
+  price_push_minutes   INTEGER NOT NULL DEFAULT 15 CHECK (price_push_minutes IN (1,5,10,15,30,60)),
+  content_push_minutes INTEGER NOT NULL DEFAULT 60 CHECK (content_push_minutes IN (5,15,30,60,180,360,720,1440)),
+  next_order_pull_at   TEXT,
+  next_stock_push_at   TEXT,
+  next_price_push_at   TEXT,
+  next_content_push_at TEXT,
+  orders_synced_until  INTEGER CHECK (orders_synced_until IS NULL OR orders_synced_until > 0),
+  last_sync_at         TEXT,
+  last_error           TEXT CHECK (last_error IS NULL OR length(last_error) <= 1000),
+  channel_cart_id      TEXT REFERENCES carts(id) ON DELETE RESTRICT,
+  created_by           TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE (provider, environment, seller_id)
+) STRICT;
+
+-- Our category / brand → the marketplace's id (Trendyol needs leaf category and brand ids on every product).
+CREATE TABLE IF NOT EXISTS marketplace_category_mappings (
+  connection_id          TEXT NOT NULL REFERENCES marketplace_connections(id) ON DELETE CASCADE,
+  category_id            TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+  external_category_id   INTEGER NOT NULL CHECK (external_category_id > 0),
+  external_category_path TEXT NOT NULL CHECK (length(external_category_path) <= 500),
+  PRIMARY KEY (connection_id, category_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS marketplace_brand_mappings (
+  connection_id       TEXT NOT NULL REFERENCES marketplace_connections(id) ON DELETE CASCADE,
+  brand_id            TEXT NOT NULL REFERENCES brands(id) ON DELETE CASCADE,
+  external_brand_id   INTEGER NOT NULL CHECK (external_brand_id > 0),
+  external_brand_name TEXT NOT NULL CHECK (length(external_brand_name) <= 200),
+  PRIMARY KEY (connection_id, brand_id)
+) STRICT;
+
+-- Marketplace category attribute ← one of our attributes (its option values are mapped below) or a fixed value
+-- (e.g. Menşei = TR for every product of the category).
+CREATE TABLE IF NOT EXISTS marketplace_attribute_mappings (
+  connection_id           TEXT NOT NULL REFERENCES marketplace_connections(id) ON DELETE CASCADE,
+  external_category_id    INTEGER NOT NULL,
+  external_attribute_id   INTEGER NOT NULL,
+  external_attribute_name TEXT NOT NULL CHECK (length(external_attribute_name) <= 200),
+  attribute_id            TEXT REFERENCES attribute_definitions(id) ON DELETE CASCADE,
+  fixed_value_id          INTEGER,
+  fixed_custom_value      TEXT CHECK (fixed_custom_value IS NULL OR length(fixed_custom_value) BETWEEN 1 AND 200),
+  PRIMARY KEY (connection_id, external_category_id, external_attribute_id),
+  CHECK ((attribute_id IS NOT NULL) + (fixed_value_id IS NOT NULL) + (fixed_custom_value IS NOT NULL) = 1)
+) STRICT;
+
+-- Our option (Kırmızı, 38, 160x230) → the marketplace's value id, or free text where the attribute allows custom values.
+CREATE TABLE IF NOT EXISTS marketplace_value_mappings (
+  connection_id         TEXT NOT NULL REFERENCES marketplace_connections(id) ON DELETE CASCADE,
+  external_attribute_id INTEGER NOT NULL,
+  option_id             TEXT NOT NULL REFERENCES attribute_options(id) ON DELETE CASCADE,
+  external_value_id     INTEGER,
+  custom_value          TEXT CHECK (custom_value IS NULL OR length(custom_value) BETWEEN 1 AND 200),
+  PRIMARY KEY (connection_id, external_attribute_id, option_id),
+  CHECK ((external_value_id IS NOT NULL) + (custom_value IS NOT NULL) = 1)
+) STRICT;
+
+-- One variant (barcode) on one marketplace. content_id comes from the marketplace once the product is approved.
+-- *_hash = what was last sent, so an unchanged product / price / stock is not sent again (Trendyol refuses
+-- identical price-stock requests within 15 minutes).
+CREATE TABLE IF NOT EXISTS marketplace_listings (
+  connection_id    TEXT NOT NULL REFERENCES marketplace_connections(id) ON DELETE CASCADE,
+  variant_id       TEXT NOT NULL REFERENCES product_variants(id) ON DELETE CASCADE,
+  product_id       TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  status           TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','submitted','approved','rejected','error','paused')),
+  content_id       INTEGER,
+  last_batch_id    TEXT,
+  last_error       TEXT CHECK (last_error IS NULL OR length(last_error) <= 1000),
+  content_hash     TEXT,
+  price_stock_hash TEXT,
+  last_pushed_at   TEXT,
+  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (connection_id, variant_id)
+) STRICT;
+
+-- Work waiting for the next push of a connection (filled by the bus consumer; one row per variant and kind, so ten
+-- stock changes of a variant become one update). Stock and price are separate kinds: each has its own interval.
+CREATE TABLE IF NOT EXISTS marketplace_pending (
+  connection_id TEXT NOT NULL REFERENCES marketplace_connections(id) ON DELETE CASCADE,
+  kind          TEXT NOT NULL CHECK (kind IN ('content','stock','price')),
+  variant_id    TEXT NOT NULL,
+  queued_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (connection_id, kind, variant_id)
+) STRICT;
+
+-- Asynchronous marketplace batches (Trendyol batchRequestId) until their result is read.
+CREATE TABLE IF NOT EXISTS marketplace_batches (
+  id            TEXT PRIMARY KEY,
+  connection_id TEXT NOT NULL REFERENCES marketplace_connections(id) ON DELETE CASCADE,
+  kind          TEXT NOT NULL CHECK (kind IN ('content','stock','price')),
+  status        TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress','completed','failed')),
+  item_count    INTEGER NOT NULL DEFAULT 0 CHECK (item_count >= 0),
+  failed_count  INTEGER NOT NULL DEFAULT 0 CHECK (failed_count >= 0),
+  variant_ids_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(variant_ids_json)),
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  checked_at    TEXT
+) STRICT;
+
+-- Every marketplace package seen, keyed by the marketplace's package id: a package is written to orders exactly once
+-- however often (and however overlapping) orders are pulled. 'failed' (e.g. unknown barcode) is retried on later pulls.
+CREATE TABLE IF NOT EXISTS marketplace_orders (
+  connection_id         TEXT NOT NULL REFERENCES marketplace_connections(id) ON DELETE CASCADE,
+  external_package_id   TEXT NOT NULL CHECK (length(external_package_id) BETWEEN 1 AND 60),
+  external_order_number TEXT NOT NULL CHECK (length(external_order_number) BETWEEN 1 AND 60),
+  order_id              TEXT REFERENCES orders(id) ON DELETE SET NULL,
+  external_status       TEXT CHECK (external_status IS NULL OR length(external_status) <= 40),
+  status                TEXT NOT NULL CHECK (status IN ('imported','failed','skipped')),
+  error                 TEXT CHECK (error IS NULL OR length(error) <= 1000),
+  last_modified_ms      INTEGER,
+  attempts              INTEGER NOT NULL DEFAULT 1 CHECK (attempts >= 1),
+  created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (connection_id, external_package_id),
+  CHECK (status <> 'imported' OR order_id IS NOT NULL)
+) STRICT;
+
+-- Marketplace reference data, cached (Trendyol asks to refresh the category tree weekly).
+CREATE TABLE IF NOT EXISTS marketplace_category_cache (
+  provider    TEXT NOT NULL CHECK (provider IN ('trendyol','hepsiburada','n11','ciceksepeti')),
+  external_id INTEGER NOT NULL,
+  parent_id   INTEGER,
+  name        TEXT NOT NULL,
+  path        TEXT NOT NULL,
+  is_leaf     INTEGER NOT NULL CHECK (is_leaf IN (0,1)),
+  fetched_at  TEXT NOT NULL,
+  PRIMARY KEY (provider, external_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS marketplace_attribute_cache (
+  provider             TEXT NOT NULL CHECK (provider IN ('trendyol','hepsiburada','n11','ciceksepeti')),
+  external_category_id INTEGER NOT NULL,
+  payload_json         TEXT NOT NULL CHECK (json_valid(payload_json)),
+  fetched_at           TEXT NOT NULL,
+  PRIMARY KEY (provider, external_category_id)
+) STRICT;
+
+-- Barcodes the shop generates for variants without a GS1 barcode: EAN-13 = prefix + running number + check digit.
+-- Prefix 2… is the GS1 "restricted circulation" range (in-store use); a shop with its own GS1 company prefix sets it.
+CREATE TABLE IF NOT EXISTS barcode_sequences (
+  id         TEXT PRIMARY KEY CHECK (id = 'default'),
+  prefix     TEXT NOT NULL CHECK (length(prefix) BETWEEN 3 AND 10 AND prefix NOT GLOB '*[^0-9]*'),
+  next_value INTEGER NOT NULL CHECK (next_value >= 0),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 ) STRICT;
 
 -- -----------------------------------------------------------------------------
@@ -767,6 +1096,9 @@ CREATE TABLE IF NOT EXISTS orders (
   total_minor    INTEGER NOT NULL CHECK (total_minor >= 0),
   customer_note  TEXT CHECK (customer_note IS NULL OR length(customer_note) <= 1000),
   placed_at      TEXT NOT NULL,
+  -- Added 2026-11-07: where the order was placed (web shop or a marketplace) and the marketplace's own order number.
+  sales_channel  TEXT NOT NULL DEFAULT 'web' CHECK (sales_channel IN ('web','trendyol','hepsiburada','n11','ciceksepeti')),
+  external_order_number TEXT CHECK (external_order_number IS NULL OR length(external_order_number) <= 60),
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   CHECK (total_minor = subtotal_minor - discount_minor + shipping_minor),
@@ -968,6 +1300,21 @@ CREATE TABLE IF NOT EXISTS ai_integration (
   updated_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 ) STRICT;
 
+-- Models offered in the AI panel's model select (reference data, upserted at the end of this file). The panel
+-- only accepts listed, non-retired models. Default model of a provider = its first 'active' row by sort_order.
+-- Models are never deleted (ai_integration.model may still name one): set status 'deprecated' when the provider
+-- announces a shutdown (shown with a warning), 'retired' once it is gone (hidden from the select).
+CREATE TABLE IF NOT EXISTS ai_models (
+  provider   TEXT NOT NULL CHECK (provider IN ('openai','gemini','anthropic')),
+  model_id   TEXT NOT NULL CHECK (length(model_id) BETWEEN 2 AND 100 AND model_id NOT GLOB '*[^A-Za-z0-9._:-]*'),
+  label      TEXT NOT NULL CHECK (length(label) BETWEEN 2 AND 60),
+  note       TEXT CHECK (note IS NULL OR length(note) <= 160),
+  status     TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','deprecated','retired')),
+  retires_at TEXT CHECK (retires_at IS NULL OR retires_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (provider, model_id)
+) STRICT;
+
 -- Outgoing e-mail over SMTP (password reset, later order mails). One row; the SMTP password is sealed with
 -- AES-256-GCM (master key = SECRETS_MASTER_KEY) — it cannot be hashed because the server must present it to the
 -- mail server. The panel never reads it back.
@@ -985,6 +1332,25 @@ CREATE TABLE IF NOT EXISTS mail_integration (
   from_name           TEXT NOT NULL CHECK (length(from_name) BETWEEN 1 AND 100),
   updated_by          TEXT REFERENCES users(id) ON DELETE SET NULL,
   updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+) STRICT;
+
+-- One row per outgoing e-mail attempt (MailSender) — the panel's "Son gönderimler" list, so a failed password-reset
+-- mail (sent in the background, invisible to the requester) shows why it failed. `error_*` / `stage` come from the
+-- SMTP failure classifier; `server_reply` = the SMTP server's own answer (accept line with queue id, or rejection).
+-- Never holds message bodies, links or passwords. Rows older than 30 days are pruned on write.
+CREATE TABLE IF NOT EXISTS mail_deliveries (
+  id            TEXT PRIMARY KEY,
+  purpose       TEXT NOT NULL CHECK (purpose IN ('password_reset','test','other')),
+  recipient     TEXT NOT NULL CHECK (length(recipient) BETWEEN 3 AND 254),
+  status        TEXT NOT NULL CHECK (status IN ('sent','failed','not_configured','throttled')),
+  smtp_host     TEXT CHECK (smtp_host IS NULL OR length(smtp_host) <= 253),
+  stage         TEXT CHECK (stage IS NULL OR length(stage) <= 20),
+  error_code    TEXT CHECK (error_code IS NULL OR length(error_code) <= 60),
+  error_message TEXT CHECK (error_message IS NULL OR length(error_message) <= 500),
+  server_reply  TEXT CHECK (server_reply IS NULL OR length(server_reply) <= 500),
+  latency_ms    INTEGER CHECK (latency_ms IS NULL OR latency_ms >= 0),
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  CHECK ((status = 'failed') = (error_code IS NOT NULL))
 ) STRICT;
 
 -- Catalog of third-party providers offered in the panel (Entegrasyonlar › SMS / Kargo). Reference data: the upsert
@@ -1226,6 +1592,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_carts_active_user          ON carts(user_id
 CREATE UNIQUE INDEX IF NOT EXISTS ux_payment_config_active    ON payment_configs(provider) WHERE is_active = 1;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_integration_active_kind   ON integrations(kind) WHERE is_active = 1;
 CREATE INDEX IF NOT EXISTS ix_integration_providers_kind        ON integration_providers(kind, sort_order);
+CREATE INDEX IF NOT EXISTS ix_mail_deliveries_created            ON mail_deliveries(created_at);
 CREATE INDEX IF NOT EXISTS ix_carrier_shipments_sync            ON carrier_shipments(status, last_synced_at);
 -- lookups
 CREATE INDEX IF NOT EXISTS ix_sessions_user              ON sessions(user_id, expires_at);
@@ -1254,6 +1621,19 @@ CREATE INDEX IF NOT EXISTS ix_stories_collection         ON stories(collection_i
 CREATE INDEX IF NOT EXISTS ix_slides_slider              ON slides(slider_id, is_active, sort_order);
 CREATE INDEX IF NOT EXISTS ix_home_sections_order        ON home_sections(is_active, sort_order);
 CREATE INDEX IF NOT EXISTS ix_campaigns_active_window    ON campaigns(is_active, starts_at, ends_at);
+CREATE INDEX IF NOT EXISTS ix_campaign_conditions          ON campaign_conditions(campaign_id);
+CREATE INDEX IF NOT EXISTS ix_bulk_jobs_created             ON bulk_jobs(created_at);
+CREATE INDEX IF NOT EXISTS ix_catalog_change_log_created    ON catalog_change_log(created_at);
+CREATE INDEX IF NOT EXISTS ix_integration_messages_topic    ON integration_messages(topic, id);
+CREATE INDEX IF NOT EXISTS ix_marketplace_listings_status   ON marketplace_listings(connection_id, status);
+CREATE INDEX IF NOT EXISTS ix_marketplace_listings_product  ON marketplace_listings(product_id);
+CREATE INDEX IF NOT EXISTS ix_marketplace_orders_status     ON marketplace_orders(connection_id, status);
+CREATE INDEX IF NOT EXISTS ix_marketplace_batches_open      ON marketplace_batches(connection_id, status);
+CREATE INDEX IF NOT EXISTS ix_marketplace_category_cache_path ON marketplace_category_cache(provider, path);
+CREATE INDEX IF NOT EXISTS ix_product_feeds_due             ON product_feeds(is_active, next_run_at);
+CREATE INDEX IF NOT EXISTS ix_product_feed_items_seen       ON product_feed_items(feed_id, last_seen_at);
+CREATE INDEX IF NOT EXISTS ix_products_accounting_code      ON products(accounting_code);
+CREATE INDEX IF NOT EXISTS ix_products_manufacturer_code    ON products(manufacturer_code);
 CREATE INDEX IF NOT EXISTS ix_coupon_red_coupon_status   ON coupon_redemptions(coupon_id, status, customer_key_hash);
 CREATE INDEX IF NOT EXISTS ix_campaign_alloc_status      ON campaign_allocations(campaign_id, status);
 CREATE INDEX IF NOT EXISTS ix_cart_items_cart            ON cart_items(cart_id);
@@ -1559,3 +1939,100 @@ ON CONFLICT (code) DO UPDATE SET
   kind = excluded.kind, name = excluded.name, description = excluded.description, website = excluded.website,
   support_status = excluded.support_status, credential_fields_json = excluded.credential_fields_json,
   capabilities_json = excluded.capabilities_json, sort_order = excluded.sort_order;
+
+-- AI model catalog (see ai_models). Upsert: re-running the schema refreshes labels, notes and status. Check a list
+-- against real keys with `npm run ai:health` (scripts/ai-health.mjs reads the rows below). Sources (2026-11):
+-- developers.openai.com/api/docs/models + /deprecations, aistudio.google.com/docs/models, platform.claude.com/docs/en/about-claude/models.
+INSERT INTO ai_models (provider, model_id, label, note, status, retires_at, sort_order) VALUES
+ ('openai','gpt-6.1-terra','GPT-6.1 Terra','Hızlı ve ekonomik; ürün metinleri için önerilir','active',NULL,10),
+ ('openai','gpt-6.1-sol','GPT-6.1 Sol','Hız ve kalite dengesi','active',NULL,20),
+ ('openai','gpt-6-luna','GPT-6 Luna','En düşük maliyet, yüksek hacim','active',NULL,30),
+ ('openai','gpt-6-astra','GPT-6 Astra','En güçlü model, daha yavaş ve pahalı','active',NULL,40),
+ ('openai','gpt-4.1-mini','GPT-4.1 mini','Yerine GPT-6 Luna önerilir.','deprecated','2027-01-14',90),
+ ('openai','gpt-4.1','GPT-4.1','Yerine GPT-6 Luna önerilir.','deprecated','2027-01-14',91),
+ ('openai','gpt-4o','GPT-4o','Yerine GPT-6 Luna önerilir.','deprecated','2027-01-14',92),
+ ('gemini','gemini-3.6-flash','Gemini 3.6 Flash','Kararlı ve hızlı; ürün metinleri için önerilir','active',NULL,10),
+ ('gemini','gemini-3.5-flash-lite','Gemini 3.5 Flash-Lite','Kararlı, en düşük maliyet','active',NULL,20),
+ ('gemini','gemini-3.8-flash','Gemini 3.8 Flash','Yeni; yoğun saatlerde meşgul olabilir','active',NULL,30),
+ ('gemini','gemini-4-argon','Gemini 4 Argon','En güçlü model, daha yavaş ve pahalı','active',NULL,40),
+ ('gemini','gemini-2.5-flash','Gemini 2.5 Flash','İstekler Gemini 3.5 Flash-Lite''a yönlendirilecek.','deprecated','2026-12-01',90),
+ ('gemini','gemini-2.5-pro','Gemini 2.5 Pro','İstekler Gemini 3.8 Flash''a yönlendirilecek.','deprecated','2026-12-01',91),
+ ('anthropic','claude-sonnet-5-5','Claude Sonnet 5.5','Hız ve kalite dengesi; ürün metinleri için önerilir','active',NULL,10),
+ ('anthropic','claude-haiku-5-5','Claude Haiku 5.5','En hızlı ve en ekonomik','active',NULL,20),
+ ('anthropic','claude-opus-5-5','Claude Opus 5.5','Daha güçlü, daha yavaş ve pahalı','active',NULL,30),
+ ('anthropic','claude-fable-5-1','Claude Fable 5.1','En güçlü model, en yavaş ve en pahalı','active',NULL,40)
+ON CONFLICT (provider, model_id) DO UPDATE SET
+  label = excluded.label, note = excluded.note, status = excluded.status, retires_at = excluded.retires_at, sort_order = excluded.sort_order;
+
+-- Campaign rules (see pricing_policy). Insert only: the panel owns the values afterwards.
+INSERT OR IGNORE INTO pricing_policy (id, conflict_strategy, max_discount_bps) VALUES (1, 'priority', 5000);
+
+-- -----------------------------------------------------------------------------
+-- Change data capture for integrations (catalog_change_log; see section 4c). AFTER triggers only: they never
+-- block a write. Stock is captured only when the sellable amount (on_hand − reserved) changes.
+-- -----------------------------------------------------------------------------
+CREATE TRIGGER IF NOT EXISTS trg_ccl_products
+AFTER UPDATE OF name, short_description, description_html, brand_id, status, tax_rate_bps, accounting_code, manufacturer_code, country_of_origin ON products
+BEGIN
+  INSERT INTO catalog_change_log (kind, product_id) VALUES ('content', NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ccl_variants_ins
+AFTER INSERT ON product_variants
+BEGIN
+  INSERT INTO catalog_change_log (kind, product_id, variant_id) VALUES ('content', NEW.product_id, NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ccl_variants_upd
+AFTER UPDATE OF sku, barcode, name, is_active, weight_grams, width_mm, height_mm, depth_mm ON product_variants
+BEGIN
+  INSERT INTO catalog_change_log (kind, product_id, variant_id) VALUES ('content', NEW.product_id, NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ccl_categories_ins
+AFTER INSERT ON product_categories
+BEGIN
+  INSERT INTO catalog_change_log (kind, product_id) VALUES ('content', NEW.product_id);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ccl_attributes_ins
+AFTER INSERT ON product_attribute_values
+BEGIN
+  INSERT INTO catalog_change_log (kind, product_id) VALUES ('content', NEW.product_id);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ccl_attributes_del
+AFTER DELETE ON product_attribute_values
+BEGIN
+  INSERT INTO catalog_change_log (kind, product_id) VALUES ('content', OLD.product_id);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ccl_media_ins
+AFTER INSERT ON product_media
+BEGIN
+  INSERT INTO catalog_change_log (kind, product_id, variant_id) VALUES ('images', NEW.product_id, NEW.variant_id);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ccl_media_del
+AFTER DELETE ON product_media
+BEGIN
+  INSERT INTO catalog_change_log (kind, product_id, variant_id) VALUES ('images', OLD.product_id, OLD.variant_id);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ccl_prices_ins
+AFTER INSERT ON variant_prices
+BEGIN
+  INSERT INTO catalog_change_log (kind, product_id, variant_id) SELECT 'price', product_id, id FROM product_variants WHERE id = NEW.variant_id;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ccl_prices_upd
+AFTER UPDATE OF unit_price_minor, compare_at_minor ON variant_prices
+BEGIN
+  INSERT INTO catalog_change_log (kind, product_id, variant_id) SELECT 'price', product_id, id FROM product_variants WHERE id = NEW.variant_id;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ccl_stock_ins
+AFTER INSERT ON inventory_balances
+BEGIN
+  INSERT INTO catalog_change_log (kind, product_id, variant_id) SELECT 'stock', product_id, id FROM product_variants WHERE id = NEW.variant_id;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ccl_stock_upd
+AFTER UPDATE OF on_hand, reserved ON inventory_balances
+WHEN NEW.on_hand - NEW.reserved <> OLD.on_hand - OLD.reserved
+BEGIN
+  INSERT INTO catalog_change_log (kind, product_id, variant_id) SELECT 'stock', product_id, id FROM product_variants WHERE id = NEW.variant_id;
+END;
+
+-- Integrations reference rows (insert only).
+INSERT OR IGNORE INTO integration_relay_state (id, last_change_id) VALUES (1, 0);
+INSERT OR IGNORE INTO barcode_sequences (id, prefix, next_value) VALUES ('default', '2000000', 1);

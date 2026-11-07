@@ -3,11 +3,18 @@ import net from "node:net";
 import tls from "node:tls";
 import { toBase64 } from "@/core";
 import type { SmtpServer, SmtpTransport } from "../application/ports";
-import { MailErrors } from "../domain/errors";
+import { classifySmtpFailure, type SmtpFailure, type SmtpStage } from "../domain/smtp-failure";
 
 const TIMEOUT_MS = 20_000;
 type Reply = { code: number; text: string };
 type Sock = net.Socket | tls.TLSSocket;
+
+class ReplyError extends Error {
+  constructor(readonly r: Reply) { super(`SMTP ${r.code}`); }
+}
+class ClosedError extends Error {}
+class NotOffered extends Error {}
+const TIMED_OUT = Symbol("timeout");
 
 /** Line reader over a (replaceable) socket: SMTP replies are CRLF lines, multi-line replies use "250-". */
 class SmtpLine {
@@ -25,7 +32,7 @@ class SmtpLine {
     }
   };
   private readonly onError = (e: Error) => this.fail(e);
-  private readonly onClose = () => this.fail(new Error("connection closed"));
+  private readonly onClose = () => this.fail(new ClosedError("connection closed"));
 
   constructor(public sock: Sock) { this.attach(sock); }
 
@@ -59,10 +66,11 @@ class SmtpLine {
     }
   }
 
+  /** Unexpected reply → ReplyError with the server's answer only (the command may carry credentials). */
   async cmd(command: string, expect: number[]): Promise<Reply> {
     this.sock.write(`${command}\r\n`);
     const r = await this.reply();
-    if (!expect.includes(r.code)) throw Object.assign(new Error(`${command.split(" ")[0]} → ${r.code} ${r.text}`), { smtpCode: r.code });
+    if (!expect.includes(r.code)) throw new ReplyError(r);
     return r;
   }
 }
@@ -70,76 +78,94 @@ class SmtpLine {
 const opened = (s: Sock, event: "connect" | "secureConnect") =>
   new Promise<void>((res, rej) => { s.once(event, () => res()); s.once("error", rej); });
 
-async function openSocket(server: SmtpServer): Promise<Sock> {
-  const s = server.security === "ssl"
-    ? tls.connect({ host: server.host, port: server.port, servername: server.host })
-    : net.connect({ host: server.host, port: server.port });
-  await opened(s, server.security === "ssl" ? "secureConnect" : "connect");
+async function openSocket(server: SmtpServer, onTcp?: () => void): Promise<Sock> {
+  if (server.security === "ssl") {
+    const s = tls.connect({ host: server.host, port: server.port, servername: server.host });
+    s.once("connect", () => onTcp?.()); // TCP is up; what follows is the TLS handshake
+    await opened(s, "secureConnect");
+    return s;
+  }
+  const s = net.connect({ host: server.host, port: server.port });
+  await opened(s, "connect");
   return s;
+}
+
+/** A thrown value → the facts `classifySmtpFailure` needs. */
+function factsOf(err: unknown, stage: SmtpStage): SmtpFailure {
+  if (err === TIMED_OUT) return { stage, timeout: true };
+  if (err instanceof ReplyError) return { stage, smtpCode: err.r.code, reply: err.r.text };
+  if (err instanceof NotOffered) return { stage, notOffered: true };
+  if (err instanceof ClosedError) return { stage, closed: true };
+  const e = err as { code?: unknown; message?: unknown };
+  return { stage, sysCode: typeof e?.code === "string" ? e.code : undefined, message: String(e?.message ?? err), closed: e?.code === "ECONNRESET" || undefined };
 }
 
 /**
  * Dependency-free SMTP client over node:net / node:tls — available in Node (next dev, tests) and in Cloudflare
  * Workers with `nodejs_compat`. `ssl` = TLS from the first byte (port 465), `starttls` = plain then upgrade
  * (port 587). AUTH PLAIN when offered, otherwise AUTH LOGIN. Port 25 is blocked on Workers.
+ * Failures are classified by stage + server reply (`classifySmtpFailure`); success returns the server's accept line
+ * (e.g. Gmail "250 2.0.0 OK … gsmtp") as proof the message was handed to that server.
  */
 export class NodeSmtpTransport implements SmtpTransport {
   /** `connect` opens the first socket (tests pass a plain socket to a fake server); the default is the real network. */
-  constructor(private readonly connect: (server: SmtpServer) => Promise<Sock> = openSocket) {}
+  constructor(private readonly connect: (server: SmtpServer, onTcp?: () => void) => Promise<Sock> = openSocket, private readonly timeoutMs = TIMEOUT_MS) {}
 
-  async send(server: SmtpServer, envelope: { from: string; to: string }, mime: string): Promise<void> {
+  async send(server: SmtpServer, envelope: { from: string; to: string }, mime: string): Promise<{ serverReply: string }> {
     let sock: Sock | null = null;
+    let stage: SmtpStage = "connect";
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(MailErrors.timeout()), TIMEOUT_MS); });
-    const run = async () => {
-      try {
-        sock = await this.connect(server);
-      } catch (e) {
-        throw MailErrors.connectFailed(String(e));
-      }
+    const timeout = new Promise<never>((_, rej) => { timer = setTimeout(() => rej(TIMED_OUT), this.timeoutMs); });
+    const run = async (): Promise<string> => {
+      sock = await this.connect(server, () => { stage = "tls"; });
       const io = new SmtpLine(sock);
-      const step = async <T>(fn: () => Promise<T>, onFail: (detail: string) => Error) => {
-        try { return await fn(); } catch (e) { throw onFail(String((e as Error).message ?? e)); }
-      };
-
-      await step(async () => {
-        const greet = await io.reply();
-        if (greet.code !== 220) throw new Error(`greeting ${greet.code} ${greet.text}`);
-      }, MailErrors.connectFailed);
-      let ehlo = await step(() => io.cmd("EHLO nova.local", [250]), MailErrors.connectFailed);
+      stage = "greeting";
+      const greet = await io.reply();
+      if (greet.code !== 220) throw new ReplyError(greet);
+      stage = "ehlo";
+      let ehlo = await io.cmd("EHLO nova.local", [250]);
 
       if (server.security === "starttls") {
-        await step(() => io.cmd("STARTTLS", [220]), MailErrors.connectFailed);
+        stage = "starttls";
+        if (!/\bSTARTTLS\b/i.test(ehlo.text)) throw new NotOffered();
+        await io.cmd("STARTTLS", [220]);
         io.detach();
+        stage = "tls";
         const secure = tls.connect({ socket: sock, servername: server.host });
-        await step(() => opened(secure, "secureConnect"), MailErrors.connectFailed);
+        await opened(secure, "secureConnect");
         sock = secure;
         io.attach(secure);
-        ehlo = await step(() => io.cmd("EHLO nova.local", [250]), MailErrors.connectFailed);
+        stage = "ehlo";
+        ehlo = await io.cmd("EHLO nova.local", [250]);
       }
 
-      const b64 = (s: string) => toBase64(new TextEncoder().encode(s));
-      await step(async () => {
-        if (/AUTH[ =][^\n]*\bPLAIN\b/i.test(ehlo.text)) {
-          await io.cmd(`AUTH PLAIN ${b64(`\u0000${server.username}\u0000${server.password}`)}`, [235]);
-        } else {
-          await io.cmd("AUTH LOGIN", [334]);
-          await io.cmd(b64(server.username), [334]);
-          await io.cmd(b64(server.password), [235]);
-        }
-      }, MailErrors.authFailed);
+      stage = "auth";
+      const b64 = (v: string) => toBase64(new TextEncoder().encode(v));
+      const auth = /^AUTH[ =](.*)$/im.exec(ehlo.text)?.[1] ?? "";
+      if (!auth) throw new NotOffered();
+      if (/\bPLAIN\b/i.test(auth)) {
+        await io.cmd(`AUTH PLAIN ${b64(`\u0000${server.username}\u0000${server.password}`)}`, [235]);
+      } else {
+        await io.cmd("AUTH LOGIN", [334]);
+        await io.cmd(b64(server.username), [334]);
+        await io.cmd(b64(server.password), [235]);
+      }
 
-      await step(async () => {
-        await io.cmd(`MAIL FROM:<${envelope.from}>`, [250]);
-        await io.cmd(`RCPT TO:<${envelope.to}>`, [250, 251]);
-        await io.cmd("DATA", [354]);
-        // Dot-stuffing: a line starting with "." gets another "." (RFC 5321 §4.5.2).
-        await io.cmd(`${mime.replace(/\r\n\./g, "\r\n..")}\r\n.`, [250]);
-      }, MailErrors.rejected);
+      stage = "sender";
+      await io.cmd(`MAIL FROM:<${envelope.from}>`, [250]);
+      stage = "recipient";
+      await io.cmd(`RCPT TO:<${envelope.to}>`, [250, 251]);
+      stage = "data";
+      await io.cmd("DATA", [354]);
+      // Dot-stuffing: a line starting with "." gets another "." (RFC 5321 §4.5.2).
+      const accepted = await io.cmd(`${mime.replace(/\r\n\./g, "\r\n..")}\r\n.`, [250]);
       await io.cmd("QUIT", [221]).catch(() => { /* already delivered */ });
+      return `${accepted.code} ${accepted.text}`.replace(/\s+/g, " ").trim().slice(0, 500);
     };
     try {
-      await Promise.race([run(), timeout]);
+      return { serverReply: await Promise.race([run(), timeout]) };
+    } catch (err) {
+      throw classifySmtpFailure(factsOf(err, stage), server);
     } finally {
       clearTimeout(timer);
       (sock as Sock | null)?.destroy();

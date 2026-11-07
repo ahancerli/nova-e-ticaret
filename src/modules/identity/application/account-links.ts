@@ -140,7 +140,11 @@ export class RequestPasswordReset {
     const pending = await deps.links.pending(account.userId, "password_reset");
     if (pending) {
       const issuedAt = Date.parse(pending.expiresAt) - LINK_TTL_MINUTES.password_reset * 60_000;
-      if (deps.clock.now().getTime() - issuedAt < RESET_RESEND_MINUTES * 60_000) return "throttled";
+      if (deps.clock.now().getTime() - issuedAt < RESET_RESEND_MINUTES * 60_000) {
+        // shown in the SMTP panel's delivery list: "why did no second mail arrive?"
+        await deps.mailer.note("password_reset", account.email, "throttled");
+        return "throttled";
+      }
     }
 
     const link = await deps.links.issue(account.userId, "password_reset");

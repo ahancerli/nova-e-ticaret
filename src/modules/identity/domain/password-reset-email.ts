@@ -5,6 +5,7 @@ export function passwordResetEmail(p: { to: string; name: string; link: string; 
   const where = p.panel ? "yönetim paneli" : "mağaza";
   const first = p.name.split(" ")[0] || p.name;
   return {
+    purpose: "password_reset",
     to: p.to,
     toName: p.name,
     subject: `${p.brand}: parola sıfırlama`,

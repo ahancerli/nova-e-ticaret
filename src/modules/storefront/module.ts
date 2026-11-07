@@ -1,4 +1,5 @@
 import { ClockToken, DatabaseToken, token, type Container } from "@/core";
+import { GetProductPromotionsToken } from "@/modules/pricing";
 import type { StorefrontReadModel } from "./application/ports";
 import {
   GetBrandPage, GetCategoryPage, GetFacets, GetHome, GetProductDetail, GetShell, ListActiveBrands, ListActiveCategories, ListCatalogProducts, SearchSuggest,
@@ -20,13 +21,13 @@ export const SearchSuggestToken = token<SearchSuggest>("SearchSuggest");
 export function registerStorefront(c: Container): void {
   c.scoped(StorefrontReadModelToken, (r) => new D1StorefrontReadModel(r.resolve(DatabaseToken)));
   c.scoped(GetShellToken, (r) => new GetShell(r.resolve(StorefrontReadModelToken)));
-  c.scoped(GetHomeToken, (r) => new GetHome(r.resolve(StorefrontReadModelToken), r.resolve(ClockToken)));
-  c.scoped(ListCatalogProductsToken, (r) => new ListCatalogProducts(r.resolve(StorefrontReadModelToken)));
+  c.scoped(GetHomeToken, (r) => new GetHome(r.resolve(StorefrontReadModelToken), r.resolve(ClockToken), r.resolve(GetProductPromotionsToken)));
+  c.scoped(ListCatalogProductsToken, (r) => new ListCatalogProducts(r.resolve(StorefrontReadModelToken), r.resolve(GetProductPromotionsToken)));
   c.scoped(GetFacetsToken, (r) => new GetFacets(r.resolve(StorefrontReadModelToken)));
-  c.scoped(GetProductDetailToken, (r) => new GetProductDetail(r.resolve(StorefrontReadModelToken)));
+  c.scoped(GetProductDetailToken, (r) => new GetProductDetail(r.resolve(StorefrontReadModelToken), r.resolve(GetProductPromotionsToken)));
   c.scoped(GetBrandPageToken, (r) => new GetBrandPage(r.resolve(StorefrontReadModelToken)));
   c.scoped(GetCategoryPageToken, (r) => new GetCategoryPage(r.resolve(StorefrontReadModelToken)));
   c.scoped(ListActiveBrandsToken, (r) => new ListActiveBrands(r.resolve(StorefrontReadModelToken)));
   c.scoped(ListActiveCategoriesToken, (r) => new ListActiveCategories(r.resolve(StorefrontReadModelToken)));
-  c.scoped(SearchSuggestToken, (r) => new SearchSuggest(r.resolve(StorefrontReadModelToken)));
+  c.scoped(SearchSuggestToken, (r) => new SearchSuggest(r.resolve(StorefrontReadModelToken), r.resolve(GetProductPromotionsToken)));
 }

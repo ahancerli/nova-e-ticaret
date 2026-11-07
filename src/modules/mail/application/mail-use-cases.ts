@@ -1,11 +1,12 @@
-import { UnitOfWork, decryptSecret, encryptSecret, type Clock, type Database, type IdGenerator } from "@/core";
+import { UnitOfWork, decryptSecret, encryptSecret, isAppError, type Clock, type Database, type IdGenerator, type Logger } from "@/core";
 import type { AuditLog } from "@/modules/audit/audit-log";
 import type { Actor } from "@/modules/shared/actor";
 import { MailErrors } from "../domain/errors";
-import { buildMime, emailLayout, escapeHtml, type MailMessage, type MailSettingsInput, type MailSettingsView } from "../domain/mail";
-import type { MailIntegrationRepository, MailSender, SealedPassword, SmtpTransport, StoredMailIntegration } from "./ports";
+import { buildMime, emailLayout, escapeHtml, type MailDeliveryView, type MailMessage, type MailPurpose, type MailSettingsInput, type MailSettingsView } from "../domain/mail";
+import type { MailDeliveryRecord, MailDeliveryRepository, MailIntegrationRepository, MailSender, SealedPassword, SmtpTransport, StoredMailIntegration } from "./ports";
 
 const KEY_VERSION = "v1";
+const DELIVERY_RETENTION_DAYS = 30;
 
 export interface MailDeps {
   db: Database;
@@ -16,6 +17,8 @@ export interface MailDeps {
   /** SECRETS_MASTER_KEY (base64, 32 bytes). */
   masterKey: string;
   transport: SmtpTransport;
+  deliveries: MailDeliveryRepository;
+  logger: Logger;
 }
 
 const viewOf = (s: StoredMailIntegration): MailSettingsView => ({
@@ -79,13 +82,44 @@ export class RemoveMailSettings {
   }
 }
 
-/** Sends through the stored SMTP account. The port other modules use (identity: password reset). */
+/**
+ * Sends through the stored SMTP account. The port other modules use (identity: password reset). Every attempt —
+ * sent (with the server's accept line), failed (classified reason + server reply) or skipped for lack of settings —
+ * is written to mail_deliveries, because a reset mail runs in the background and its requester never sees errors.
+ */
 export class SmtpMailSender implements MailSender {
   constructor(private readonly deps: MailDeps) {}
 
   async send(message: MailMessage): Promise<"sent" | "not_configured"> {
+    const purpose = message.purpose ?? "other";
     const stored = await this.deps.repo.find();
-    if (!stored) return "not_configured";
+    if (!stored) {
+      await this.record({ purpose, recipient: message.to, status: "not_configured" });
+      return "not_configured";
+    }
+    const started = Date.now();
+    try {
+      const { serverReply } = await this.deliver(stored, message);
+      await this.record({ purpose, recipient: message.to, status: "sent", smtpHost: stored.host, serverReply, latencyMs: Date.now() - started });
+      return "sent";
+    } catch (err) {
+      const details = isAppError(err) ? err.details : {};
+      await this.record({
+        purpose, recipient: message.to, status: "failed", smtpHost: stored.host, latencyMs: Date.now() - started,
+        errorCode: isAppError(err) ? err.code : "internal_error",
+        errorMessage: isAppError(err) ? err.message : "Beklenmeyen bir hata oluştu.",
+        stage: typeof details.stage === "string" ? details.stage : null,
+        serverReply: typeof details.reply === "string" ? details.reply : null,
+      });
+      throw err;
+    }
+  }
+
+  async note(purpose: MailPurpose, recipient: string, status: "throttled"): Promise<void> {
+    await this.record({ purpose, recipient, status });
+  }
+
+  private async deliver(stored: StoredMailIntegration, message: MailMessage) {
     if (!this.deps.masterKey) throw MailErrors.masterKeyMissing();
     let password: string;
     try {
@@ -94,11 +128,32 @@ export class SmtpMailSender implements MailSender {
       throw MailErrors.passwordUnreadable(); // master key rotated / row tampered
     }
     const mime = buildMime(message, { email: stored.fromEmail, name: stored.fromName }, this.deps.clock.now(), this.deps.ids.newId());
-    await this.deps.transport.send(
+    return this.deps.transport.send(
       { host: stored.host, port: stored.port, security: stored.security, username: stored.username, password },
       { from: stored.fromEmail, to: message.to }, mime,
     );
-    return "sent";
+  }
+
+  /** Best effort: a failing log write must not turn a delivered mail into an error. */
+  private async record(row: MailDeliveryRecord): Promise<void> {
+    const { deps } = this;
+    try {
+      const now = deps.clock.now();
+      const pruneBefore = new Date(now.getTime() - DELIVERY_RETENTION_DAYS * 86_400_000).toISOString();
+      const uow = new UnitOfWork(deps.db);
+      for (const st of deps.deliveries.recordStatements({ ...row, id: deps.ids.newId(), now: deps.clock.nowIso() }, pruneBefore)) uow.add(st);
+      await uow.commit();
+    } catch (err) {
+      deps.logger.error("mail delivery record failed", { error: String(err), status: row.status });
+    }
+  }
+}
+
+/** Query: "Son gönderimler" — latest attempts, newest first. */
+export class ListMailDeliveries {
+  constructor(private readonly deliveries: MailDeliveryRepository) {}
+  execute(limit = 20): Promise<MailDeliveryView[]> {
+    return this.deliveries.latest(Math.min(Math.max(limit, 1), 100));
   }
 }
 
@@ -106,15 +161,15 @@ export class SmtpMailSender implements MailSender {
 export class SendTestMail {
   constructor(private readonly sender: MailSender, private readonly repo: MailIntegrationRepository) {}
 
-  async execute(actor: Actor & { email: string; displayName: string }): Promise<{ to: string; latencyMs: number }> {
+  async execute(actor: Actor & { email: string; displayName: string }): Promise<{ to: string; latencyMs: number; host: string }> {
     const stored = await this.repo.find();
     if (!stored) throw MailErrors.notConfigured();
     const started = Date.now();
     await this.sender.send({
-      to: actor.email, toName: actor.displayName, subject: `${stored.fromName}: SMTP test e-postası`,
+      purpose: "test", to: actor.email, toName: actor.displayName, subject: `${stored.fromName}: SMTP test e-postası`,
       text: `Merhaba ${actor.displayName},\n\nBu e-postayı aldıysanız SMTP ayarlarınız çalışıyor. Parola sıfırlama e-postaları bu hesaptan gönderilecek.\n`,
       html: emailLayout(stored.fromName, `<p>Merhaba ${escapeHtml(actor.displayName)},</p><p>Bu e-postayı aldıysanız <b>SMTP ayarlarınız çalışıyor</b>. Parola sıfırlama e-postaları bu hesaptan gönderilecek.</p>`),
     });
-    return { to: actor.email, latencyMs: Date.now() - started };
+    return { to: actor.email, latencyMs: Date.now() - started, host: stored.host };
   }
 }

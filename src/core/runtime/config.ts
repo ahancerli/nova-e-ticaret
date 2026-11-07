@@ -11,6 +11,12 @@ export interface AppConfig {
   secretsKeyVersion: string;
   cronSecret: string;
   logLevel: "debug" | "info" | "warn" | "error";
+  /**
+   * Message bus of the integrations (marketplaces): "kafka" = a Kafka cluster through its REST proxy (Confluent REST
+   * Proxy, Redpanda HTTP Proxy, Aiven Karapace — API v2); "database" = the same topics stored in D1 (local, tests).
+   */
+  integrationBus: "kafka" | "database";
+  kafka: { restUrl: string; username: string; password: string; topicPrefix: string };
 }
 
 export class ConfigError extends Error {
@@ -39,7 +45,17 @@ export function buildConfig(env: Partial<CloudflareEnv>, processEnv: Record<stri
     secretsKeyVersion: pick("SECRETS_KEY_VERSION") || "v1",
     cronSecret: pick("CRON_SECRET"),
     logLevel: appEnv === "production" ? "info" : "debug",
+    integrationBus: pickVar("INTEGRATION_BUS") === "kafka" ? "kafka" : "database",
+    kafka: {
+      restUrl: pickVar("KAFKA_REST_URL").replace(/\/$/, ""),
+      username: pick("KAFKA_REST_USERNAME"),
+      password: pick("KAFKA_REST_PASSWORD"),
+      topicPrefix: (pickVar("KAFKA_TOPIC_PREFIX") || "nova").replace(/[^A-Za-z0-9._-]/g, ""),
+    },
   };
+  if (config.integrationBus === "kafka" && !/^https?:\/\//.test(config.kafka.restUrl)) {
+    throw new ConfigError("INTEGRATION_BUS=kafka needs KAFKA_REST_URL (the Kafka REST proxy, e.g. https://kafka-rest.example.com)");
+  }
   if (config.isProduction) {
     const missing = (["sessionSecret", "secretsMasterKey", "cronSecret"] as const).filter((k) => !config[k]);
     if (missing.length) throw new ConfigError(`Missing required secrets: ${missing.join(", ")}`);

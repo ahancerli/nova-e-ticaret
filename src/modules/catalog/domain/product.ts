@@ -31,7 +31,10 @@ export interface AttributeMeta {
   dataType: AttributeDataType;
   unit: string | null;
   isVariantAxis: boolean;
-  options: { id: string; value: string; label: string; colorHex: string | null }[];
+  /** How shoppers pick it (variant axes). */
+  displayStyle?: "button" | "swatch" | "dropdown";
+  /** Inactive options stay on existing variants but are not offered for new ones. */
+  options: { id: string; value: string; label: string; colorHex: string | null; isActive?: boolean; numericValue?: number | null }[];
 }
 
 /** Reference data for the product editor. */
@@ -51,6 +54,8 @@ export interface EditorVariant {
   options: Record<string, string>;
   priceMinor: number;
   compareAtMinor: number | null;
+  /** Floor price for campaigns (null = none). */
+  minPriceMinor: number | null;
   stock: number;
   reserved: number;
   isActive: boolean;

@@ -1,6 +1,7 @@
-// AI module: draft parsing and prompts (pure), the single AI integration (encrypted key, provider switch, optimistic
-// locking, audit), "AI ile ürün ekle" with a fake provider (system prompt per provider, images from storage,
-// requested fields only), the three HTTP clients against a fake fetch, and the input schemas.
+// AI module: draft parsing and prompts (pure), the model catalog (ai_models), the single AI integration (encrypted key,
+// catalog-only models, provider switch, optimistic locking, audit), the health check, "AI ile ürün ekle" with a fake
+// provider (system prompt per provider, images from storage, requested fields only), the three HTTP clients against a
+// fake fetch (request shapes, model lookup, error mapping, retries, refusals / truncation), and the input schemas.
 // No real provider is called. Run: npm run test:ai
 import { makeD1 } from "./d1-sqlite.mjs";
 
@@ -42,7 +43,11 @@ const clock = new FixedClock(new Date("2026-11-03T10:00:00.000Z"));
 type Call = { provider: string; req: any };
 const calls: Call[] = [];
 let answer: (req: any) => string = () => "{}";
-const fakeClients = (provider: string) => ({ generate: async (req: any) => { calls.push({ provider, req }); return answer(req); } });
+let modelInfo: (model: string) => any = (model) => ({ id: model, displayName: null, deprecated: false, retiresAt: null });
+const fakeClients = (provider: string) => ({
+  generate: async (req: any) => { calls.push({ provider, req }); return answer(req); },
+  checkModel: async (apiKey: string, model: string) => { calls.push({ provider, req: { check: true, apiKey, model } }); return modelInfo(model); },
+});
 
 const root = new Container()
   .singleton(LoggerToken, () => new JsonLogger({ level: "error", sink: () => {} }))
@@ -83,6 +88,17 @@ const gen = (input: any) => resolve(ai.GenerateProductContentToken).execute(inpu
 const save = (input: any) => resolve(ai.SaveAiIntegrationToken).execute(input, actor);
 const view = () => resolve(ai.GetAiIntegrationToken).execute();
 
+await t("catalog: models per provider from ai_models, active first then deprecated, retired hidden", async () => {
+  d1.raw.prepare("INSERT INTO ai_models (provider, model_id, label, status, sort_order) VALUES ('openai', 'gpt-old', 'Eski', 'retired', 1)").run();
+  const c = await resolve(ai.ListAiModelsToken).execute();
+  assert(ai.AI_PROVIDER_KEYS.every((p: string) => c[p].length > 0), "every provider has models");
+  assert(c.anthropic[0].id === "claude-sonnet-5-5" && c.anthropic[0].status === "active", "default first: " + c.anthropic[0].id);
+  const statuses = c.openai.map((m: any) => m.status);
+  assert(statuses.indexOf("deprecated") > statuses.lastIndexOf("active"), "deprecated after active");
+  assert(!c.openai.some((m: any) => m.id === "gpt-old"), "retired hidden");
+  assert(c.gemini.find((m: any) => m.id === "gemini-2.5-flash")?.retiresAt === "2026-12-01", "retiresAt");
+});
+
 await t("no integration: view is null, generation refused with ai_not_configured", async () => {
   assert((await view()) === null, "null");
   await rejects(() => gen({ fields: ["name"], prompt: "Lacivert kazak", mediaIds: ["x"] }), "ai_not_configured");
@@ -91,6 +107,10 @@ await t("no integration: view is null, generation refused with ai_not_configured
 let v: any;
 await t("add: key required; stored encrypted (never in clear), view shows only a hint; audited", async () => {
   await rejects(() => save({ provider: "anthropic", model: "claude-sonnet-5-5", expectedUpdatedAt: null }), "validation_error");
+  const unlisted = await rejects(() => save({ provider: "anthropic", model: "claude-made-up", apiKey: KEY_A, expectedUpdatedAt: null }), "validation_error");
+  assert(unlisted.fieldErrors?.model, "model field error");
+  await rejects(() => save({ provider: "anthropic", model: "gpt-6.1-terra", apiKey: KEY_A, expectedUpdatedAt: null }), "validation_error");
+  await rejects(() => save({ provider: "openai", model: "gpt-old", apiKey: KEY_B, expectedUpdatedAt: null }), "validation_error");
   v = await save({ provider: "anthropic", model: "claude-sonnet-5-5", apiKey: KEY_A, expectedUpdatedAt: null });
   assert(v.provider === "anthropic" && v.providerLabel === "Claude" && v.keyHint === "…AAAA" && !("apiKey" in v) && v.updatedBy === "NOVA Admin", json(v));
   const row = d1.raw.prepare("SELECT * FROM ai_integration").get() as any;
@@ -105,13 +125,31 @@ await t("update: stale version refused; same provider + empty key keeps the key;
   clock.advanceMinutes(1);
   v = await save({ provider: "anthropic", model: "claude-opus-5-5", expectedUpdatedAt: v.updatedAt });
   assert(v.model === "claude-opus-5-5" && v.keyHint === "…AAAA", json(v));
-  await resolve(ai.TestAiIntegrationToken).execute();
-  assert(calls.at(-1)!.req.apiKey === KEY_A && calls.at(-1)!.req.model === "claude-opus-5-5", "kept key decrypts");
+  const before = calls.length;
+  const report = await resolve(ai.TestAiIntegrationToken).execute();
+  const [check, gen1] = calls.slice(before);
+  assert(check!.req.check && check!.req.apiKey === KEY_A && check!.req.model === "claude-opus-5-5", "health: model lookup first with the kept key");
+  assert(gen1!.req.apiKey === KEY_A && gen1!.req.json === false && gen1!.req.maxTokens >= 1024, "health: tiny generation with room for thinking");
+  assert(report.provider === "Claude" && report.model === "claude-opus-5-5" && report.deprecated === false && typeof report.generationMs === "number", json(report));
   clock.advanceMinutes(1);
   await rejects(() => save({ provider: "openai", model: "gpt-4.1-mini", expectedUpdatedAt: v.updatedAt }), "validation_error");
   v = await save({ provider: "openai", model: "gpt-4.1-mini", apiKey: KEY_B, expectedUpdatedAt: v.updatedAt });
   const n = (d1.raw.prepare("SELECT count(*) AS n FROM ai_integration").get() as any).n;
   assert(v.provider === "openai" && v.keyHint === "…BBBB" && n === 1, `single integration: ${n}`);
+});
+
+await t("health: deprecated model (catalog or provider) is reported with its shutdown date; a stored model that left the catalog can stay", async () => {
+  let r = await resolve(ai.TestAiIntegrationToken).execute();
+  assert(r.deprecated === true && r.retiresAt === "2027-01-14", "catalog deprecation: " + json(r));
+  modelInfo = (model) => ({ id: model, displayName: "GPT 4.1 mini", deprecated: true, retiresAt: "2026-12-24" });
+  r = await resolve(ai.TestAiIntegrationToken).execute();
+  assert(r.retiresAt === "2026-12-24" && r.displayName === "GPT 4.1 mini", "provider date wins: " + json(r));
+  modelInfo = (model) => ({ id: model, displayName: null, deprecated: false, retiresAt: null });
+  d1.raw.prepare("UPDATE ai_models SET status = 'retired' WHERE provider = 'openai' AND model_id = 'gpt-4.1-mini'").run();
+  clock.advanceMinutes(1);
+  v = await save({ provider: "openai", model: "gpt-4.1-mini", apiKey: KEY_B, expectedUpdatedAt: v.updatedAt });
+  assert(v.model === "gpt-4.1-mini", "key rotation keeps the stored model");
+  d1.raw.prepare("UPDATE ai_models SET status = 'deprecated' WHERE provider = 'openai' AND model_id = 'gpt-4.1-mini'").run();
 });
 
 let img1 = "", img2 = "";
@@ -184,9 +222,89 @@ await t("clients: 401 → ai_key_rejected, 429 → ai_rate_limited, 500 / networ
   await rejects(() => new clients.AnthropicClient(fakeFetch(401, { type: "error", error: { type: "authentication_error" } }).fn).generate(req), "ai_key_rejected");
   await rejects(() => new clients.GeminiClient(fakeFetch(400, { error: { status: "INVALID_ARGUMENT", details: [{ reason: "API_KEY_INVALID" }] } }).fn).generate(req), "ai_key_rejected");
   await rejects(() => new clients.OpenAiClient(fakeFetch(429, { error: { type: "rate_limit" } }).fn).generate(req), "ai_rate_limited");
-  const e = await rejects(() => new clients.OpenAiClient(fakeFetch(500, "secret upstream detail").fn).generate(req), "ai_provider_error");
+  const e = await rejects(() => new clients.OpenAiClient(fakeFetch(500, "secret upstream detail").fn, [0, 0]).generate(req), "ai_provider_error");
   assert(!e.message.includes("secret upstream detail"), "provider text not exposed");
   await rejects(() => new clients.OpenAiClient(async () => { throw new TypeError("fetch failed"); }).generate(req), "ai_provider_error");
+  await rejects(() => new clients.OpenAiClient(async () => { throw new DOMException("timed out", "TimeoutError"); }).generate(req), "ai_timeout");
+});
+
+await t("clients: error mapping per the providers' docs (money vs rate limit, key vs permission, region, model, size, bad request)", () => {
+  const cases: [number, unknown, string][] = [
+    [429, { error: { type: "insufficient_quota", code: "insufficient_quota" } }, "ai_quota_exceeded"], // OpenAI credits / quota
+    [429, { error: { code: "organization_spend_limit_exceeded" } }, "ai_quota_exceeded"],
+    [429, { error: { type: "rate_limit_error", code: "slow_down" } }, "ai_rate_limited"],
+    [402, { type: "error", error: { type: "billing_error" } }, "ai_quota_exceeded"], // Claude billing
+    [400, { type: "error", error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API." } }, "ai_quota_exceeded"],
+    [429, { error: { status: "RESOURCE_EXHAUSTED", message: "Quota exceeded for metric: GenerateRequestsPerDayPerProjectPerModel" } }, "ai_quota_exceeded"], // Gemini daily
+    [429, { error: { status: "RESOURCE_EXHAUSTED", message: "Quota exceeded for metric: GenerateRequestsPerMinutePerProjectPerModel" } }, "ai_rate_limited"],
+    [403, { error: { status: "PERMISSION_DENIED", message: "Your API key was reported as leaked. Please use another API key." } }, "ai_key_rejected"],
+    [403, { type: "error", error: { type: "permission_error" } }, "ai_access_denied"],
+    [403, { error: { code: "unsupported_country_region_territory" } }, "ai_access_denied"],
+    [400, { error: { status: "FAILED_PRECONDITION", message: "User location is not supported for the API use." } }, "ai_access_denied"],
+    [401, { error: { code: "invalid_api_key" } }, "ai_key_rejected"],
+    [404, { type: "error", error: { type: "not_found_error" } }, "ai_model_not_found"],
+    [413, { type: "error", error: { type: "request_too_large" } }, "ai_request_too_large"],
+    [400, { error: { type: "invalid_request_error", message: "Invalid image" } }, "ai_request_rejected"],
+    [529, { type: "error", error: { type: "overloaded_error" } }, "ai_provider_busy"],
+    [500, { type: "error", error: { type: "api_error" } }, "ai_provider_error"],
+  ];
+  for (const [status, body, code] of cases) {
+    const e = clients.classifyFailure(status, JSON.stringify(body));
+    assert(e.code === code, `${status} ${json(body)} → ${e.code}, expected ${code}`);
+    assert(!e.message.includes("Anthropic API") && !e.message.includes("leaked"), "provider text not exposed");
+  }
+});
+
+await t("clients: refusals → ai_content_blocked; token limit → ai_output_truncated for JSON (plain test answer may be cut); thinking blocks ignored", async () => {
+  const jsonReq = { ...req, json: true }, textReq = { ...req, json: false };
+  await rejects(() => new clients.OpenAiClient(fakeFetch(200, { choices: [{ finish_reason: "stop", message: { content: null, refusal: "I can't help" } }] }).fn).generate(jsonReq), "ai_content_blocked");
+  await rejects(() => new clients.OpenAiClient(fakeFetch(200, { choices: [{ finish_reason: "length", message: { content: '{"name":"A' } }] }).fn).generate(jsonReq), "ai_output_truncated");
+  assert((await new clients.OpenAiClient(fakeFetch(200, { choices: [{ finish_reason: "length", message: { content: "O" } }] }).fn).generate(textReq)) === "O", "plain cut answer ok");
+  await rejects(() => new clients.GeminiClient(fakeFetch(200, { promptFeedback: { blockReason: "SAFETY" } }).fn).generate(jsonReq), "ai_content_blocked");
+  await rejects(() => new clients.GeminiClient(fakeFetch(200, { candidates: [{ finishReason: "PROHIBITED_CONTENT", content: { parts: [] } }] }).fn).generate(jsonReq), "ai_content_blocked");
+  await rejects(() => new clients.GeminiClient(fakeFetch(200, { candidates: [{ finishReason: "MAX_TOKENS", content: { parts: [{ text: "", thought: true }] } }] }).fn).generate(textReq), "ai_output_truncated");
+  assert((await new clients.GeminiClient(fakeFetch(200, { candidates: [{ finishReason: "STOP", content: { parts: [{ text: "düşünce", thought: true }, { text: "OK" }] } }] }).fn).generate(textReq)) === "OK", "gemini thought parts skipped");
+  await rejects(() => new clients.AnthropicClient(fakeFetch(200, { stop_reason: "refusal", content: [] }).fn).generate(jsonReq), "ai_content_blocked");
+  await rejects(() => new clients.AnthropicClient(fakeFetch(200, { stop_reason: "max_tokens", content: [{ type: "thinking", thinking: "..." }] }).fn).generate(textReq), "ai_output_truncated");
+  assert((await new clients.AnthropicClient(fakeFetch(200, { stop_reason: "end_turn", content: [{ type: "thinking", thinking: "x" }, { type: "text", text: "OK" }] }).fn).generate(textReq)) === "OK", "claude thinking skipped");
+});
+
+await t("clients: health check = GET on each provider's models endpoint (no body, key in header); unusable / retired / deprecated models", async () => {
+  const o = fakeFetch(200, { id: "gpt-x", object: "model", shutdown_date: "2027-01-14" });
+  const oi = await new clients.OpenAiClient(o.fn).checkModel("KEY-123", "gpt-x");
+  assert(o.seen[0]!.url === "https://api.openai.com/v1/models/gpt-x" && o.seen[0]!.init.method === "GET" && !o.seen[0]!.init.body && o.seen[0]!.init.headers.authorization === "Bearer KEY-123", "openai GET");
+  assert(oi.deprecated && oi.retiresAt === "2027-01-14", json(oi));
+  const g = fakeFetch(200, { name: "models/gemini-x", baseModelId: "gemini-x", displayName: "Gemini X", supportedGenerationMethods: ["generateContent", "countTokens"] });
+  const gi = await new clients.GeminiClient(g.fn).checkModel("KEY-123", "models/gemini-x");
+  assert(g.seen[0]!.url === "https://generativelanguage.googleapis.com/v1beta/models/gemini-x" && g.seen[0]!.init.headers["x-goog-api-key"] === "KEY-123" && gi.displayName === "Gemini X", "gemini GET");
+  await rejects(() => new clients.GeminiClient(fakeFetch(200, { name: "models/embed", supportedGenerationMethods: ["embedContent"] }).fn).checkModel("K", "embed"), "ai_model_unusable");
+  const a = fakeFetch(200, { id: "claude-x", display_name: "Claude X", lifecycle: "deprecated", retires_at: "2027-03-01T00:00:00Z" });
+  const ai2 = await new clients.AnthropicClient(a.fn).checkModel("KEY-123", "claude-x");
+  assert(a.seen[0]!.url === "https://api.anthropic.com/v1/models/claude-x" && a.seen[0]!.init.headers["x-api-key"] === "KEY-123" && ai2.deprecated && ai2.retiresAt === "2027-03-01", json(ai2));
+  await rejects(() => new clients.AnthropicClient(fakeFetch(200, { id: "claude-old", lifecycle: "retired" }).fn).checkModel("K", "claude-old"), "ai_model_unusable");
+  await rejects(() => new clients.AnthropicClient(fakeFetch(401, { type: "error", error: { type: "authentication_error" } }).fn).checkModel("K", "claude-x"), "ai_key_rejected");
+  await rejects(() => new clients.OpenAiClient(fakeFetch(404, { error: { code: "model_not_found" } }).fn).checkModel("K", "gpt-nope"), "ai_model_not_found");
+  let n = 0;
+  await rejects(() => new clients.GeminiClient(async () => { n++; return new Response("{}", { status: 503 }); }).checkModel("K", "g"), "ai_provider_busy");
+  assert(n === 1, "model lookup is not retried");
+});
+
+await t("clients: 503 retried then succeeds; still overloaded → ai_provider_busy; 404 → ai_model_not_found", async () => {
+  const answers = [503, 503, 200];
+  let calls = 0;
+  const flaky = async () => {
+    const status = answers[calls++]!;
+    return new Response(JSON.stringify(status === 200 ? { candidates: [{ content: { parts: [{ text: "ok" }] } }] } : { error: { status: "UNAVAILABLE" } }), { status });
+  };
+  assert((await new clients.GeminiClient(flaky, [0, 0]).generate(req)) === "ok" && calls === 3, `retried (${calls})`);
+  calls = 0;
+  const busy = await rejects(() => new clients.GeminiClient(async () => { calls++; return new Response('{"error":{"status":"UNAVAILABLE"}}', { status: 503 }); }, [0, 0]).generate(req), "ai_provider_busy");
+  assert(calls === 3 && busy.message.includes("yoğun") && busy.details.attempts === 3, `${calls} ${busy.message}`);
+  calls = 0;
+  await rejects(() => new clients.AnthropicClient(async () => { calls++; return new Response('{"type":"error","error":{"type":"overloaded_error"}}', { status: 529 }); }, [0]).generate(req), "ai_provider_busy");
+  assert(calls === 2, "529 retried");
+  await rejects(() => new clients.GeminiClient(fakeFetch(404, { error: { status: "NOT_FOUND" } }).fn).generate(req), "ai_model_not_found");
+  await rejects(() => new clients.OpenAiClient(fakeFetch(400, { error: { code: "model_not_found" } }).fn).generate(req), "ai_model_not_found");
 });
 
 // --- schemas ---------------------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import type { ProductDetail } from "@/lib/types";
 import { formatMinor } from "@/lib/money";
 import { useCart } from "@/features/cart/CartProvider";
 import { MinusIcon, PlusIcon } from "@/components/icons";
+import { PromoBadge } from "@/components/ui/PromoBadge";
 
 /**
  * Variant selection updates gallery, price and stock together; impossible combinations are disabled (spec §04).
@@ -52,9 +53,19 @@ export function VariantPicker({ product }: { product: ProductDetail }) {
         <h1 className="mt-1 text-2xl font-bold leading-snug">{product.name}</h1>
         {product.shortDescription && <p className="mt-2 text-ink-soft">{product.shortDescription}</p>}
 
+        {product.promotions.length > 0 && (
+          <ul className="mt-4 flex flex-wrap gap-1.5" aria-label="Bu üründe geçerli kampanyalar">
+            {product.promotions.map((b) => <li key={b.campaignId}><PromoBadge badge={b} size="md" /></li>)}
+          </ul>
+        )}
+
         <div className="mt-5" aria-live="polite">
           {variant?.compareAtMinor != null && <p className="text-sm text-muted line-through"><span className="sr-only">Önceki fiyat: </span>{formatMinor(variant.compareAtMinor)}</p>}
           <p className="text-3xl font-extrabold tabular-nums">{variant?.priceMinor != null ? formatMinor(variant.priceMinor) : "—"}</p>
+          {variant?.campaignPriceMinor != null && variant.priceMinor != null && variant.campaignPriceMinor < variant.priceMinor && (
+            <p className="mt-1 text-lg font-bold tabular-nums text-brand">Sepette {formatMinor(variant.campaignPriceMinor)}</p>
+          )}
+          {product.promotions.length > 0 && <p className="mt-1 text-xs text-muted">Kampanya indirimi sepette otomatik uygulanır.</p>}
           <p className={`mt-1 text-sm ${variant && variant.available > 0 ? "text-success" : "text-danger"}`}>
             {!variant ? "Lütfen seçim yapın" : variant.available > 0 ? (variant.available <= 3 ? `Son ${variant.available} ürün` : "Stokta") : "Bu seçenek tükendi"}
           </p>
@@ -63,6 +74,13 @@ export function VariantPicker({ product }: { product: ProductDetail }) {
         {product.axes.map((axis) => (
           <fieldset key={axis.code} className="mt-6">
             <legend className="mb-2 text-sm font-semibold">{axis.label}: <span className="font-normal text-ink-soft">{axis.options.find((o) => o.value === sel[axis.code])?.label ?? "Seçiniz"}</span></legend>
+            {axis.style === "dropdown" ? (
+              <select aria-label={axis.label} className="input max-w-xs" value={sel[axis.code] ?? ""}
+                onChange={(e) => { setSel((s) => ({ ...s, [axis.code]: e.target.value })); setActive(0); setQty(1); }}>
+                <option value="" disabled>Seçiniz</option>
+                {axis.options.map((o) => <option key={o.value} value={o.value} disabled={!isPossible(axis.code, o.value)}>{o.label}{isPossible(axis.code, o.value) ? "" : " (tükendi)"}</option>)}
+              </select>
+            ) : (
             <div className="flex flex-wrap gap-2">
               {axis.options.map((o) => {
                 const possible = isPossible(axis.code, o.value);
@@ -71,12 +89,13 @@ export function VariantPicker({ product }: { product: ProductDetail }) {
                   <button key={o.value} disabled={!possible} aria-pressed={selected}
                     onClick={() => { setSel((s) => ({ ...s, [axis.code]: o.value })); setActive(0); setQty(1); }}
                     className={`flex min-h-11 min-w-11 items-center gap-2 rounded-lg border px-3 text-sm ${selected ? "border-brand bg-brand-soft font-semibold" : "border-line bg-white"} disabled:cursor-not-allowed disabled:opacity-40 disabled:line-through`}>
-                    {o.colorHex && <span className="h-4 w-4 rounded-full border border-line" style={{ background: o.colorHex }} aria-hidden />}
+                    {o.colorHex && <span className={`${axis.style === "swatch" ? "h-5 w-5" : "h-4 w-4"} rounded-full border border-line`} style={{ background: o.colorHex }} aria-hidden />}
                     {o.label}
                   </button>
                 );
               })}
             </div>
+            )}
           </fieldset>
         ))}
 

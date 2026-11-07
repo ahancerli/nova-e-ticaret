@@ -54,11 +54,11 @@ def setup_checkout(c, cid="co_1", cart="cart_1"):
 
 
 # --- structure ---------------------------------------------------------------
-@test("01 95 tables exist")
+@test("01 119 tables exist")
 def _():
     c = new_db()
     n = c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()[0]
-    assert n == 95, n
+    assert n == 119, n
 
 
 @test("02 all tables are STRICT")
@@ -467,6 +467,112 @@ def _():
     c.execute("INSERT INTO carrier_shipments (shipment_id, provider_code, cargo_key) VALUES ('s1', 'yurtici', 'NVKEY0001')")
     expect_error(c, "INSERT INTO carrier_shipments (shipment_id, provider_code, cargo_key) VALUES ('s2', 'yurtici', 'NVKEY0001')", contains="UNIQUE")
     expect_error(c, "INSERT INTO carrier_shipments (shipment_id, provider_code, cargo_key, status) VALUES ('s2', 'yurtici', 'NVKEY0002', 'failed')", contains="CHECK")
+
+
+@test("47 campaign engine: offer types, tiers, one-ref conditions, single policy row, floor price <= price")
+def _():
+    c = new_db()
+    expect_error(c, "INSERT INTO campaigns (id, name, kind, percentage_bps, offer_type, starts_at) VALUES ('x','x','percentage',1000,'mystery','2026')", contains="CHECK")
+    c.execute("INSERT INTO campaigns (id, name, kind, percentage_bps, offer_type, starts_at) VALUES ('t','x','percentage',2000,'tiered_quantity','2026')")
+    c.execute("INSERT INTO campaign_tiers (campaign_id, min_quantity, percentage_bps) VALUES ('t', 2, 1000), ('t', 3, 2000)")
+    expect_error(c, "INSERT INTO campaign_tiers (campaign_id, min_quantity, percentage_bps) VALUES ('t', 1, 500)", contains="CHECK")
+    expect_error(c, "INSERT INTO campaign_conditions (campaign_id, product_id, category_id) VALUES ('t', 'p_pan', 'c_mutfak')", contains="CHECK")
+    expect_error(c, "INSERT INTO campaign_conditions (campaign_id) VALUES ('t')", contains="CHECK")
+    c.execute("INSERT INTO campaign_conditions (campaign_id, category_id) VALUES ('t', 'c_mutfak')")
+    c.execute("DELETE FROM campaigns WHERE id = 't'")
+    assert c.execute("SELECT count(*) FROM campaign_tiers WHERE campaign_id = 't'").fetchone()[0] == 0, "tiers cascade"
+    assert c.execute("SELECT conflict_strategy, max_discount_bps FROM pricing_policy").fetchall() == [("priority", 5000)]
+    expect_error(c, "INSERT INTO pricing_policy (id) VALUES (2)", contains="CHECK")
+    expect_error(c, "UPDATE pricing_policy SET max_discount_bps = 50", contains="CHECK")
+    expect_error(c, "UPDATE variant_prices SET min_price_minor = unit_price_minor + 1 WHERE variant_id = 'v_pan'", contains="CHECK")
+    c.execute("UPDATE variant_prices SET min_price_minor = unit_price_minor - 100 WHERE variant_id = 'v_pan'")
+    assert c.execute("SELECT is_active, badge_emoji FROM campaigns WHERE id = 'cmp_3al2'").fetchone() == (1, "🔥"), "demo campaign is live"
+
+
+@test("48 migration 2026-11-06 upgrades a database created by the previous schema")
+def _():
+    import subprocess
+    try:
+        old = subprocess.run(["git", "show", "a599ba9:db/schema.sql"], cwd=ROOT.parent, capture_output=True, text=True, check=True).stdout
+        old_seed = subprocess.run(["git", "show", "a599ba9:db/seed.sql"], cwd=ROOT.parent, capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return  # no git history (e.g. exported tree): nothing to compare against
+    c = sqlite3.connect(":memory:", isolation_level=None)
+    c.execute("PRAGMA foreign_keys = ON")
+    c.executescript(old)
+    c.executescript(old_seed)
+    c.executescript(SCHEMA)  # documented order: schema first (new tables), then the migrations
+    for m in sorted((ROOT / "migrations").glob("*.sql")):
+        c.executescript(m.read_text(encoding="utf-8"))
+    cols = {r[1] for r in c.execute("PRAGMA table_info(campaigns)")}
+    assert {"offer_type", "first_order_only", "condition_min_quantity", "badge_label", "badge_emoji", "badge_media_id"} <= cols, cols
+    assert "allow_with_promotions" in {r[1] for r in c.execute("PRAGMA table_info(coupons)")}
+    assert "min_price_minor" in {r[1] for r in c.execute("PRAGMA table_info(variant_prices)")}
+    assert c.execute("SELECT is_active, offer_type FROM campaigns WHERE id = 'cmp_3al2'").fetchone() == (1, "buy_x_pay_y")
+    assert c.execute("SELECT count(*) FROM campaign_products WHERE campaign_id = 'cmp_3al2'").fetchone()[0] == 0
+    assert c.execute("SELECT count(*) FROM coupons WHERE id = 'cpn_demo_1'").fetchone()[0] == 1, "coupons survive"
+    expect_error(c, "UPDATE variant_prices SET min_price_minor = unit_price_minor + 1 WHERE variant_id = 'v_pan'", contains="CHECK")
+
+
+@test("49 bulk + feeds: https-only feed URL, header sealed together with its name, item state cascades")
+def _():
+    c = new_db()
+    ins = "INSERT INTO product_feeds (id, name, format, url, item_path, match_key, key_path{}) VALUES ('f1', 'Tedarikçi', 'xml', '{}', 'rss.channel.item', 'barcode', 'g:gtin'{})"
+    expect_error(c, ins.format("", "http://x.test/feed.xml", ""), contains="CHECK")
+    expect_error(c, ins.format(", header_name", "https://x.test/feed.xml", ", 'X-Api-Key'"), contains="CHECK")
+    expect_error(c, ins.format(", match_key", "https://x.test/feed.xml", ", 'name'").replace("'barcode', ", "", 1), contains="")
+    c.execute(ins.format("", "https://x.test/feed.xml", ""))
+    expect_error(c, "UPDATE product_feeds SET schedule_minutes = 5 WHERE id = 'f1'", contains="CHECK")
+    c.execute("INSERT INTO product_feed_items (feed_id, key_value, product_id, content_hash, last_seen_at) VALUES ('f1', '869', 'p_pan', 'h', '2026')")
+    c.execute("INSERT INTO bulk_jobs (id, kind, source, feed_id) VALUES ('j1', 'feed', 'Tedarikçi', 'f1')")
+    expect_error(c, "INSERT INTO bulk_jobs (id, kind, source) VALUES ('j2', 'csv', 'x')", contains="CHECK")
+    c.execute("DELETE FROM product_feeds WHERE id = 'f1'")
+    assert c.execute("SELECT count(*) FROM product_feed_items").fetchone()[0] == 0, "items cascade"
+    assert c.execute("SELECT feed_id FROM bulk_jobs WHERE id = 'j1'").fetchone()[0] is None, "job history kept"
+
+
+@test("50 schema and seed are re-runnable on a populated database (local / remote sync)")
+def _():
+    c = new_db()
+    before = {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in ("products", "coupon_redemptions", "campaign_allocations", "stock_reservations")}
+    c.executescript(SCHEMA)
+    c.executescript(SEED)
+    after = {t: c.execute(f"SELECT count(*) FROM {t}").fetchone()[0] for t in before}
+    assert before == after, (before, after)
+    assert c.execute("SELECT reserved FROM inventory_balances WHERE variant_id = 'v_pan'").fetchone()[0] == 1, "reservation not applied twice"
+
+
+@test("51 change capture: product, price, stock (sellable amount only), image changes are logged; migrations have probes")
+def _():
+    c = new_db()
+    c.execute("DELETE FROM catalog_change_log")
+    c.execute("UPDATE products SET name = 'Granit Tava Seti' WHERE id = 'p_pan'")
+    c.execute("UPDATE variant_prices SET unit_price_minor = 79990 WHERE variant_id = 'v_pan'")
+    c.execute("UPDATE inventory_balances SET on_hand = on_hand + 1, reserved = reserved + 1 WHERE variant_id = 'v_pan'")  # sellable unchanged
+    c.execute("UPDATE inventory_balances SET on_hand = on_hand + 5 WHERE variant_id = 'v_pan'")
+    rows = c.execute("SELECT kind, product_id, variant_id FROM catalog_change_log ORDER BY id").fetchall()
+    assert rows == [("content", "p_pan", None), ("price", "p_pan", "v_pan"), ("stock", "p_pan", "v_pan")], rows
+    for m in sorted((ROOT / "migrations").glob("*.sql")):
+        first = m.read_text(encoding="utf-8").splitlines()[0]
+        assert first.startswith("-- probe: "), m.name
+        c.execute(first[len("-- probe: "):])  # the probe succeeds on a database that has the change
+
+
+@test("52 marketplaces: one package per connection (no duplicate orders), mappings need exactly one value source")
+def _():
+    c = new_db()
+    c.execute("INSERT INTO marketplace_connections (id, provider, name, seller_id, credentials_sealed_json) VALUES ('m1','trendyol','Trendyol','12345','{}')")
+    expect_error(c, "INSERT INTO marketplace_connections (id, provider, name, seller_id, credentials_sealed_json) VALUES ('m2','trendyol','T2','12345','{}')", contains="UNIQUE")
+    expect_error(c, "INSERT INTO marketplace_connections (id, provider, name, seller_id, credentials_sealed_json) VALUES ('m3','amazon','A','1','{}')", contains="CHECK")
+    c.execute("INSERT INTO marketplace_orders (connection_id, external_package_id, external_order_number, status, error) VALUES ('m1','9001','T-1','failed','barkod yok')")
+    expect_error(c, "INSERT INTO marketplace_orders (connection_id, external_package_id, external_order_number, status) VALUES ('m1','9001','T-1','failed')", contains="UNIQUE")
+    expect_error(c, "UPDATE marketplace_orders SET status = 'imported' WHERE external_package_id = '9001'", contains="CHECK")
+    expect_error(c, "INSERT INTO marketplace_attribute_mappings (connection_id, external_category_id, external_attribute_id, external_attribute_name) VALUES ('m1', 1, 2, 'Renk')", contains="CHECK")
+    c.execute("INSERT INTO marketplace_attribute_mappings (connection_id, external_category_id, external_attribute_id, external_attribute_name, attribute_id) VALUES ('m1', 1, 2, 'Renk', 'a_color')")
+    c.execute("INSERT INTO marketplace_listings (connection_id, variant_id, product_id) VALUES ('m1','v_pan','p_pan')")
+    c.execute("DELETE FROM marketplace_connections WHERE id = 'm1'")
+    assert c.execute("SELECT count(*) FROM marketplace_listings").fetchone()[0] == 0, "cascade"
+    assert c.execute("SELECT prefix FROM barcode_sequences").fetchone()[0] == "2000000"
 
 
 if __name__ == "__main__":

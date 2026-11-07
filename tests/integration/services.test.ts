@@ -119,7 +119,8 @@ await t("coupon percentage combinable + per-customer", async () => {
   const cp = await pricing.findUsableCoupon(" hosgeldin "); assert(cp?.id === "cp1", "find");
   await cart.attachCoupon(c.id, "cp1");
   const q = await pricing.buildQuote(c.id, await cart.cartCouponCode(c.id));
-  const expected = 89990 + Math.floor((2 * 89990 + 24990) * 0.1);
+  // "3 al 2 öde" is non-stackable: it locks all three pans, so the combinable coupon only discounts the atlas
+  const expected = 89990 + Math.floor(24990 * 0.1);
   assert(Math.abs(q.discountMinor - expected) <= 2 && q.couponCode === "HOSGELDIN", `${q.discountMinor} vs ${expected}`);
 });
 await t("checkout quote + confirm (bank transfer) atomically reserves stock", async () => {

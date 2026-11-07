@@ -10,7 +10,8 @@ const LOCKED_DOWN_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'n
 function buildSecurityHeaders(isDev: boolean): Header[] {
 	const headers: Header[] = [
 		{ key: "X-Content-Type-Options", value: "nosniff" },
-		{ key: "X-Frame-Options", value: "DENY" },
+		// storefront pages may be framed by the panel's device preview (same origin); /admin stays DENY below
+		{ key: "X-Frame-Options", value: "SAMEORIGIN" },
 		{ key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
 		{ key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
 		{ key: "Cross-Origin-Opener-Policy", value: "same-origin" },
@@ -33,6 +34,8 @@ const nextConfig: NextConfig = {
 		return [
 			{ source: "/:path*", headers: buildSecurityHeaders(isDev) },
 			{ source: "/api/:path*", headers: lockedDown },
+			// later entries override earlier ones for the same header key
+			{ source: "/admin/:path*", headers: [{ key: "X-Frame-Options", value: "DENY" }] },
 			{ source: "/demo/:path*", headers: lockedDown },
 		]
 	},

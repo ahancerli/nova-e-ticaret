@@ -133,8 +133,16 @@ await t("media: storage failure leaves no row; failed row write removes the stor
 await t("media: /assets only serves generated keys", async () => {
   const read = resolve<any>(media.ReadAssetToken);
   assert((await read.execute("../etc/passwd")) === null && (await read.execute("categories/x.svg")) === null, "foreign keys rejected");
-  const img = await resolve<any>(media.UploadImageToken).execute({ bytes: PNG, fileName: "ok.png", folder: "products" }, actor);
-  assert((await read.execute(img.storageKey)) !== null, "generated key served");
+  for (const folder of media.MEDIA_FOLDERS) {
+    const img = await resolve<any>(media.UploadImageToken).execute({ bytes: PNG, fileName: "ok.png", folder }, actor);
+    assert((await read.execute(img.storageKey)) !== null, `generated ${folder} key served`);
+  }
+});
+await t("media: an image still used by a setting (logo) is not released", async () => {
+  const logo = await resolve<any>(media.UploadImageToken).execute({ bytes: PNG, fileName: "logo.png", folder: "branding" }, actor);
+  d1.raw.prepare("INSERT INTO site_settings (key, group_name, value_json) VALUES ('branding.logo_media_id', 'branding', json_quote(?)) ON CONFLICT (key) DO UPDATE SET value_json = excluded.value_json").run(logo.id);
+  await resolve<any>(media.MediaLibraryToken).release(logo.id);
+  assert(objects.has(logo.storageKey) && d1.raw.prepare("SELECT 1 FROM media_assets WHERE id = ?").get(logo.id), "logo kept");
 });
 
 // --- products ------------------------------------------------------------------------------------

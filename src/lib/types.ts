@@ -15,6 +15,19 @@ export interface ProductCard {
   inStock: boolean;
   rating: number | null;
   ratingCount: number;
+  /** Automatic campaigns that apply to the product (badge on the card). */
+  promotions: PromotionBadge[];
+  /** One unit's price in the cart after unconditional product campaigns; null = no such campaign. */
+  campaignPriceMinor: number | null;
+}
+
+/** A campaign as shoppers see it: emoji or image + short text ("🔥 3 Al 2 Öde"). */
+export interface PromotionBadge {
+  campaignId: string;
+  kind: string;
+  label: string;
+  emoji: string | null;
+  imageUrl: string | null;
 }
 
 export interface ProductDetail {
@@ -26,8 +39,9 @@ export interface ProductDetail {
   shortDescription: string | null;
   descriptionHtml: string | null;
   media: { variantId: string | null; url: string; alt: string }[];
-  variants: { id: string; sku: string; isDefault: boolean; priceMinor: number | null; compareAtMinor: number | null; available: number; options: Record<string, string> }[];
-  axes: { code: string; label: string; options: { value: string; label: string; colorHex: string | null }[] }[];
+  variants: { id: string; sku: string; isDefault: boolean; priceMinor: number | null; compareAtMinor: number | null; campaignPriceMinor: number | null; available: number; options: Record<string, string> }[];
+  promotions: PromotionBadge[];
+  axes: { code: string; label: string; style: "button" | "swatch" | "dropdown"; options: { value: string; label: string; colorHex: string | null }[] }[];
   specs: { label: string; value: string }[];
   related: ProductCard[];
   breadcrumb: { name: string; slug: string }[];
@@ -96,13 +110,28 @@ export interface QuoteAdjustment {
   target: "item" | "order" | "shipping";
   lineVariantId: string | null;
   units: number;
+  /** Pipeline stage that produced it (product → cart → coupon → shipping). */
+  stage: "product" | "cart" | "coupon" | "shipping";
+  badge: PromotionBadge;
   rule: Record<string, unknown>;
+}
+
+/** Discount per applied campaign (cart / checkout summary rows). */
+export interface QuotePromotion {
+  campaignId: string;
+  name: string;
+  badge: PromotionBadge;
+  stage: QuoteAdjustment["stage"];
+  amountMinor: number;
+  /** Set when it came from the entered coupon. */
+  couponCode: string | null;
 }
 
 export interface Quote {
   currency: "TRY";
   lines: QuoteLine[];
   adjustments: QuoteAdjustment[];
+  promotions: QuotePromotion[];
   couponCode: string | null;
   subtotalMinor: number;
   discountMinor: number;

@@ -3,5 +3,5 @@ export * from "./domain/mail";
 export type { MailSender, SmtpServer, SmtpTransport } from "./application/ports";
 export { mailSettingsDeleteSchema, mailSettingsSchema } from "./http/schemas";
 export {
-  GetMailSettingsToken, MailSenderToken, RemoveMailSettingsToken, SaveMailSettingsToken, SendTestMailToken, SmtpTransportToken, registerMail,
+  GetMailSettingsToken, ListMailDeliveriesToken, MailSenderToken, RemoveMailSettingsToken, SaveMailSettingsToken, SendTestMailToken, SmtpTransportToken, registerMail,
 } from "./module";

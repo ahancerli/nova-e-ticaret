@@ -56,7 +56,13 @@ export const schema = buildSchema(/* GraphQL */ `
     inStock: Boolean!
     rating: Float
     ratingCount: Int!
+    "Automatic campaigns on the product (badge)."
+    promotions: [Promotion!]!
+    "One unit's cart price after unconditional product campaigns."
+    campaignPriceMinor: Int
   }
+
+  type Promotion { campaignId: ID!, kind: String!, label: String!, emoji: String, imageUrl: String }
 
   type ProductPage { items: [Product!]!, total: Int!, page: Int!, pageSize: Int!, pages: Int! }
 

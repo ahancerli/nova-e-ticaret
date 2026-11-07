@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { formatMinor } from "@/lib/money";
 import { ChevronIcon } from "@/components/icons";
+import type { Quote } from "@/lib/types";
 import { useCart } from "./CartProvider";
 
 /** Collapsible coupon entry; an applied coupon shows as a removable chip. */
@@ -37,13 +38,27 @@ export function CouponForm({ startOpen = false }: { startOpen?: boolean }) {
   );
 }
 
+/** One row per applied campaign, in calculation order (product → cart → coupon → shipping). */
+export function PromotionRows({ cart }: { cart: Quote }) {
+  return cart.promotions.map((p) => (
+    <div key={p.campaignId} className="flex justify-between gap-3 font-medium text-success">
+      <dt className="flex min-w-0 items-center gap-1.5">
+        {/* eslint-disable-next-line @next/next/no-img-element -- R2 asset */}
+        {p.badge.imageUrl ? <img src={p.badge.imageUrl} alt="" className="size-4 flex-none rounded-sm object-contain" /> : p.badge.emoji ? <span aria-hidden>{p.badge.emoji}</span> : null}
+        <span className="truncate">{p.name}{p.couponCode ? ` (${p.couponCode})` : ""}</span>
+      </dt>
+      <dd className="flex-none tabular-nums">{p.stage === "shipping" ? "Kargo bedava" : `−${formatMinor(p.amountMinor)}`}</dd>
+    </div>
+  ));
+}
+
 /** Totals block (server-priced quote). */
 export function CartTotals({ showTax = false }: { showTax?: boolean }) {
   const { cart } = useCart();
   return (
     <dl className="space-y-1.5 text-sm">
       <div className="flex justify-between"><dt className="text-ink-soft">Ürünler ({cart.itemCount})</dt><dd className="tabular-nums">{formatMinor(cart.subtotalMinor)}</dd></div>
-      {cart.discountMinor > 0 && <div className="flex justify-between font-medium text-success"><dt>İndirimler</dt><dd className="tabular-nums">−{formatMinor(cart.discountMinor)}</dd></div>}
+      <PromotionRows cart={cart} />
       <div className="flex justify-between"><dt className="text-ink-soft">Kargo</dt><dd className="tabular-nums">{cart.shippingMinor === 0 ? <span className="font-semibold text-success">Ücretsiz</span> : formatMinor(cart.shippingMinor)}</dd></div>
       {showTax && <div className="flex justify-between text-xs text-muted"><dt>KDV dahil</dt><dd className="tabular-nums">{formatMinor(cart.taxMinor)}</dd></div>}
       <div className="flex items-baseline justify-between border-t border-line pt-2.5">

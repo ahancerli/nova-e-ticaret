@@ -5,7 +5,7 @@ import { errorMessage } from "@/lib/api-client";
 import { cartApi } from "./api";
 import type { Quote } from "@/lib/types";
 
-const EMPTY: Quote = { currency: "TRY", lines: [], adjustments: [], couponCode: null, subtotalMinor: 0, discountMinor: 0, shippingMinor: 0, taxMinor: 0, totalMinor: 0, itemCount: 0, warnings: [] };
+const EMPTY: Quote = { currency: "TRY", lines: [], adjustments: [], promotions: [], couponCode: null, subtotalMinor: 0, discountMinor: 0, shippingMinor: 0, taxMinor: 0, totalMinor: 0, itemCount: 0, warnings: [] };
 
 interface CartCtx {
   cart: Quote;

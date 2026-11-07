@@ -46,5 +46,7 @@ export const toCard = (r: CardRow): ProductCard => ({
   imageUrl: r.image_url, imageAlt: r.image_alt ?? r.name, priceMinor: r.min_price, compareAtMinor: r.compare_at,
   defaultVariantId: r.default_variant_id, hasVariants: r.variant_count > 1, inStock: r.in_stock === 1,
   rating: r.rating, ratingCount: r.rating_count,
+  // filled by the storefront queries (pricing module)
+  promotions: [], campaignPriceMinor: null,
 });
 

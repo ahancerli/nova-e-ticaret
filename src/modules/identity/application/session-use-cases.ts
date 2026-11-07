@@ -1,7 +1,8 @@
-import { RateLimitError, UnitOfWork, type Audience, type Authenticator, type Clock, type Database, type IdGenerator, type Logger, type Principal, type RateLimiter } from "@/core";
+import { RateLimitError, UnitOfWork, ValidationError, type Audience, type Authenticator, type Clock, type Database, type IdGenerator, type Logger, type Principal, type RateLimiter } from "@/core";
 import { IdentityErrors } from "../domain/errors";
 import { LOGIN_LIMITS, SESSION_POLICIES } from "../domain/session-policy";
-import type { CredentialRepository, LoginListener, PasswordHasher, PermissionRepository, SessionCookies, SessionRepository, TokenService } from "./ports";
+import { passwordProblems } from "../domain/password-policy";
+import type { CredentialRepository, CredentialWriter, LoginListener, PasswordHasher, PermissionRepository, SessionCookies, SessionRepository, TokenService } from "./ports";
 
 /** Query (also the core Authenticator port): the principal behind the session cookie of an audience. */
 export class GetCurrentPrincipal implements Authenticator {
@@ -135,5 +136,28 @@ export class Logout {
         await this.cookies.delete(name);
       }
     }
+  }
+}
+
+/**
+ * Command: a signed-in customer changes their password. The current password must match; every session of the
+ * account ends in the same transaction (a stolen session cannot outlive the change) — the route signs the caller in again.
+ */
+export class ChangePassword {
+  constructor(private readonly deps: { db: Database; credentials: CredentialRepository; writer: CredentialWriter; sessions: SessionRepository; hasher: PasswordHasher; clock: Clock }) {}
+
+  async execute(user: Principal, currentPassword: string, newPassword: string): Promise<void> {
+    const cred = await this.deps.credentials.findByEmail(user.email.trim().toLowerCase());
+    if (!cred || cred.userId !== user.id || !(await this.deps.hasher.verify(currentPassword, cred.passwordHash))) {
+      throw ValidationError.field("currentPassword", "Mevcut parola yanlış.", "wrong_password");
+    }
+    const problems = passwordProblems(newPassword, { email: user.email, name: user.displayName });
+    if (problems.length) throw new ValidationError("weak_password", problems[0]!, { fieldErrors: { newPassword: problems } });
+    if (await this.deps.hasher.verify(newPassword, cred.passwordHash)) throw ValidationError.field("newPassword", "Yeni parola eskisiyle aynı olamaz.", "same_password");
+    const now = this.deps.clock.nowIso();
+    await new UnitOfWork(this.deps.db)
+      .add(this.deps.writer.setPasswordStatement(user.id, await this.deps.hasher.hash(newPassword), now))
+      .add(this.deps.sessions.revokeAllStatement(user.id, now))
+      .commit();
   }
 }

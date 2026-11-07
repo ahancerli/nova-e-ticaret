@@ -14,7 +14,7 @@ export interface TargetOption {
  * Searchable multi-select with include / exclude per item (campaign scope). Selected items are shown as chips;
  * the list shows at most 50 matches to stay fast with large catalogues.
  */
-export function TargetPicker({ id, label, options, value, onChange, allowInclude }: {
+export function TargetPicker({ id, label, options, value, onChange, allowInclude, includeOnly = false }: {
   id: string;
   label: string;
   options: TargetOption[];
@@ -22,6 +22,8 @@ export function TargetPicker({ id, label, options, value, onChange, allowInclude
   onChange: (v: TargetRef[]) => void;
   /** In "all products" mode only exclusions make sense. */
   allowInclude: boolean;
+  /** Plain multi-select (cross-sell conditions): no exclude button. */
+  includeOnly?: boolean;
 }) {
   const [q, setQ] = useState("");
   const byId = useMemo(() => new Map(options.map((o) => [o.id, o])), [options]);
@@ -69,10 +71,12 @@ export function TargetPicker({ id, label, options, value, onChange, allowInclude
                     <Check className="size-3" />Dahil
                   </button>
                 ) : null}
-                <button type="button" aria-pressed={mode === "exclude"} onClick={() => set(o.id, mode === "exclude" ? null : "exclude")}
-                  className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium ${mode === "exclude" ? "bg-rose-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                  <Ban className="size-3" />Hariç
-                </button>
+                {includeOnly ? null : (
+                  <button type="button" aria-pressed={mode === "exclude"} onClick={() => set(o.id, mode === "exclude" ? null : "exclude")}
+                    className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium ${mode === "exclude" ? "bg-rose-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                    <Ban className="size-3" />Hariç
+                  </button>
+                )}
               </li>
             );
           })}

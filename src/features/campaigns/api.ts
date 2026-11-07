@@ -1,7 +1,7 @@
 "use client";
 
 import { api } from "@/lib/api-client";
-import type { CampaignDetail, CampaignInput, CampaignSummary, CouponBatchInput } from "@/modules/campaigns";
+import type { CampaignDetail, CampaignInput, CampaignSummary, CouponBatchInput, PricingPolicy } from "@/modules/campaigns";
 
 const one = (id: string) => `/api/admin/campaigns/${encodeURIComponent(id)}`;
 
@@ -12,6 +12,8 @@ export const campaignsApi = {
   update: (id: string, input: CampaignInput & { expectedUpdatedAt: string }) => api<{ updatedAt: string }>(one(id), { method: "PUT", json: input }),
   remove: (id: string) => api<{ deleted: true }>(one(id), { method: "DELETE" }),
   createCoupons: (id: string, input: CouponBatchInput) => api<{ codes: string[] }>(`${one(id)}/coupons`, { method: "POST", json: input }),
+  savePolicy: (input: Omit<PricingPolicy, "updatedAt"> & { expectedUpdatedAt: string | null }) =>
+    api<{ updatedAt: string }>("/api/admin/campaigns/policy", { method: "PUT", json: input }),
   changeCoupon: (id: string, couponId: string, action: "activate" | "deactivate" | "delete") =>
     api<{ done: true }>(`${one(id)}/coupons/${encodeURIComponent(couponId)}`, { method: "POST", json: { action } }),
 };

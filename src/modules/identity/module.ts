@@ -4,7 +4,7 @@ import { AccountLinks, CompleteAccountLink, PeekAccountLink, RequestPasswordRese
 import { MailSenderToken } from "@/modules/mail";
 import { AuditLogToken } from "@/modules/audit/audit-log";
 import { D1AccountReadModel, GetCustomerProfile, GetStaffRoles } from "./application/account-queries";
-import { GetCurrentPrincipal, Login, Logout } from "./application/session-use-cases";
+import { ChangePassword, GetCurrentPrincipal, Login, Logout } from "./application/session-use-cases";
 import { BcryptPasswordHasher, HmacTokenService, NextSessionCookies } from "./infrastructure/adapters";
 import { D1AccountTokenRepository, D1CredentialRepository, D1PermissionRepository, D1SessionRepository } from "./infrastructure/d1-identity.repositories";
 
@@ -28,6 +28,7 @@ export const AccountLinksToken = token<AccountLinks>("AccountLinks");
 export const PeekAccountLinkToken = token<PeekAccountLink>("PeekAccountLink");
 export const CompleteAccountLinkToken = token<CompleteAccountLink>("CompleteAccountLink");
 export const RequestPasswordResetToken = token<RequestPasswordReset>("RequestPasswordReset");
+export const ChangePasswordToken = token<ChangePassword>("ChangePassword");
 
 const listeners: ((r: Resolver) => LoginListener)[] = [];
 
@@ -66,6 +67,10 @@ export function registerIdentity(c: Container): void {
   c.scoped(GetStaffRolesToken, (r) => new GetStaffRoles(new D1AccountReadModel(r.resolve(DatabaseToken))));
   c.scoped(GetCustomerProfileToken, (r) => new GetCustomerProfile(new D1AccountReadModel(r.resolve(DatabaseToken))));
   c.scoped(CredentialWriterToken, (r) => new D1CredentialRepository(r.resolve(DatabaseToken)));
+  c.scoped(ChangePasswordToken, (r) => new ChangePassword({
+    db: r.resolve(DatabaseToken), credentials: r.resolve(CredentialRepositoryToken), writer: r.resolve(CredentialWriterToken),
+    sessions: r.resolve(SessionRepositoryToken), hasher: r.resolve(PasswordHasherToken), clock: r.resolve(ClockToken),
+  }));
   c.scoped(AccountTokenRepositoryToken, (r) => new D1AccountTokenRepository(r.resolve(DatabaseToken)));
   c.scoped(AccountLinksToken, (r) => new AccountLinks(r.resolve(TokenServiceToken), r.resolve(AccountTokenRepositoryToken), r.resolve(ClockToken), r.resolve(IdGeneratorToken)));
   c.scoped(PeekAccountLinkToken, (r) => new PeekAccountLink(r.resolve(TokenServiceToken), r.resolve(AccountTokenRepositoryToken), r.resolve(ClockToken)));

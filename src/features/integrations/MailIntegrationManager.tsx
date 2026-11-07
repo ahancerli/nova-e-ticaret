@@ -2,24 +2,80 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { AtSign, CheckCircle2, KeyRound, Mail, Send, Server, ShieldCheck, Trash2 } from "lucide-react";
+import { AlertTriangle, AtSign, CheckCircle2, KeyRound, Mail, Send, Server, ShieldCheck, Trash2 } from "lucide-react";
 import { notify } from "@/lib/toast";
 import { useFieldErrors } from "@/lib/use-field-errors";
 import { AdminConfirmDialog } from "@/components/admin/AdminConfirmDialog";
 import { Field, inputCls } from "@/components/admin/form";
 import { AdminBadge, AdminCard, AdminCardTitle, AdminPageHeader } from "@/components/admin/ui";
-import type { MailSettingsView } from "@/modules/mail";
+import type { MailDeliveryView, MailSettingsView } from "@/modules/mail";
 import { SMTP_PRESETS, type SmtpSecurity } from "@/modules/mail/domain/presets";
 import { integrationsApi } from "./api";
 
 const dt = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Istanbul" });
 const SECURITY_LABEL: Record<SmtpSecurity, string> = { ssl: "SSL / TLS (genelde 465)", starttls: "STARTTLS (genelde 587)" };
+const PURPOSE_LABEL: Record<MailDeliveryView["purpose"], string> = { password_reset: "Parola sıfırlama", test: "Test e-postası", other: "E-posta" };
+const STAGE_LABEL: Record<string, string> = {
+  connect: "bağlantı", tls: "şifreli bağlantı (TLS)", greeting: "sunucu karşılaması", ehlo: "tanışma (EHLO)", starttls: "STARTTLS",
+  auth: "giriş (kullanıcı adı / parola)", sender: "gönderen adresi", recipient: "alıcı adresi", data: "e-posta içeriği",
+};
+const isGmail = (host: string) => /(^|\.)(gmail|googlemail|google)\.com$/i.test(host.trim());
+
+/** Settings that are known not to work, warned before saving (the server would only fail at send time). */
+function configWarnings(f: { host: string; port: string; security: SmtpSecurity; username: string; fromEmail: string }): string[] {
+  const w: string[] = [];
+  const port = Number(f.port);
+  if (port === 465 && f.security === "starttls") w.push("465 numaralı port “SSL / TLS” ister; STARTTLS ile bağlantı zaman aşımına düşer.");
+  if (port === 587 && f.security === "ssl") w.push("587 numaralı port “STARTTLS” ister; SSL ile bağlantı kurulamaz.");
+  if (isGmail(f.host)) {
+    if (f.username && !f.username.includes("@")) w.push("Gmail'de kullanıcı adı Gmail adresinizin tamamı olmalı (ornek@gmail.com).");
+    if (f.fromEmail && f.username && f.fromEmail.trim().toLowerCase() !== f.username.trim().toLowerCase())
+      w.push("Gmail, doğrulanmış takma ad değilse gönderen adresini hesap adresinizle değiştirir; gönderen e-postayı kullanıcı adıyla aynı yapın.");
+  }
+  return w;
+}
+
+/** "Son gönderimler": every attempt with its outcome; failed rows say why (classified) and what the server answered. */
+function DeliveryList({ rows }: { rows: MailDeliveryView[] }) {
+  if (!rows.length) return <p className="px-5 py-4 text-sm text-slate-500">Henüz gönderim yok. Test e-postası gönderin ya da “Parolamı unuttum”u deneyin.</p>;
+  return (
+    <ul className="divide-y divide-slate-100">
+      {rows.map((r) => (
+        <li key={r.id} className="px-5 py-3 text-sm">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {r.status === "sent" ? <AdminBadge tone="green">Gönderildi</AdminBadge>
+              : r.status === "failed" ? <AdminBadge tone="red">Gönderilemedi</AdminBadge>
+              : r.status === "throttled" ? <AdminBadge tone="amber">Bekletildi</AdminBadge>
+              : <AdminBadge tone="slate">SMTP ayarı yok</AdminBadge>}
+            <span className="font-medium text-slate-800">{PURPOSE_LABEL[r.purpose]}</span>
+            <span className="text-slate-500">→ {r.recipient}</span>
+            <span className="ml-auto text-xs text-slate-400">{dt.format(new Date(r.createdAt))}{r.latencyMs != null ? ` · ${(r.latencyMs / 1000).toFixed(1)} sn` : ""}</span>
+          </div>
+          {r.status === "sent" && (
+            <p className="mt-1 text-xs text-slate-500">{r.smtpHost} e-postayı teslim aldı{r.serverReply ? <>: <span className="font-mono">{r.serverReply}</span></> : null}</p>
+          )}
+          {r.status === "failed" && (
+            <div className="mt-1.5 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800 ring-1 ring-red-100">
+              <p className="font-medium">{r.errorMessage}</p>
+              <p className="mt-0.5 text-red-700/80">
+                {r.smtpHost}{r.stage ? ` · adım: ${STAGE_LABEL[r.stage] ?? r.stage}` : ""} · kod: <span className="font-mono">{r.errorCode}</span>
+              </p>
+              {r.serverReply && <p className="mt-0.5 break-all font-mono text-red-700/80">Sunucu yanıtı: {r.serverReply}</p>}
+            </div>
+          )}
+          {r.status === "throttled" && <p className="mt-1 text-xs text-slate-500">Bu adrese 2 dakika içinde zaten bağlantı gönderildi; yeni e-posta gönderilmedi.</p>}
+          {r.status === "not_configured" && <p className="mt-1 text-xs text-slate-500">SMTP ayarı olmadığı için e-posta gönderilemedi.</p>}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /**
  * E-posta (SMTP): the shop's outgoing mail account (password reset e-mails). The password is write-only — sealed
  * on the server and never shown again; leaving it empty keeps the stored one.
  */
-export function MailIntegrationManager({ initial, adminEmail }: { initial: MailSettingsView | null; adminEmail: string }) {
+export function MailIntegrationManager({ initial, adminEmail, deliveries }: { initial: MailSettingsView | null; adminEmail: string; deliveries: MailDeliveryView[] }) {
   const router = useRouter();
   const errors = useFieldErrors();
   const [form, setForm] = useState({
@@ -31,6 +87,8 @@ export function MailIntegrationManager({ initial, adminEmail }: { initial: MailS
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
   const preset = SMTP_PRESETS.find((p) => p.host === form.host);
+  const warnings = configWarnings(form);
+  const lastFailure = deliveries[0]?.status === "failed" ? deliveries[0] : null;
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const v = e.target.value;
@@ -62,11 +120,12 @@ export function MailIntegrationManager({ initial, adminEmail }: { initial: MailS
     setTesting(true);
     try {
       const r = await integrationsApi.mail.test();
-      notify.success("Test e-postası gönderildi", { description: `${r.data.to} · ${(r.data.latencyMs / 1000).toFixed(1)} sn — gelen kutunuzu kontrol edin.` });
+      notify.success("Test e-postası gönderildi", { description: `${r.data.host} teslim aldı → ${r.data.to} · ${(r.data.latencyMs / 1000).toFixed(1)} sn. Gelen kutunuzu (ve spam klasörünü) kontrol edin.` });
     } catch (err) {
       notify.error(err, { fallback: "Test e-postası gönderilemedi." });
     } finally {
       setTesting(false);
+      router.refresh(); // the attempt is in "Son gönderimler" either way
     }
   };
 
@@ -118,6 +177,11 @@ export function MailIntegrationManager({ initial, adminEmail }: { initial: MailS
           <p className="px-5 py-4 text-sm text-slate-600">E-posta hesabı bağlanmadı; “Parolamı unuttum” e-postaları gönderilemez. Aşağıdan SMTP bilgilerini girin.</p>
         )}
         {initial && <p className="border-t border-slate-100 px-5 py-2.5 text-xs text-slate-500">Test e-postası sizin adresinize gider: <b className="font-medium text-slate-700">{adminEmail}</b></p>}
+        {lastFailure && (
+          <p className="flex items-start gap-2 border-t border-red-100 bg-red-50 px-5 py-2.5 text-xs text-red-800">
+            <AlertTriangle className="mt-px h-3.5 w-3.5 flex-none" /> Son gönderim başarısız ({dt.format(new Date(lastFailure.createdAt))}): {lastFailure.errorMessage}
+          </p>
+        )}
       </AdminCard>
 
       <AdminCard className="max-w-4xl">
@@ -181,6 +245,12 @@ export function MailIntegrationManager({ initial, adminEmail }: { initial: MailS
             </Field>
           </div>
 
+          {warnings.length > 0 && (
+            <ul className="space-y-1 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-100">
+              {warnings.map((w) => <li key={w} className="flex items-start gap-1.5"><AlertTriangle className="mt-px h-3.5 w-3.5 flex-none" />{w}</li>)}
+            </ul>
+          )}
+
           <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 pt-4">
             <button type="submit" disabled={saving}
               className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#7367f0] px-5 text-sm font-semibold text-white shadow-sm shadow-[#7367f0]/30 hover:bg-[#6559df] disabled:opacity-60">
@@ -189,6 +259,11 @@ export function MailIntegrationManager({ initial, adminEmail }: { initial: MailS
             </button>
           </div>
         </form>
+      </AdminCard>
+
+      <AdminCard className="max-w-4xl">
+        <AdminCardTitle title="Son gönderimler" subtitle="Her e-posta denemesi ve sonucu (son 30 gün). “Gönderildi” = SMTP sunucusu e-postayı teslim aldı." />
+        <DeliveryList rows={deliveries} />
       </AdminCard>
 
       <AdminConfirmDialog open={confirmRemove} title="E-posta ayarları kaldırılsın mı?"

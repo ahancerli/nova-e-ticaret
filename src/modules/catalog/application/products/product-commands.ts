@@ -35,7 +35,8 @@ abstract class SaveProduct {
 
   protected abstract auditEntry(input: ProductInput, plan: ProductSavePlan): { action: string; diff: unknown };
 
-  protected async save(productId: string | null, input: ProductInput, actor: ProductActor): Promise<SavedProduct> {
+  /** Load the lookups and plan the save; nothing is written. */
+  protected async prepare(productId: string | null, input: ProductInput, actor: ProductActor, now: string) {
     const { products } = this.deps;
     const current = productId ? await products.current(productId) : null;
     if (productId && !current) throw ProductErrors.notFound();
@@ -53,11 +54,15 @@ abstract class SaveProduct {
       products.takenElsewhere("barcode", barcodes, productId),
     ]);
 
-    const now = this.deps.clock.nowIso();
-    const { errors, plan } = planProductSave({
+    return planProductSave({
       productId, input, current, meta, canPublish: actor.canPublish, now, newId: () => this.deps.ids.newId(),
       lookups: { slugTaken, brandExists, foundCategoryIds, foundImageIds, skusTakenElsewhere, barcodesTakenElsewhere },
     });
+  }
+
+  protected async save(productId: string | null, input: ProductInput, actor: ProductActor): Promise<SavedProduct> {
+    const now = this.deps.clock.nowIso();
+    const { errors, plan } = await this.prepare(productId, input, actor, now);
     if (!plan) throw new ValidationError("validation_error", "Kaydedilemedi: işaretli alanları kontrol edin.", { fieldErrors: errors });
 
     const uow = this.writePlan(plan, actor, now);
@@ -121,6 +126,27 @@ export class CreateProduct extends SaveProduct {
 
   protected auditEntry(input: ProductInput) {
     return { action: "product.create", diff: { name: input.name, status: input.status, variants: input.variants.length } };
+  }
+}
+
+/**
+ * Query: would this save succeed? Runs the same lookups and plan as create / update without writing
+ * (bulk imports check every row before the shop presses "Yükle"). null = valid, else field → messages.
+ */
+export class CheckProductSave extends SaveProduct {
+  async execute(productId: string | null, input: ProductInput, actor: ProductActor): Promise<Record<string, string[]> | null> {
+    try {
+      const { errors, plan } = await this.prepare(productId, input, actor, this.deps.clock.nowIso());
+      return plan ? null : errors;
+    } catch (e) {
+      // e.g. the product was deleted meanwhile
+      if (e instanceof Error && "code" in e) return { product: [e.message] };
+      throw e;
+    }
+  }
+
+  protected auditEntry(): { action: string; diff: unknown } {
+    throw new Error("CheckProductSave never writes");
   }
 }
 

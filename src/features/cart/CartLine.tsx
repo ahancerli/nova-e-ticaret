@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { QuoteLine } from "@/lib/types";
 import { formatMinor } from "@/lib/money";
 import { MinusIcon, PlusIcon, TrashIcon } from "@/components/icons";
+import { PromoBadge } from "@/components/ui/PromoBadge";
 import { useCart } from "./CartProvider";
 
 /**
@@ -13,7 +14,9 @@ import { useCart } from "./CartProvider";
 export function CartLine({ line: l, index = 0, highlight = false, size = "md", onNavigate }: {
   line: QuoteLine; index?: number; highlight?: boolean; size?: "md" | "lg"; onNavigate?: () => void;
 }) {
-  const { busy, update, remove } = useCart();
+  const { busy, update, remove, cart } = useCart();
+  // campaigns that discounted this row ("🔥 3 Al 2 Öde −₺899,90")
+  const promos = cart.adjustments.filter((a) => a.lineVariantId === l.variantId && a.target === "item");
   const img = size === "lg" ? "size-24 sm:size-28" : "size-20";
   const href = l.productSlug ? `/urun/${l.productSlug}` : "#";
   return (
@@ -29,6 +32,15 @@ export function CartLine({ line: l, index = 0, highlight = false, size = "md", o
           <div className="min-w-0 flex-1">
             <Link href={href} onClick={onNavigate} className={`line-clamp-2 font-medium leading-5 hover:text-brand ${size === "lg" ? "text-[15px]" : "text-sm"}`}>{l.productName}</Link>
             {l.variantLabel && <p className="mt-0.5 text-xs text-muted">{l.variantLabel}</p>}
+            {promos.length > 0 && (
+              <ul className="mt-1 flex flex-wrap gap-1" aria-label="Uygulanan kampanyalar">
+                {promos.map((a) => (
+                  <li key={a.campaignId ?? a.label} className="inline-flex items-center gap-1 text-[11px] font-semibold text-success">
+                    <PromoBadge badge={a.badge} size="xs" /><span className="tabular-nums">−{formatMinor(a.amountMinor)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             {highlight && <p className="mt-1 text-xs font-semibold text-success">Yeni eklendi</p>}
           </div>
           <button type="button" className="grid size-8 flex-none place-items-center rounded-full text-muted transition hover:bg-red-50 hover:text-danger disabled:opacity-40"

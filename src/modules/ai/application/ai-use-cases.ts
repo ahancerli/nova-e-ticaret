@@ -4,17 +4,22 @@ import type { Actor } from "@/modules/shared/actor";
 import { AiErrors } from "../domain/errors";
 import { parseProductDraft } from "../domain/product-draft";
 import {
-  AI_IMAGE_MIME, AI_PROVIDERS, keyHintOf,
-  type AiIntegrationInput, type AiIntegrationView, type AiTextField, type GenerateProductInput, type GenerateProductResult,
+  AI_IMAGE_MIME, AI_PROVIDERS, AI_PROVIDER_KEYS, keyHintOf,
+  type AiHealthReport, type AiIntegrationInput, type AiIntegrationView, type AiModelCatalog, type AiTextField, type GenerateProductInput,
+  type GenerateProductResult,
 } from "../domain/providers";
 import { CONNECTION_TEST_PROMPT, PRODUCT_CONTENT_SYSTEM_PROMPTS, buildProductUserPrompt } from "../prompts/system-prompts";
-import type { AiClientFactory, AiIntegrationRepository, ImageReader, SealedKey, StoredAiIntegration } from "./ports";
+import type { AiClientFactory, AiIntegrationRepository, AiModelRepository, ImageReader, SealedKey, StoredAiIntegration } from "./ports";
 
 const KEY_VERSION = "v1";
+/** Room for thinking models (Opus 5.5 / Fable 5.1 always think; Gemini and OpenAI reasoning models count thoughts too). */
+const PRODUCT_MAX_TOKENS = 8192;
+const TEST_MAX_TOKENS = 1024;
 
 export interface AiDeps {
   db: Database;
   repo: AiIntegrationRepository;
+  models: AiModelRepository;
   audit: AuditLog;
   clock: Clock;
   /** SECRETS_MASTER_KEY (base64, 32 bytes). */
@@ -47,6 +52,16 @@ export class GetAiIntegration {
   }
 }
 
+/** Query: the model select — catalog rows (db/schema.sql ai_models) per provider, default first, retired left out. */
+export class ListAiModels {
+  constructor(private readonly models: AiModelRepository) {}
+  async execute(): Promise<AiModelCatalog> {
+    const catalog = Object.fromEntries(AI_PROVIDER_KEYS.map((p) => [p, []])) as unknown as AiModelCatalog;
+    for (const m of await this.models.listSelectable()) catalog[m.provider].push(m);
+    return catalog;
+  }
+}
+
 /**
  * Command: choose the provider, model and key. One integration at a time — choosing another provider replaces
  * it and needs that provider's key; with the same provider an empty key keeps the stored one.
@@ -60,11 +75,16 @@ export class SaveAiIntegration {
     const apiKey = input.apiKey?.trim();
     if (!apiKey && (!existing || existing.provider !== input.provider)) throw AiErrors.keyRequired();
     if (apiKey && !this.deps.masterKey) throw AiErrors.masterKeyMissing();
+    const model = input.model.trim();
+    // Only catalog models; the stored one may stay (e.g. key rotation) even after it left the list.
+    const keepsModel = existing?.provider === input.provider && existing.model === model;
+    const listed = await this.deps.models.find(input.provider, model);
+    if (!keepsModel && (!listed || listed.status === "retired")) throw AiErrors.modelNotListed();
 
     const key: SealedKey | null = apiKey ? { ...(await encryptSecret(this.deps.masterKey, apiKey)), keyVersion: KEY_VERSION } : null;
     const keyHint = apiKey ? keyHintOf(apiKey) : null;
     const now = this.deps.clock.nowIso();
-    const row = { provider: input.provider, model: input.model.trim(), actorId: actor.userId, now };
+    const row = { provider: input.provider, model, actorId: actor.userId, now };
     const uow = new UnitOfWork(this.deps.db);
     if (existing) uow.add(this.deps.repo.updateStatement({ ...row, key, keyHint }, existing.updatedAt)).expectChanges(1, AiErrors.changedMeanwhile);
     else uow.add(this.deps.repo.insertStatement({ ...row, key: key!, keyHint: keyHint! }));
@@ -94,17 +114,31 @@ export class RemoveAiIntegration {
   }
 }
 
-/** Command: a minimal request with the stored key — proves key and model work before anyone relies on them. */
+/**
+ * Command: health check of the stored integration. Step 1 asks the provider's models endpoint for the model (free:
+ * proves the key and that the account can see the model); step 2 sends a tiny text request (proves the generation
+ * path — headers, body, answer parsing — end to end). Failures surface as the mapped AiErrors.
+ */
 export class TestAiIntegration {
   constructor(private readonly deps: AiDeps) {}
 
-  async execute(): Promise<{ provider: string; model: string; latencyMs: number }> {
+  async execute(): Promise<AiHealthReport> {
     const { stored, apiKey } = await unlock(this.deps);
-    const started = Date.now();
-    await this.deps.clients(stored.provider).generate({
-      model: stored.model, apiKey, system: CONNECTION_TEST_PROMPT.system, text: CONNECTION_TEST_PROMPT.user, images: [], maxTokens: 256, json: false,
+    const client = this.deps.clients(stored.provider);
+    let started = Date.now();
+    const info = await client.checkModel(apiKey, stored.model);
+    const modelCheckMs = Date.now() - started;
+    started = Date.now();
+    await client.generate({
+      model: stored.model, apiKey, system: CONNECTION_TEST_PROMPT.system, text: CONNECTION_TEST_PROMPT.user, images: [], maxTokens: TEST_MAX_TOKENS, json: false,
     });
-    return { provider: AI_PROVIDERS[stored.provider].label, model: stored.model, latencyMs: Date.now() - started };
+    const generationMs = Date.now() - started;
+    const listed = await this.deps.models.find(stored.provider, stored.model);
+    return {
+      provider: AI_PROVIDERS[stored.provider].label, model: stored.model, displayName: info.displayName,
+      deprecated: info.deprecated || (listed?.status ?? "active") !== "active", retiresAt: info.retiresAt ?? listed?.retiresAt ?? null,
+      modelCheckMs, generationMs,
+    };
   }
 }
 
@@ -132,7 +166,7 @@ export class GenerateProductContent {
 
     const answer = await this.deps.clients(stored.provider).generate({
       model: stored.model, apiKey, system: PRODUCT_CONTENT_SYSTEM_PROMPTS[stored.provider],
-      text: buildProductUserPrompt(fields, input.prompt, images.length), images, maxTokens: 4096, json: true,
+      text: buildProductUserPrompt(fields, input.prompt, images.length), images, maxTokens: PRODUCT_MAX_TOKENS, json: true,
     });
     const draft = parseProductDraft(answer, fields);
     if (!draft) throw AiErrors.badOutput();

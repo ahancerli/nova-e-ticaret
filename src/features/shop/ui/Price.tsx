@@ -4,8 +4,11 @@ import { formatMinor } from "@/lib/money";
 export const discountPercent = (priceMinor: number | null, compareAtMinor: number | null) =>
   priceMinor != null && compareAtMinor != null && compareAtMinor > priceMinor ? Math.round(100 - (priceMinor / compareAtMinor) * 100) : 0;
 
-/** Sale price with the struck-through list price and discount pill when discounted. */
-export function Price({ priceMinor, compareAtMinor, size = "md" }: { priceMinor: number | null; compareAtMinor: number | null; size?: "md" | "lg" }) {
+/**
+ * Sale price with the struck-through list price and discount pill when discounted; `campaignPriceMinor` adds
+ * the price an automatic campaign gives in the cart ("Sepette ₺X").
+ */
+export function Price({ priceMinor, compareAtMinor, campaignPriceMinor = null, size = "md" }: { priceMinor: number | null; compareAtMinor: number | null; campaignPriceMinor?: number | null; size?: "md" | "lg" }) {
   if (priceMinor == null) return <p className="text-sm text-muted">Fiyat yakında</p>;
   const pct = discountPercent(priceMinor, compareAtMinor);
   return (
@@ -19,6 +22,9 @@ export function Price({ priceMinor, compareAtMinor, size = "md" }: { priceMinor:
       <p className={`font-bold tabular-nums text-ink ${size === "lg" ? "text-2xl" : "text-base"}`}>
         {pct > 0 && <span className="sr-only">İndirimli fiyat: </span>}{formatMinor(priceMinor)}
       </p>
+      {campaignPriceMinor != null && campaignPriceMinor < priceMinor && (
+        <p className={`font-bold tabular-nums text-brand ${size === "lg" ? "text-base" : "text-xs"}`}>Sepette {formatMinor(campaignPriceMinor)}</p>
+      )}
     </div>
   );
 }

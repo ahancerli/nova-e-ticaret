@@ -8,7 +8,7 @@ import type { GalleryItem } from "@/features/media/MediaGallery";
 export type Status = ProductEditorData["status"];
 export type VariantState = {
   key: string; id?: string; sku: string; barcode: string; name: string; options: Record<string, string>;
-  price: string; compareAt: string; stock: string; isActive: boolean; isDefault: boolean;
+  price: string; compareAt: string; minPrice: string; stock: string; isActive: boolean; isDefault: boolean;
   weightGrams: string; widthMm: string; heightMm: string; depthMm: string; reserved: number; locked: boolean;
   /** Stock as loaded: the server only writes stock that the user actually changed, guarded on this value. */
   loadedStock?: number;
@@ -38,7 +38,7 @@ export const strToInt = (s: string): number | null => (s.trim() === "" ? null : 
 export const uid = () => crypto.randomUUID();
 
 export const emptyVariant = (isDefault: boolean, options: Record<string, string> = {}): VariantState => ({
-  key: uid(), sku: "", barcode: "", name: "", options, price: "", compareAt: "", stock: "0", isActive: true, isDefault,
+  key: uid(), sku: "", barcode: "", name: "", options, price: "", compareAt: "", minPrice: "", stock: "0", isActive: true, isDefault,
   weightGrams: "", widthMm: "", heightMm: "", depthMm: "", reserved: 0, locked: false,
 });
 
@@ -57,7 +57,7 @@ export function fromData(d: ProductEditorData | null): FormState {
     axes: d.axes,
     variants: d.variants.map((v) => ({
       key: v.id, id: v.id, sku: v.sku, barcode: v.barcode ?? "", name: v.name ?? "", options: v.options, price: minorToStr(v.priceMinor),
-      compareAt: minorToStr(v.compareAtMinor), stock: String(v.stock), isActive: v.isActive, isDefault: v.isDefault,
+      compareAt: minorToStr(v.compareAtMinor), minPrice: minorToStr(v.minPriceMinor), stock: String(v.stock), isActive: v.isActive, isDefault: v.isDefault,
       weightGrams: str(v.weightGrams), widthMm: str(v.widthMm), heightMm: str(v.heightMm), depthMm: str(v.depthMm), reserved: v.reserved, locked: v.locked,
       loadedStock: v.stock,
     })),
@@ -75,7 +75,7 @@ export function toPayload(f: FormState) {
     variants: f.variants.map((v) => ({
       ...(v.id ? { id: v.id } : {}), sku: v.sku.trim(), barcode: v.barcode.trim() || null, name: v.name.trim() || null,
       options: Object.fromEntries(f.axes.map((a) => [a, v.options[a] ?? ""]).filter(([, o]) => o)),
-      priceMinor: strToMinor(v.price) ?? 0, compareAtMinor: strToMinor(v.compareAt), stock: strToInt(v.stock) ?? 0,
+      priceMinor: strToMinor(v.price) ?? 0, compareAtMinor: strToMinor(v.compareAt), minPriceMinor: strToMinor(v.minPrice), stock: strToInt(v.stock) ?? 0,
       ...(v.loadedStock !== undefined ? { expectedStock: v.loadedStock } : {}),
       isActive: v.isActive, isDefault: v.isDefault,
       weightGrams: strToInt(v.weightGrams), widthMm: strToInt(v.widthMm), heightMm: strToInt(v.heightMm), depthMm: strToInt(v.depthMm),

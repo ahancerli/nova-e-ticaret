@@ -11,6 +11,11 @@ export const forgotPasswordSchema = z.object({
   email: z.email("Geçerli bir e-posta adresi girin.").max(254),
 }).strict();
 
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Mevcut parolanızı yazın.").max(200),
+  newPassword: z.string().min(1).max(200),
+}).strict();
+
 export const completeLinkSchema = z.object({
   token: z.string().min(20).max(128).regex(/^[A-Za-z0-9_-]+$/),
   password: z.string().min(1).max(200),

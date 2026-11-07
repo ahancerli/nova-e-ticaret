@@ -33,7 +33,7 @@ export class GetProductMeta {
       attributes: ref.attributes.map((a) => ({
         ...a,
         dataType: a.dataType as AttributeMeta["dataType"],
-        options: ref.options.filter((o) => o.attributeId === a.id).map((o) => ({ id: o.id, value: o.value, label: o.label, colorHex: o.colorHex })),
+        options: ref.options.filter((o) => o.attributeId === a.id).map((o) => ({ id: o.id, value: o.value, label: o.label, colorHex: o.colorHex, isActive: o.isActive, numericValue: o.numericValue })),
       })),
     };
   }

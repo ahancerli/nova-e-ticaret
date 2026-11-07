@@ -3,12 +3,15 @@
  * Bytes live in object storage under "<folder>/<uuid>.<ext>"; the DB stores the key and its public path.
  */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
-export const MEDIA_FOLDERS = ["categories", "brands", "products", "branding", "showcase"] as const;
+export const MEDIA_FOLDERS = ["categories", "brands", "products", "branding", "showcase", "campaigns"] as const;
 export type MediaFolder = (typeof MEDIA_FOLDERS)[number];
 export const ASSET_PREFIX = "/assets/";
 
-/** The only object keys the public /assets route serves (no traversal, no listing, no foreign keys). */
-export const STORAGE_KEY_PATTERN = /^(categories|brands|products)\/[0-9a-f-]{36}\.(png|jpg|webp|avif)$/;
+/**
+ * The only object keys the public /assets route serves (no traversal, no listing, no foreign keys).
+ * Derived from MEDIA_FOLDERS so every folder that accepts uploads is also served (logo, showcase, …).
+ */
+export const STORAGE_KEY_PATTERN = new RegExp(`^(${MEDIA_FOLDERS.join("|")})/[0-9a-f-]{36}\\.(png|jpg|webp|avif)$`);
 
 export const isMediaFolder = (v: string): v is MediaFolder => (MEDIA_FOLDERS as readonly string[]).includes(v);
 export const isUploadedKey = (storageKey: string): boolean => MEDIA_FOLDERS.some((f) => storageKey.startsWith(`${f}/`));

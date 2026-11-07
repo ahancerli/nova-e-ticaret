@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { useCart } from "@/features/cart/CartProvider";
+import { PromotionRows } from "@/features/cart/CartSummary";
 import { ClientApiError, errorMessage, newIdempotencyKey } from "@/lib/api-client";
 import { useFieldErrors } from "@/lib/use-field-errors";
 import { checkoutApi } from "./api";
@@ -11,14 +12,29 @@ import { formatMinor } from "@/lib/money";
 import type { CheckoutLegal } from "@/modules/content";
 import type { PaymentOptions } from "@/modules/payments";
 import { BankAccounts } from "./BankAccounts";
+import { CheckoutGate } from "./CheckoutGate";
+
+export interface CheckoutCustomer {
+  email: string;
+  name: string;
+}
+
+const GUEST_KEY = "nova:checkout-guest";
+const noSubscribe = () => () => {};
+const readGuest = () => {
+  try { return sessionStorage.getItem(GUEST_KEY) === "1"; } catch { return false; }
+};
 
 const METHODS = [
   { value: "iyzico", label: "Kredi / banka kartı (iyzico)", hint: "Güvenli ödeme sayfasına yönlendirilirsiniz." },
   { value: "bank_transfer", label: "Havale / EFT", hint: "Siparişiniz, ödemeniz banka hesabımızda doğrulandıktan sonra hazırlanır." },
 ] as const;
 
-/** Guest checkout (no account required, spec R13). All amounts come from the server; only enabled payment methods are offered. */
-export function CheckoutClient({ legal, payment }: { legal: CheckoutLegal; payment: PaymentOptions }) {
+/**
+ * Checkout. A visitor first chooses: sign in, continue as a guest (no account required, spec R13) or sign up; a
+ * signed-in customer gets the form prefilled. All amounts come from the server; only enabled payment methods are offered.
+ */
+export function CheckoutClient({ legal, payment, customer }: { legal: CheckoutLegal; payment: PaymentOptions; customer: CheckoutCustomer | null }) {
   const { cart, refresh } = useCart();
   const router = useRouter();
   const methods = METHODS.filter((m) => (m.value === "iyzico" ? payment.card : payment.bankTransfer));
@@ -27,14 +43,22 @@ export function CheckoutClient({ legal, payment }: { legal: CheckoutLegal; payme
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const errors = useFieldErrors();
+  // the guest choice survives a reload of the payment step (per tab); the server renders the choice screen
+  const storedGuest = useSyncExternalStore(noSubscribe, readGuest, () => false);
+  const [chosen, setGuest] = useState<boolean | null>(null);
+  const guest = chosen ?? storedGuest;
 
-  if (cart.lines.length === 0) {
+  if (cart.lines.length === 0 && !busy) {
     return (
       <div className="container-page py-20 text-center">
         <h1 className="text-2xl font-bold">Sepetiniz boş</h1>
         <Link href="/" className="btn btn-primary mt-6">Alışverişe başla</Link>
       </div>
     );
+  }
+
+  if (!customer && !guest) {
+    return <CheckoutGate itemCount={cart.itemCount} onGuest={() => { setGuest(true); try { sessionStorage.setItem(GUEST_KEY, "1"); } catch { /* ignore */ } }} />;
   }
 
   const fe = errors.get;
@@ -62,6 +86,10 @@ export function CheckoutClient({ legal, payment }: { legal: CheckoutLegal; payme
         shipping: addr("s_"), billing: sameBilling ? undefined : addr("b_"), note: s("note") || undefined,
         acceptedTermsVersion: legal.termsVersion,
       }, idemKey);
+      // The server converted the cart in the same transaction as the order: show the empty cart before leaving
+      // (the provider lives in the layout and would otherwise keep the old lines until a full reload).
+      try { sessionStorage.removeItem(GUEST_KEY); } catch { /* ignore */ }
+      await refresh().catch(() => undefined);
       if (res.data.payment?.paymentPageUrl) {
         window.location.assign(res.data.payment.paymentPageUrl);
       } else {
@@ -84,15 +112,21 @@ export function CheckoutClient({ legal, payment }: { legal: CheckoutLegal; payme
         <h1 className="text-2xl font-bold">Ödeme</h1>
         <section className="card space-y-4 p-5" aria-labelledby="c-contact">
           <h2 id="c-contact" className="font-semibold">İletişim</h2>
-          <p className="text-sm text-ink-soft">Üye olmadan devam edebilirsiniz. Sipariş bilgileri bu adrese gönderilir.</p>
+          {customer ? (
+            <p className="text-sm text-ink-soft"><strong className="text-ink">{customer.name}</strong> olarak giriş yaptınız; sipariş hesabınızda görünecek.</p>
+          ) : (
+            <p className="flex flex-wrap items-center gap-x-3 text-sm text-ink-soft">Misafir olarak devam ediyorsunuz. Sipariş bilgileri bu adrese gönderilir.
+              <button type="button" className="font-semibold text-brand hover:underline" onClick={() => { setGuest(false); try { sessionStorage.removeItem(GUEST_KEY); } catch { /* ignore */ } }}>Giriş yap / üye ol</button>
+            </p>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field name="email" label="E-posta" type="email" auto="email" err={fe("email")} />
+            <Field name="email" label="E-posta" type="email" auto="email" err={fe("email")} defaultValue={customer?.email} readOnly={!!customer} />
             <Field name="phone" label="Cep telefonu (+905…)" type="tel" auto="tel" err={fe("phone")} />
           </div>
         </section>
         <section className="card space-y-4 p-5" aria-labelledby="c-ship">
           <h2 id="c-ship" className="font-semibold">Teslimat adresi</h2>
-          <AddressFields p="s_" kind="shipping" fe={fe} />
+          <AddressFields p="s_" kind="shipping" fe={fe} name={customer?.name} />
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-brand" checked={sameBilling} onChange={(e) => setSameBilling(e.target.checked)} /> Fatura adresim aynı</label>
         </section>
         {!sameBilling && (
@@ -138,7 +172,7 @@ export function CheckoutClient({ legal, payment }: { legal: CheckoutLegal; payme
           </ul>
           <dl className="space-y-1 text-sm">
             <div className="flex justify-between"><dt className="text-ink-soft">Ara toplam</dt><dd>{formatMinor(cart.subtotalMinor)}</dd></div>
-            {cart.discountMinor > 0 && <div className="flex justify-between text-success"><dt>İndirim</dt><dd>−{formatMinor(cart.discountMinor)}</dd></div>}
+            <PromotionRows cart={cart} />
             <div className="flex justify-between"><dt className="text-ink-soft">Kargo</dt><dd>{cart.shippingMinor ? formatMinor(cart.shippingMinor) : "Ücretsiz"}</dd></div>
             <div className="flex justify-between text-xs text-muted"><dt>KDV dahil</dt><dd>{formatMinor(cart.taxMinor)}</dd></div>
             <div className="flex justify-between border-t border-line pt-2 text-lg font-bold"><dt>Toplam</dt><dd className="text-brand">{formatMinor(cart.totalMinor)}</dd></div>
@@ -158,21 +192,22 @@ export function CheckoutClient({ legal, payment }: { legal: CheckoutLegal; payme
   );
 }
 
-function Field({ name, label, type = "text", auto, err }: { name: string; label: string; type?: string; auto?: string; err?: string }) {
+function Field({ name, label, type = "text", auto, err, defaultValue, readOnly }: { name: string; label: string; type?: string; auto?: string; err?: string; defaultValue?: string; readOnly?: boolean }) {
   return (
     <div>
       <label htmlFor={name} className="mb-1 block text-sm font-medium">{label}</label>
-      <input id={name} name={name} type={type} required={name !== "s_postal" && name !== "b_postal"} autoComplete={auto} className="input"
+      <input id={name} name={name} type={type} required={name !== "s_postal" && name !== "b_postal"} autoComplete={auto} className={`input${readOnly ? " bg-ground text-ink-soft" : ""}`}
+        defaultValue={defaultValue} readOnly={readOnly}
         aria-invalid={!!err} aria-describedby={err ? `${name}-err` : undefined} />
       {err && <p id={`${name}-err`} className="mt-1 text-xs text-danger">{err}</p>}
     </div>
   );
 }
 
-function AddressFields({ p, kind, fe }: { p: string; kind: "shipping" | "billing"; fe: (k: string) => string | undefined }) {
+function AddressFields({ p, kind, fe, name }: { p: string; kind: "shipping" | "billing"; fe: (k: string) => string | undefined; name?: string }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      <Field name={`${p}name`} label="Ad soyad" auto={`${kind} name`} err={fe(`${kind}.recipientName`)} />
+      <Field name={`${p}name`} label="Ad soyad" auto={`${kind} name`} err={fe(`${kind}.recipientName`)} defaultValue={name} />
       <Field name={`${p}province`} label="İl" auto={`${kind} address-level1`} err={fe(`${kind}.province`)} />
       <Field name={`${p}district`} label="İlçe" auto={`${kind} address-level2`} err={fe(`${kind}.district`)} />
       <Field name={`${p}postal`} label="Posta kodu" auto={`${kind} postal-code`} err={fe(`${kind}.postalCode`)} />

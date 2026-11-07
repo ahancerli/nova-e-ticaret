@@ -164,10 +164,10 @@ export class D1ProductRepository extends Repository implements ProductRepository
 
   priceStatement(v: PlannedVariant, now: string): Statement {
     return this.db.statement(
-      `INSERT INTO variant_prices (variant_id, price_list_id, unit_price_minor, compare_at_minor, updated_at) VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO variant_prices (variant_id, price_list_id, unit_price_minor, compare_at_minor, min_price_minor, updated_at) VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(variant_id, price_list_id) DO UPDATE SET unit_price_minor = excluded.unit_price_minor,
-              compare_at_minor = excluded.compare_at_minor, updated_at = excluded.updated_at`,
-      v.id, DEFAULT_PRICE_LIST, v.priceMinor, v.compareAtMinor, now,
+              compare_at_minor = excluded.compare_at_minor, min_price_minor = excluded.min_price_minor, updated_at = excluded.updated_at`,
+      v.id, DEFAULT_PRICE_LIST, v.priceMinor, v.compareAtMinor, v.minPriceMinor, now,
     );
   }
 

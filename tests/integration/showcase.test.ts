@@ -8,6 +8,7 @@ const core = await import(`${ROOT}/src/core/index.ts`);
 const showcase = await import(`${ROOT}/src/modules/showcase/index.ts`);
 const storefront = await import(`${ROOT}/src/modules/storefront/index.ts`);
 const media = await import(`${ROOT}/src/modules/media/index.ts`);
+const pricing = await import(`${ROOT}/src/modules/pricing/index.ts`);
 const { registerAudit } = await import(`${ROOT}/src/modules/audit/audit-log.ts`);
 const { Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, FixedClock, CryptoIdGenerator, JsonLogger } = core;
 
@@ -32,6 +33,7 @@ const root = new Container()
 registerAudit(root);
 media.registerMedia(root);
 showcase.registerShowcase(root);
+pricing.registerPricing(root); // storefront cards carry campaign badges
 storefront.registerStorefront(root);
 const bucket = { put: async () => null, get: async () => null, head: async () => null, delete: async () => {} };
 const resolve = (tok: any): any => root.createScope().provide(EnvToken, { DB: d1, ASSETS_BUCKET: bucket }).resolve(tok);

@@ -9,8 +9,8 @@ export interface ProductReadModel {
   /** Brands + attribute catalogue + category→attribute rules (the category tree comes from the category module). */
   reference(): Promise<{
     brands: { id: string; name: string; isActive: boolean }[];
-    attributes: { id: string; code: string; label: string; dataType: string; unit: string | null; isVariantAxis: boolean }[];
-    options: { id: string; attributeId: string; value: string; label: string; colorHex: string | null }[];
+    attributes: { id: string; code: string; label: string; dataType: string; unit: string | null; isVariantAxis: boolean; displayStyle: "button" | "swatch" | "dropdown" }[];
+    options: { id: string; attributeId: string; value: string; label: string; colorHex: string | null; isActive: boolean; numericValue: number | null }[];
     categoryAttributes: { categoryId: string; attributeId: string; isRequired: boolean }[];
   }>;
 }

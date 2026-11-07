@@ -12,7 +12,7 @@ export async function graph<T>(query: string, variables?: Record<string, unknown
   return r.data;
 }
 
-const PRODUCT_FIELDS = `id slug name brandName brandSlug imageUrl imageAlt priceMinor compareAtMinor defaultVariantId hasVariants inStock rating ratingCount`;
+const PRODUCT_FIELDS = `id slug name brandName brandSlug imageUrl imageAlt priceMinor compareAtMinor defaultVariantId hasVariants inStock rating ratingCount campaignPriceMinor promotions { campaignId kind label emoji imageUrl }`;
 
 export interface ListingFilter {
   category?: string;

@@ -1,30 +1,25 @@
 /**
  * AI providers and the product fields they can fill — pure constants, safe to import from client components.
  * Adding a provider = an entry here + a client in infrastructure/ai-clients.ts + a system prompt in
- * prompts/system-prompts.ts + the value in the ai_integration.provider CHECK (db/schema.sql).
+ * prompts/system-prompts.ts + the value in the ai_integration / ai_models provider CHECKs and its ai_models rows
+ * (db/schema.sql). Models live in the ai_models table, not here.
  */
 export const AI_PROVIDERS = {
   openai: {
     label: "OpenAI",
     tagline: "ChatGPT modelleri",
-    defaultModel: "gpt-4.1-mini",
-    models: ["gpt-4.1-mini", "gpt-4.1", "gpt-4o"],
     keyPlaceholder: "sk-…",
     keyUrl: "https://platform.openai.com/api-keys",
   },
   gemini: {
     label: "Google Gemini",
     tagline: "Google AI Studio",
-    defaultModel: "gemini-2.5-flash",
-    models: ["gemini-2.5-flash", "gemini-2.5-pro"],
     keyPlaceholder: "AIza…",
     keyUrl: "https://aistudio.google.com/apikey",
   },
   anthropic: {
     label: "Claude",
     tagline: "Anthropic",
-    defaultModel: "claude-sonnet-5-5",
-    models: ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
     keyPlaceholder: "sk-ant-…",
     keyUrl: "https://console.anthropic.com/settings/keys",
   },
@@ -54,6 +49,35 @@ export const AI_MAX_IMAGES = 2;
 export const AI_IMAGE_MIME = ["image/jpeg", "image/png", "image/webp"] as const;
 export const AI_PROMPT_MIN = 10;
 export const AI_PROMPT_MAX = 1500;
+
+export type AiModelStatus = "active" | "deprecated" | "retired";
+
+/** A row of the ai_models catalog (the panel's model select). */
+export interface AiModelOption {
+  provider: AiProvider;
+  id: string;
+  label: string;
+  note: string | null;
+  status: AiModelStatus;
+  /** YYYY-MM-DD shutdown date announced by the provider. */
+  retiresAt: string | null;
+}
+
+/** Provider → selectable models (retired ones left out), default first. */
+export type AiModelCatalog = Record<AiProvider, AiModelOption[]>;
+
+/** Result of "Bağlantıyı test et": the free model lookup, then a tiny generation. */
+export interface AiHealthReport {
+  provider: string;
+  model: string;
+  /** Name the provider reports for the model, when it reports one. */
+  displayName: string | null;
+  /** Shutdown announced by the provider or in our catalog → the panel suggests another model. */
+  deprecated: boolean;
+  retiresAt: string | null;
+  modelCheckMs: number;
+  generationMs: number;
+}
 
 /** Panel view of the configured integration. The key itself never leaves the server. */
 export interface AiIntegrationView {

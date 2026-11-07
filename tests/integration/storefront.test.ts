@@ -33,7 +33,8 @@ const line = (id: string, price: number, qty: number, productId = `p_${id}`) => 
 });
 const campaign = (over: Record<string, unknown>) => ({
   id: "c1", name: "C", kind: "percentage", percentageBps: null, amountMinor: null, buyQuantity: null, payQuantity: null,
-  priority: 0, stackPolicy: "exclusive", minSubtotalMinor: 0, maxDiscountMinor: null, ruleVersion: 1, ...over,
+  priority: 0, stackPolicy: "exclusive", minSubtotalMinor: 0, maxDiscountMinor: null, ruleVersion: 1,
+  requiresCoupon: false, firstOrderOnly: false, tiers: [], conditionMinQuantity: 1, badge: { label: "C", emoji: null, imageUrl: null }, ...over,
 });
 const allEligible = (lines: any[], ids: string[]) => new Map(lines.map((l) => [l.productId, new Set(ids)]));
 const price = (lines: any[], campaigns: any[], extra: Record<string, unknown> = {}) =>
@@ -44,15 +45,18 @@ await t("engine: buy 3 pay 2 frees the cheapest unit of each full group; partial
   // units 1000,1000,400 | 400 → group 1 frees 400, second group incomplete
   assert(q.discountMinor === 400 && q.totalMinor === 2400, JSON.stringify({ d: q.discountMinor, t: q.totalMinor }));
 });
-await t("engine: exclusive picks the better campaign, combinable stacks on the rest, max discount scales", () => {
-  const lines = [line("a", 10000, 1)];
-  const q = price(lines, [
-    campaign({ id: "low", percentageBps: 1000 }),
-    campaign({ id: "high", percentageBps: 2500 }),
-    campaign({ id: "extra", kind: "amount", amountMinor: 500, stackPolicy: "combinable" }),
-  ]);
-  assert(q.discountMinor === 2500 + 500 && q.adjustments.map((a: any) => a.campaignId).join() === "high,extra", JSON.stringify(q.adjustments));
-  const capped = price(lines, [campaign({ percentageBps: 5000, maxDiscountMinor: 1234 })]);
+await t("engine: exclusive picks the better campaign and locks its units; a combinable one only gets the rest; max discount scales", () => {
+  const lines = [line("a", 10000, 1), line("b", 2000, 1)];
+  const q = pricing.priceCart({
+    lines, coupon: null, couponInvalid: false, shipping: null,
+    campaigns: [campaign({ id: "low", percentageBps: 1000 }), campaign({ id: "high", percentageBps: 2500 }), campaign({ id: "extra", kind: "amount", amountMinor: 500, stackPolicy: "combinable" })],
+    eligibility: new Map([["p_a", new Set(["low", "high", "extra"])], ["p_b", new Set(["extra"])]]),
+  });
+  // "high" (equal priority, better deal) takes a; "extra" (cart stage) cannot touch the locked unit → only b
+  const extra = q.adjustments.find((a: any) => a.campaignId === "extra");
+  assert(q.discountMinor === 2500 + 500 && q.adjustments.map((a: any) => a.campaignId).join() === "high,extra" && extra.lineVariantId === "v_b" && extra.stage === "cart", JSON.stringify(q.adjustments));
+  const lines1 = [line("a", 10000, 1)];
+  const capped = price(lines1, [campaign({ percentageBps: 5000, maxDiscountMinor: 1234 })]);
   assert(capped.discountMinor === 1234, String(capped.discountMinor));
 });
 await t("engine: unknown campaign kinds are ignored, discounts never exceed the line, unavailable lines warn", () => {
@@ -79,6 +83,86 @@ await t("engine: free-shipping campaign waives the fee (minimum after discounts,
   // not targeting any cart product → no effect
   const off = pricing.priceCart({ lines, campaigns: [free], eligibility: new Map(), coupon: null, couponInvalid: false, ...ship });
   assert(off.shippingMinor === 4990, String(off.shippingMinor));
+});
+
+await t("engine: pipeline — cart-stage minimum is checked after product discounts; promotions listed in stage order", () => {
+  const lines = [line("a", 10000, 1)];
+  const product = campaign({ id: "p20", percentageBps: 2000, stackPolicy: "combinable", badge: { label: "%20", emoji: "🔥", imageUrl: null } });
+  const cartPct = (min: number) => campaign({ id: "cart10", kind: "cart_percentage", percentageBps: 1000, stackPolicy: "combinable", minSubtotalMinor: min });
+  const under = price(lines, [cartPct(9000), product]);
+  assert(under.discountMinor === 2000 && under.promotions.length === 1, `after product 8000 < 9000 → no cart discount: ${under.discountMinor}`);
+  const over = price(lines, [cartPct(8000), product]);
+  assert(over.discountMinor === 2000 + 800 && over.promotions.map((p: any) => `${p.campaignId}:${p.stage}`).join() === "p20:product,cart10:cart", JSON.stringify(over.promotions));
+  assert(over.promotions[0].badge.emoji === "🔥" && over.adjustments[0].badge.label === "%20", "badges travel with the quote");
+});
+await t("engine: tiered quantity — the same product reaching a tier gets its rate on every unit", () => {
+  const tiered = campaign({ kind: "tiered_quantity", tiers: [{ minQuantity: 2, percentageBps: 1000 }, { minQuantity: 3, percentageBps: 2000 }] });
+  assert(price([line("a", 1000, 1)], [tiered]).discountMinor === 0, "1 unit: no tier");
+  assert(price([line("a", 1000, 2)], [tiered]).discountMinor === 200, "2 units: 10%");
+  assert(price([line("a", 1000, 4)], [tiered]).discountMinor === 800, "4 units: 20%");
+  // two different products of 1 unit each: neither reaches a tier
+  assert(price([line("a", 1000, 1), line("b", 1000, 1)], [tiered]).discountMinor === 0, "per product");
+});
+await t("engine: cross-sell — targets are discounted only while the cart holds enough condition units", () => {
+  const cross = campaign({ id: "x", kind: "cross_sell", percentageBps: 5000, conditionMinQuantity: 1 });
+  const run = (lines: any[]) => pricing.priceCart({
+    lines, campaigns: [cross], coupon: null, couponInvalid: false, shipping: null,
+    eligibility: new Map([["p_spray", new Set(["x"])]]), conditionEligibility: new Map([["p_shoe", new Set(["x"])]]),
+  });
+  assert(run([line("spray", 400, 1)]).discountMinor === 0, "no shoe, no discount");
+  assert(run([line("shoe", 3000, 1), line("spray", 400, 1)]).discountMinor === 200, "shoe in cart → spray 50%");
+});
+await t("engine: a non-stackable 3 al 2 öde locks its whole group; strategy decides between exclusive campaigns", () => {
+  const three = campaign({ id: "x3", kind: "buy_x_pay_y", buyQuantity: 3, payQuantity: 2, priority: 10 });
+  const pct = campaign({ id: "p10", percentageBps: 1000, priority: 0 });
+  assert(price([line("a", 1000, 3)], [three, pct]).discountMinor === 1000, "paid units of the group are not discounted again");
+  assert(price([line("a", 1000, 4)], [three, pct]).discountMinor === 1000 + 100, "the 4th unit (outside the group) gets 10%");
+  const a = campaign({ id: "a", percentageBps: 1000, priority: 10 }), b = campaign({ id: "b", percentageBps: 3000, priority: 0 });
+  assert(price([line("a", 1000, 1)], [a, b]).discountMinor === 100, "priority wins");
+  assert(price([line("a", 1000, 1)], [a, b], { policy: { conflictStrategy: "best_deal", maxDiscountBps: 10000 } }).discountMinor === 300, "best deal wins");
+});
+await t("engine: coupon stage — exclusion when not allowed with promotions; first-order coupons need a first order", () => {
+  const lines = [line("a", 10000, 1)];
+  const auto = campaign({ id: "auto", percentageBps: 1000, stackPolicy: "combinable" });
+  const cp = campaign({ id: "cp", percentageBps: 2000, stackPolicy: "combinable", requiresCoupon: true });
+  const coupon = (allow: boolean) => ({ id: "k1", campaignId: "cp", codeNormalized: "KOD", allowWithPromotions: allow });
+  const refused = price(lines, [auto, cp], { coupon: coupon(false) });
+  assert(refused.discountMinor === 1000 && refused.warnings.some((w: any) => w.code === "coupon_excluded") && !refused.warnings.some((w: any) => w.code === "coupon_not_applicable"), JSON.stringify(refused.warnings));
+  const ok = price(lines, [auto, cp], { coupon: coupon(true) });
+  const cpAdj = ok.adjustments.find((a: any) => a.campaignId === "cp");
+  assert(ok.discountMinor === 1000 + 1800 && cpAdj.stage === "coupon" && cpAdj.couponId === "k1" && ok.promotions.at(-1).couponCode === "KOD", JSON.stringify(ok.adjustments));
+  const alone = price(lines, [cp], { coupon: coupon(false) });
+  assert(alone.discountMinor === 2000, "no automatic discount → an exclusive-with-promotions coupon still works");
+  const first = campaign({ id: "cp", percentageBps: 2000, requiresCoupon: true, firstOrderOnly: true });
+  const notFirst = price(lines, [first], { coupon: coupon(true), firstOrder: false });
+  assert(notFirst.discountMinor === 0 && notFirst.warnings.some((w: any) => w.code === "coupon_first_order"), JSON.stringify(notFirst.warnings));
+  assert(price(lines, [first], { coupon: coupon(true), firstOrder: true }).discountMinor === 2000, "first order");
+});
+await t("engine: margin protection — floor price per unit and the cart-wide maximum discount share", () => {
+  const floored = price([{ ...line("a", 1000, 2), minPriceMinor: 900 }], [campaign({ percentageBps: 5000 })]);
+  assert(floored.discountMinor === 200 && floored.lines[0].totalMinor === 1800, "never below 900 a unit: " + floored.discountMinor);
+  const free = price([{ ...line("a", 1000, 3), minPriceMinor: 600 }], [campaign({ kind: "buy_x_pay_y", buyQuantity: 3, payQuantity: 2 })]);
+  assert(free.discountMinor === 400, "the free unit still costs its floor: " + free.discountMinor);
+  const lines = [line("a", 10000, 1)];
+  const capped = price(lines, [campaign({ id: "p50", percentageBps: 5000, stackPolicy: "combinable" }), campaign({ id: "cp", percentageBps: 2000, stackPolicy: "combinable", requiresCoupon: true })],
+    { coupon: { id: "k", campaignId: "cp", codeNormalized: "K" }, policy: { conflictStrategy: "priority", maxDiscountBps: 3000 } });
+  // product 5000 + coupon 1000 → cap 3000: the coupon is taken back first, then the product discount
+  assert(capped.discountMinor === 3000 && capped.adjustments.length === 1 && capped.adjustments[0].campaignId === "p50" && capped.warnings.some((w: any) => w.code === "discount_capped"), JSON.stringify(capped));
+});
+await t("engine: product promotions — badges of automatic campaigns, single-unit campaign price, coupon-only hidden", () => {
+  const badge = (label: string) => ({ label, emoji: "🔥", imageUrl: null });
+  const campaigns = [
+    campaign({ id: "x3", kind: "buy_x_pay_y", buyQuantity: 3, payQuantity: 2, badge: badge("3 Al 2 Öde"), priority: 5 }),
+    campaign({ id: "p20", percentageBps: 2000, stackPolicy: "combinable", badge: badge("%20") }),
+    campaign({ id: "cp", percentageBps: 5000, requiresCoupon: true, badge: badge("Gizli") }),
+  ];
+  const eligibility = new Map([["p_a", new Set(["x3", "p20", "cp"])], ["p_b", new Set<string>()]]);
+  const [a, b, floored] = pricing.productPromotions({
+    items: [{ productId: "p_a", priceMinor: 1000 }, { productId: "p_b", priceMinor: 500 }, { productId: "p_a", priceMinor: 1000, minPriceMinor: 900 }], campaigns, eligibility,
+  });
+  assert(a.badges.map((x: any) => x.label).join() === "3 Al 2 Öde,%20" && a.campaignPriceMinor === 800, JSON.stringify(a));
+  assert(b.badges.length === 0 && b.campaignPriceMinor === null, JSON.stringify(b));
+  assert(floored.campaignPriceMinor === 900, "floor respected: " + floored.campaignPriceMinor);
 });
 
 // --- container --------------------------------------------------------------------------------------

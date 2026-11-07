@@ -3,6 +3,33 @@ import { AT_LEAST_ONE_FIELD, atLeastOneField, entityId, slugInput } from "@/modu
 
 const sortOrder = z.coerce.number().int().min(-100000).max(100000);
 
+const optionInput = z.object({
+  label: z.string().trim().min(1).max(60),
+  value: z.string().trim().max(60).nullable().optional(),
+  colorHex: z.string().trim().regex(/^#[0-9A-Fa-f]{6}$/, "Renk kodu #RRGGBB olmalı.").nullable().optional().or(z.literal("").transform(() => null)),
+  numericValue: z.number().finite().nullable().optional(),
+  isActive: z.boolean().optional(),
+}).strict();
+const attributeFields = {
+  label: z.string().trim().min(2).max(60),
+  code: z.string().trim().max(40).nullable().optional(),
+  dataType: z.enum(["select", "multiselect", "text", "number", "boolean"]),
+  unit: z.string().trim().max(12).nullable().optional(),
+  description: z.string().trim().max(300).nullable().optional(),
+  isVariantAxis: z.boolean(),
+  isFilterable: z.boolean(),
+  displayStyle: z.enum(["button", "swatch", "dropdown"]),
+};
+export const attributeCreateSchema = z.object({ ...attributeFields, options: z.array(optionInput).max(200).optional() }).strict();
+export const attributeUpdateSchema = z.object(attributeFields).strict();
+export const attributeOptionsAddSchema = z.object({ options: z.array(optionInput).min(1).max(200) }).strict();
+export const attributeOptionUpdateSchema = optionInput;
+export const attributeOptionsOrderSchema = z.object({ order: z.array(entityId).min(1).max(500) }).strict();
+export const attributeCategoriesSchema = z.object({ categories: z.array(z.object({ categoryId: entityId, isRequired: z.boolean() }).strict()).max(500) }).strict();
+export const attributeTemplateSchema = z.object({ template: z.enum(["color", "clothing_size", "shoe_size", "carpet_size", "area_m2", "volume", "storage", "kids_age"]) }).strict();
+export const barcodeGenerateSchema = z.object({ count: z.number().int().min(1).max(500) }).strict();
+export const barcodePrefixSchema = z.object({ prefix: z.string().trim().regex(/^\d{3,10}$/, "Önek 3–10 haneli bir sayı olmalı.") }).strict();
+
 export const categoryCreateSchema = z.object({
   name: z.string().trim().min(2).max(160),
   slug: slugInput.optional(),

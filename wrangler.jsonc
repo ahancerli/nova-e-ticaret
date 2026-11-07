@@ -31,8 +31,10 @@
 		},
 	],
 	"observability": { "enabled": true },
+	// Source maps exceed the 60 MiB upload limit; stack traces stay readable enough via observability logs.
+	"upload_source_maps": false,
 	"vars": {
 		"APP_ENV": "production",
-		"PUBLIC_SITE_URL": "https://example.com",
+		"PUBLIC_SITE_URL": "https://nova-commerce.akmanhancerli.workers.dev",
 	},
 }

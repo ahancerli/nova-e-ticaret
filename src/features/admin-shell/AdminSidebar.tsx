@@ -4,6 +4,7 @@ import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ComponentType } from "react";
 import {
+  FileSpreadsheet,
   ChevronRight,
   Contact,
   CreditCard,
@@ -31,6 +32,7 @@ export type SidebarIcon =
   | "brands"
   | "campaigns"
   | "showcase"
+  | "bulk"
   | "payments"
   | "integrations"
   | "users"
@@ -68,6 +70,7 @@ export const iconMap: Record<SidebarIcon, ComponentType<{ className?: string }>>
   brands: Tags,
   campaigns: Megaphone,
   showcase: MonitorCog,
+  bulk: FileSpreadsheet,
   payments: CreditCard,
   integrations: PlugZap,
   users: UsersRound,

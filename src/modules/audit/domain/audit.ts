@@ -18,12 +18,12 @@ export type AuditArea = keyof typeof AUDIT_AREAS;
 
 /** First action segment → area. Anything not listed (e.g. seed rows) is "other". */
 export const AREA_OF_PREFIX: Record<string, Exclude<AuditArea, "all" | "other">> = {
-  category: "catalog", brand: "catalog", product: "catalog", media: "catalog",
+  category: "catalog", brand: "catalog", product: "catalog", media: "catalog", attribute: "catalog", barcode: "catalog", bulk: "catalog", product_feed: "catalog",
   order: "orders",
-  campaign: "campaigns", coupon: "campaigns",
+  campaign: "campaigns", coupon: "campaigns", pricing_policy: "campaigns",
   content: "content", showcase: "content",
   staff: "accounts", role: "accounts", customer: "accounts", account: "accounts",
-  settings: "settings", ai_integration: "settings", mail_integration: "settings", payment: "settings", bank_account: "settings", integration: "settings", ai: "catalog",
+  settings: "settings", ai_integration: "settings", mail_integration: "settings", payment: "settings", bank_account: "settings", integration: "settings", marketplace: "settings", ai: "catalog",
 };
 
 export const areaOf = (action: string): Exclude<AuditArea, "all"> => AREA_OF_PREFIX[action.split(".")[0] ?? ""] ?? "other";
@@ -31,7 +31,7 @@ export const areaOf = (action: string): Exclude<AuditArea, "all"> => AREA_OF_PRE
 export const ENTITY_LABELS: Record<string, string> = {
   category: "Kategori", brand: "Marka", product: "Ürün", media: "Görsel", order: "Sipariş", campaign: "Kampanya", coupon: "Kupon",
   content_page: "İçerik sayfası", showcase: "Vitrin", user: "Kullanıcı", role: "Rol", site_settings: "Site ayarları", ai_integration: "AI entegrasyonu", mail_integration: "E-posta (SMTP)",
-  payment_config: "Ödeme yöntemi", bank_account: "Banka hesabı", integration: "Entegrasyon",
+  payment_config: "Ödeme yöntemi", bank_account: "Banka hesabı", integration: "Entegrasyon", marketplace: "Pazaryeri bağlantısı", pricing_policy: "Kampanya kuralları", bulk_job: "Toplu işlem", attribute: "Özellik", product_feed: "Ürün kaynağı (XML / REST)",
 };
 
 const VERB_LABELS: Record<string, string> = {
@@ -46,13 +46,22 @@ const ACTION_LABELS: Record<string, string> = {
   "order.reconcile": "Havale onaylandı", "order.prepare": "Sipariş hazırlanıyor", "order.ship": "Sipariş kargoya verildi",
   "order.deliver": "Sipariş teslim edildi", "order.complete": "Sipariş tamamlandı", "order.cancel": "Sipariş iptal edildi",
   "order.refund": "Sipariş iade edildi", "order.note": "Siparişe not eklendi",
-  "coupon.create": "Kupon oluşturuldu", "account.password_reset": "Parola yenilendi", "account.invite_accepted": "Davet kabul edildi",
+  "coupon.create": "Kupon oluşturuldu", "pricing_policy.update": "Kampanya kuralları güncellendi",
+  "attribute.create": "Özellik eklendi", "attribute.update": "Özellik güncellendi", "attribute.delete": "Özellik silindi",
+  "attribute.option_add": "Özellik değeri eklendi", "attribute.option_update": "Özellik değeri güncellendi", "attribute.option_delete": "Özellik değeri silindi",
+  "attribute.option_reorder": "Özellik değerleri sıralandı", "attribute.categories": "Özelliğin kategorileri değişti", "barcode.prefix": "Barkod öneki değişti",
+  "bulk.create": "Excel ile toplu ürün eklendi", "bulk.update": "Excel ile toplu ürün güncellendi", "bulk.images": "Excel ile toplu görsel güncellendi",
+  "bulk.prices": "Excel ile toplu fiyat güncellendi", "bulk.stock": "Excel ile toplu stok güncellendi",
+  "product_feed.create": "Ürün kaynağı eklendi", "product_feed.update": "Ürün kaynağı güncellendi", "product_feed.delete": "Ürün kaynağı silindi", "account.password_reset": "Parola yenilendi", "account.invite_accepted": "Davet kabul edildi",
   "settings.update": "Site ayarları güncellendi", "seed.insert": "Kurulum verisi",
   "ai_integration.create": "AI entegrasyonu eklendi", "ai_integration.update": "AI entegrasyonu güncellendi", "ai_integration.delete": "AI entegrasyonu kaldırıldı",
   "mail_integration.create": "E-posta (SMTP) ayarı eklendi", "mail_integration.update": "E-posta (SMTP) ayarı güncellendi", "mail_integration.delete": "E-posta (SMTP) ayarı kaldırıldı",
   "ai.product_generate": "AI ile ürün içeriği oluşturuldu",
   "payment.iyzico_keys": "iyzico anahtarları güncellendi", "payment.card_activate": "Kartla ödeme açıldı", "payment.card_deactivate": "Kartla ödeme kapatıldı",
   "payment.bank_transfer_activate": "Havale / EFT açıldı", "payment.bank_transfer_deactivate": "Havale / EFT kapatıldı",
+  "marketplace.create": "Pazaryeri bağlandı", "marketplace.update": "Pazaryeri bağlantısı güncellendi", "marketplace.delete": "Pazaryeri bağlantısı silindi",
+  "marketplace.mapping": "Pazaryeri eşleştirmesi değişti", "marketplace.listings_add": "Pazaryerine ürün eklendi",
+  "marketplace.listings_pause": "Pazaryerinde satış durduruldu", "marketplace.listings_resume": "Pazaryerinde satış açıldı",
   "integration.create": "Entegrasyon bağlandı", "integration.update": "Entegrasyon güncellendi", "integration.delete": "Entegrasyon kaldırıldı",
 };
 
@@ -95,6 +104,10 @@ export function entityHref(entityType: string, entityId: string | null, opts: { 
     case "product": return `/admin/urunler/${id}`;
     case "category": return `/admin/kategoriler/${id}`;
     case "campaign": return `/admin/kampanyalar/${id}`;
+    case "pricing_policy": return "/admin/kampanyalar";
+    case "bulk_job": return "/admin/toplu-islemler?sekme=gecmis";
+    case "attribute": return "/admin/ozellikler";
+    case "product_feed": return "/admin/toplu-islemler?sekme=xml";
     case "content_page": return `/admin/icerik/${id}`;
     case "user": return opts.isStaff ? `/admin/kullanicilar/${id}` : `/admin/musteriler/${id}`;
     case "role": return "/admin/kullanicilar/roller";
@@ -103,6 +116,7 @@ export function entityHref(entityType: string, entityId: string | null, opts: { 
     case "ai_integration": return "/admin/entegrasyonlar/ai";
     case "mail_integration": return "/admin/entegrasyonlar/e-posta";
     case "payment_config": case "bank_account": return "/admin/odemeler";
+    case "marketplace": return `/admin/entegrasyonlar/pazaryerleri/${entityId}`;
     case "integration": return entityId === "sms" ? "/admin/entegrasyonlar/sms" : entityId === "shipping" ? "/admin/entegrasyonlar/kargo" : null;
     default: return null;
   }

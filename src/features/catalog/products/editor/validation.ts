@@ -57,6 +57,8 @@ export function validate(f: FormState, ctx: Ctx): Errors {
     if (price == null) add(k("priceMinor"), "Satış fiyatı gerekli.");
     else if (Number.isNaN(price)) add(k("priceMinor"), "Geçerli bir tutar girin (örn. 1.299,90).");
     if (compare != null && (Number.isNaN(compare) || (price != null && !Number.isNaN(price) && compare <= price))) add(k("compareAtMinor"), "Eski fiyat, satış fiyatından büyük olmalı.");
+    const floor = strToMinor(v.minPrice);
+    if (floor != null && (Number.isNaN(floor) || (price != null && !Number.isNaN(price) && floor > price))) add(k("minPriceMinor"), "Taban fiyat, satış fiyatından büyük olamaz.");
     const stock = strToInt(v.stock);
     if (stock == null || Number.isNaN(stock)) add(k("stock"), "Stok adedi girin.");
     else if (stock < v.reserved) add(k("stock"), `Rezerve ${v.reserved} adetin altına inemez.`);

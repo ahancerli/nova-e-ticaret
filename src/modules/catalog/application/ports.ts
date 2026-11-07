@@ -1,4 +1,5 @@
 import type { Statement } from "@/core";
+import type { AttributeInput, AttributeRow, OptionInput } from "../domain/attribute";
 import type { BrandPatch, BrandRow } from "../domain/brand";
 import type { CategoryPatch, CategoryRecord } from "../domain/category";
 
@@ -27,3 +28,26 @@ export interface BrandRepository {
   /** Deletes only while the brand still has no products and no stories (guard the result). */
   deleteIfUnusedStatement(id: string): Statement;
 }
+
+/** Attribute definitions, options, category assignments and the barcode sequence (Katalog › Özellikler). */
+export interface AttributeRepository {
+  list(): Promise<AttributeRow[]>;
+  find(id: string): Promise<AttributeRow | null>;
+  codeTaken(code: string, exceptId: string | null): Promise<boolean>;
+  valueTaken(attributeId: string, value: string, exceptId: string | null): Promise<boolean>;
+  maxOptionOrder(attributeId: string): Promise<number>;
+  existingCategories(ids: string[]): Promise<number>;
+  insertStatement(id: string, code: string, a: AttributeInput): Statement;
+  updateStatement(id: string, a: AttributeInput): Statement;
+  deleteStatement(id: string): Statement;
+  insertOptionStatement(id: string, attributeId: string, value: string, o: OptionInput, sortOrder: number): Statement;
+  updateOptionStatement(id: string, attributeId: string, o: OptionInput): Statement;
+  deleteOptionStatement(id: string, attributeId: string): Statement;
+  reorderOptionStatements(attributeId: string, ids: string[]): Statement[];
+  replaceCategoriesStatements(attributeId: string, cats: { categoryId: string; isRequired: boolean }[]): Statement[];
+  barcodeSettings(): Promise<{ prefix: string; nextValue: number }>;
+  setPrefixStatement(prefix: string): Statement;
+  reserveNumbers(count: number): Promise<{ prefix: string; first: number }>;
+  takenBarcodes(codes: string[]): Promise<Set<string>>;
+}
+
