@@ -9,7 +9,7 @@ export const AUDIT_AREAS = {
   catalog: "Katalog",
   orders: "Siparişler",
   campaigns: "Kampanyalar",
-  content: "İçerik ve vitrin",
+  content: "İçerik, vitrin ve yorumlar",
   accounts: "Kullanıcılar ve müşteriler",
   settings: "Ayarlar",
   other: "Diğer",
@@ -21,9 +21,9 @@ export const AREA_OF_PREFIX: Record<string, Exclude<AuditArea, "all" | "other">>
   category: "catalog", brand: "catalog", product: "catalog", media: "catalog", attribute: "catalog", barcode: "catalog", bulk: "catalog", product_feed: "catalog",
   order: "orders",
   campaign: "campaigns", coupon: "campaigns", pricing_policy: "campaigns",
-  content: "content", showcase: "content",
+  content: "content", showcase: "content", review: "content", review_settings: "content",
   staff: "accounts", role: "accounts", customer: "accounts", account: "accounts",
-  settings: "settings", ai_integration: "settings", mail_integration: "settings", payment: "settings", bank_account: "settings", integration: "settings", marketplace: "settings", ai: "catalog",
+  settings: "settings", notification_rule: "settings", ai_integration: "settings", mail_integration: "settings", payment: "settings", bank_account: "settings", integration: "settings", marketplace: "settings", ai: "catalog",
 };
 
 export const areaOf = (action: string): Exclude<AuditArea, "all"> => AREA_OF_PREFIX[action.split(".")[0] ?? ""] ?? "other";
@@ -31,6 +31,7 @@ export const areaOf = (action: string): Exclude<AuditArea, "all"> => AREA_OF_PRE
 export const ENTITY_LABELS: Record<string, string> = {
   category: "Kategori", brand: "Marka", product: "Ürün", media: "Görsel", order: "Sipariş", campaign: "Kampanya", coupon: "Kupon",
   content_page: "İçerik sayfası", showcase: "Vitrin", user: "Kullanıcı", role: "Rol", site_settings: "Site ayarları", ai_integration: "AI entegrasyonu", mail_integration: "E-posta (SMTP)",
+  review: "Ürün yorumu", review_settings: "Yorum ayarları", notification_rule: "Bildirim ayarları",
   payment_config: "Ödeme yöntemi", bank_account: "Banka hesabı", integration: "Entegrasyon", marketplace: "Pazaryeri bağlantısı", pricing_policy: "Kampanya kuralları", bulk_job: "Toplu işlem", attribute: "Özellik", product_feed: "Ürün kaynağı (XML / REST)",
 };
 
@@ -54,6 +55,9 @@ const ACTION_LABELS: Record<string, string> = {
   "bulk.prices": "Excel ile toplu fiyat güncellendi", "bulk.stock": "Excel ile toplu stok güncellendi",
   "product_feed.create": "Ürün kaynağı eklendi", "product_feed.update": "Ürün kaynağı güncellendi", "product_feed.delete": "Ürün kaynağı silindi", "account.password_reset": "Parola yenilendi", "account.invite_accepted": "Davet kabul edildi",
   "settings.update": "Site ayarları güncellendi", "seed.insert": "Kurulum verisi",
+  "review.approve": "Yorum yayınlandı", "review.reject": "Yorum reddedildi", "review.hide": "Yorum yayından kaldırıldı", "review.reply": "Yoruma mağaza yanıtı verildi",
+  "review.reply_delete": "Mağaza yanıtı kaldırıldı", "review.contact": "Yorum sahibiyle iletişime geçildi", "review.contact_status": "Yorumun iletişim durumu değişti",
+  "review_settings.update": "Yorum ayarları güncellendi", "notification_rule.update": "Bildirim ayarları güncellendi",
   "ai_integration.create": "AI entegrasyonu eklendi", "ai_integration.update": "AI entegrasyonu güncellendi", "ai_integration.delete": "AI entegrasyonu kaldırıldı",
   "mail_integration.create": "E-posta (SMTP) ayarı eklendi", "mail_integration.update": "E-posta (SMTP) ayarı güncellendi", "mail_integration.delete": "E-posta (SMTP) ayarı kaldırıldı",
   "ai.product_generate": "AI ile ürün içeriği oluşturuldu",

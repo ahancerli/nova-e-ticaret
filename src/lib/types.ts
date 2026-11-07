@@ -45,6 +45,17 @@ export interface ProductDetail {
   specs: { label: string; value: string }[];
   related: ProductCard[];
   breadcrumb: { name: string; slug: string }[];
+  /** Average of published reviews (null = none yet) and their count. */
+  rating: number | null;
+  ratingCount: number;
+}
+
+/** One column of the comparison page (/karsilastir). */
+export interface ComparedProduct {
+  card: ProductCard;
+  shortDescription: string | null;
+  categoryName: string | null;
+  specs: { code: string; label: string; value: string }[];
 }
 
 export interface Facets {

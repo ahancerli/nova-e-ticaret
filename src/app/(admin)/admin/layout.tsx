@@ -12,7 +12,8 @@ type NavLink = {
   type: "link";
   href: string;
   label: string;
-  perm: string;
+  /** Required permission; leave out for pages every staff member sees. */
+  perm?: string;
   icon: SidebarEntry["icon"];
 };
 
@@ -32,6 +33,8 @@ const NAV: Array<{ title: string; items: NavEntry[] }> = [
       { type: "link", href: "/admin", label: "Dashboard", perm: "orders.read", icon: "dashboard" },
       { type: "link", href: "/admin/siparisler", label: "Siparişler", perm: "orders.read", icon: "orders" },
       { type: "link", href: "/admin/musteriler", label: "Müşteriler", perm: "customers.read", icon: "customers" },
+      { type: "link", href: "/admin/yorumlar", label: "Ürün yorumları", perm: "reviews.moderate", icon: "reviews" },
+      { type: "link", href: "/admin/bildirimler", label: "Bildirimler", icon: "notifications" },
     ],
   },
   {
@@ -87,11 +90,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     const items: SidebarEntry[] = [];
     for (const item of group.items) {
       if (item.type === "nest") {
-        const children = item.children.filter((c) => user.permissions.has(c.perm));
+        const children = item.children.filter((c) => !c.perm || user.permissions.has(c.perm));
         if (children.length > 0) items.push({ type: "nest", label: item.label, icon: item.icon, children });
         continue;
       }
-      if (user.permissions.has(item.perm)) items.push(item);
+      if (!item.perm || user.permissions.has(item.perm)) items.push(item);
     }
     return { title: group.title, items };
   }).filter((g) => g.items.length > 0);

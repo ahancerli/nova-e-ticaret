@@ -6,9 +6,9 @@ import { notify } from "@/lib/toast";
 import { errorMessage } from "@/lib/api-client";
 import { AdminBadge, AdminCard, AdminCardTitle } from "@/components/admin/ui";
 import { AdminConfirmDialog } from "@/components/admin/AdminConfirmDialog";
-import { BULK_OPS, MATCH_KEYS, MATCH_KEY_KEYS, MAX_ROWS, type BulkOp, type MatchKey, type RowResult } from "@/modules/bulk/domain/bulk";
+import { BULK_OPS, MATCH_KEYS, MATCH_KEY_KEYS, MAX_ROWS, groupKeyOf, type BulkOp, type MatchKey, type RowResult, type VariantAxisColumn } from "@/modules/bulk/domain/bulk";
 import { bulkApi } from "./api";
-import { downloadReport, downloadTemplate, parseSheet, type ParsedSheet } from "./sheet";
+import { chunkRows, downloadReport, downloadTemplate, parseSheet, type ParsedSheet } from "./sheet";
 import { ProgressBar, ResultsTable, StatTiles } from "./ui";
 
 type Phase = "idle" | "reading" | "checking" | "checked" | "applying" | "done";
@@ -16,11 +16,13 @@ type Phase = "idle" | "reading" | "checking" | "checked" | "applying" | "done";
 /**
  * One Excel tab (ürün ekle / güncelle / görsel / fiyat / stok). Two-step safety: the file is checked automatically
  * as soon as it is chosen (browser rules first, then the server's dry run — nothing is written), and only rows that
- * passed are sent when the shop presses "Yükle".
+ * passed are sent when the shop presses "Yükle". "Ürün ekle" reads variant columns (`axes`: Renk, Beden …).
  */
-export function ExcelImport({ op }: { op: BulkOp }) {
+export function ExcelImport({ op, axes = [] }: { op: BulkOp; axes?: VariantAxisColumn[] }) {
   const spec = BULK_OPS[op];
   const [key, setKey] = useState<MatchKey>("barcode");
+  // variant columns of the downloadable template ("Ürün ekle")
+  const [templateAxes, setTemplateAxes] = useState<string[]>([]);
   const [imageMode, setImageMode] = useState<"replace" | "append">("replace");
   const [sheet, setSheet] = useState<ParsedSheet | null>(null);
   const [results, setResults] = useState<Map<number, RowResult>>(new Map());
@@ -52,7 +54,7 @@ export function ExcelImport({ op }: { op: BulkOp }) {
     setPhase("reading");
     let parsed: ParsedSheet;
     try {
-      parsed = await parseSheet(file, op, k);
+      parsed = await parseSheet(file, op, k, axes);
     } catch (e) {
       setFatal(e instanceof Error ? e.message : "Dosya okunamadı.");
       setPhase("idle");
@@ -61,20 +63,29 @@ export function ExcelImport({ op }: { op: BulkOp }) {
     setSheet(parsed);
     if (parsed.missingColumns.length || !parsed.rows.length) { setPhase("checked"); return; }
 
-    // server dry run for the rows that passed the browser check, in chunks
-    const valid = parsed.rows.filter((_, i) => !parsed.local[i]!.errors.length);
+    // server dry run for the rows that passed the browser check, in chunks. A model (rows sharing a model code) is
+    // written all-or-nothing: one bad row holds back its siblings, so they never create a product with missing variants.
+    const badModels = new Map<string, number[]>();
+    if (op === "create") for (const r of parsed.local) if (r.errors.length) badModels.set(groupKeyOf(r), [...(badModels.get(groupKeyOf(r)) ?? []), r.line]);
+    const next = new Map<number, RowResult>();
+    for (const r of parsed.local) {
+      const bad = !r.errors.length ? badModels.get(groupKeyOf(r)) : undefined;
+      if (bad) next.set(r.line, { line: r.line, key: r.values.sku ?? r.key, status: "error", productId: null, productName: null, messages: [`Aynı modeldeki ${bad.join(", ")}. satır hatalı; bir modelin satırları birlikte yüklenir.`] });
+    }
+    setResults(new Map(next));
+    const valid = parsed.rows.filter((_, i) => !parsed.local[i]!.errors.length && !next.has(parsed.local[i]!.line));
     const ctrl = new AbortController();
     abort.current = ctrl;
     setPhase("checking");
     setProgress({ done: 0, total: valid.length });
-    const next = new Map<number, RowResult>();
     try {
-      for (let i = 0; i < valid.length; i += spec.chunk) {
-        const part = valid.slice(i, i + spec.chunk);
+      let done = 0;
+      for (const part of chunkRows(op, valid, spec.chunk)) {
         const r = await bulkApi.check({ op, matchKey: k, imageMode: mode, rows: part }, ctrl.signal);
         for (const x of r.data) next.set(x.line, x);
         setResults(new Map(next));
-        setProgress({ done: Math.min(valid.length, i + part.length), total: valid.length });
+        done += part.length;
+        setProgress({ done, total: valid.length });
       }
       setPhase("checked");
     } catch (e) {
@@ -97,25 +108,27 @@ export function ExcelImport({ op }: { op: BulkOp }) {
     // rows refused by the check are not sent, but the job history should count them
     const refused = rows.filter((r) => r.status === "error");
     const statusOf = (line: number, localErrors: number) => next.get(line)?.status ?? (localErrors ? "error" : "ok");
+    const chunks = chunkRows(op, send, spec.chunk);
+    let done = 0;
     try {
-      for (let i = 0; i < send.length; i += spec.chunk) {
+      for (const [ci, part] of chunks.entries()) {
         if (ctrl.signal.aborted) break;
-        const part = send.slice(i, i + spec.chunk);
         const r = await bulkApi.apply({
-          op, matchKey: key, imageMode, rows: part, jobId: job, source: sheet.fileName, totalRows: sheet.rows.length, final: i + spec.chunk >= send.length,
+          op, matchKey: key, imageMode, rows: part, jobId: job, source: sheet.fileName, totalRows: sheet.rows.length, final: ci === chunks.length - 1,
           ...(job ? {} : { rejectedCount: refused.length, rejected: refused.slice(0, 100).map((x) => ({ line: x.line, key: x.key, message: x.messages.join(" ").slice(0, 500) })) }),
         });
         job = r.data.jobId;
         setJobId(job);
         for (const x of r.data.results) next.set(x.line, x);
         setResults(new Map(next));
-        setProgress({ done: Math.min(send.length, i + part.length), total: send.length });
+        done += part.length;
+        setProgress({ done, total: send.length });
       }
       if (ctrl.signal.aborted && job) await bulkApi.apply({ op, matchKey: key, imageMode, rows: [], jobId: job, source: sheet.fileName, totalRows: sheet.rows.length, final: true });
       const all = sheet.local.map((r) => statusOf(r.line, r.errors.length));
       const created = all.filter((x) => x === "created").length, updated = all.filter((x) => x === "updated").length;
       const failed = all.filter((x) => x === "error").length;
-      notify.success(ctrl.signal.aborted ? "Yükleme durduruldu" : "Yükleme tamamlandı", { description: `${created ? `${created} ürün eklendi · ` : ""}${updated} güncellendi${failed ? ` · ${failed} hatalı` : ""}` });
+      notify.success(ctrl.signal.aborted ? "Yükleme durduruldu" : "Yükleme tamamlandı", { description: `${created ? `${created} satır eklendi · ` : ""}${updated} güncellendi${failed ? ` · ${failed} hatalı` : ""}` });
     } catch (e) {
       notify.error(e, { fallback: "Yükleme yarıda kaldı." });
       if (job) await bulkApi.apply({ op, matchKey: key, imageMode, rows: [], jobId: job, source: sheet.fileName, totalRows: sheet.rows.length, final: true }).catch(() => undefined);
@@ -203,7 +216,22 @@ export function ExcelImport({ op }: { op: BulkOp }) {
           <aside className="space-y-3 rounded-2xl bg-gradient-to-br from-[#7367f0]/10 to-transparent p-4">
             <p className="text-sm font-semibold text-slate-800">1. Örnek dosyayı indirin</p>
             <p className="text-xs text-slate-600">Başlıklar ve iki örnek satır hazır; ikinci sayfada her sütun açıklanıyor.{spec.needsKey ? ` İlk sütun: ${MATCH_KEYS[key].label}.` : ""}</p>
-            <button type="button" onClick={() => downloadTemplate(op, key)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-semibold text-[#5b4fe0] shadow-sm ring-1 ring-[#7367f0]/30 hover:bg-[#7367f0]/5">
+            {op === "create" && axes.length ? (
+              <fieldset>
+                <legend className="mb-1 text-xs font-medium text-slate-700">Varyantlı ürünler için sütunlar</legend>
+                <div className="flex flex-wrap gap-1.5">
+                  {axes.map((a) => {
+                    const on = templateAxes.includes(a.code);
+                    return (
+                      <button key={a.code} type="button" aria-pressed={on} onClick={() => setTemplateAxes((t) => (on ? t.filter((x) => x !== a.code) : [...t, a.code]))}
+                        className={`h-7 rounded-md border px-2 text-xs font-medium ${on ? "border-[#7367f0] bg-[#7367f0] text-white" : "border-slate-200 bg-white text-slate-600"}`}>{a.label}</button>
+                    );
+                  })}
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">Seçtikleriniz örnek dosyaya “Varyant: Renk” gibi sütun olarak eklenir; aynı model kodlu satırlar tek ürünün varyantları olur.</p>
+              </fieldset>
+            ) : null}
+            <button type="button" onClick={() => downloadTemplate(op, key, axes.filter((a) => templateAxes.includes(a.code)))} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-semibold text-[#5b4fe0] shadow-sm ring-1 ring-[#7367f0]/30 hover:bg-[#7367f0]/5">
               <Download className="size-4" />Örnek Excel ({spec.label})
             </button>
             <ol className="space-y-1.5 pt-1 text-xs text-slate-600">

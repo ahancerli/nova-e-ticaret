@@ -20,7 +20,7 @@ export class D1AttributeRepository extends Repository implements AttributeReposi
       ),
       this.db.statement("SELECT category_id, attribute_id, is_required FROM category_attributes ORDER BY sort_order"),
     ]);
-    type A = { id: string; code: string; label: string; data_type: AttributeType; unit: string | null; description: string | null; is_variant_axis: number; is_filterable: number; display_style: DisplayStyle; sort_order: number; product_count: number };
+    type A = { id: string; code: string; label: string; data_type: AttributeType; unit: string | null; description: string | null; is_variant_axis: number; is_filterable: number; display_style: DisplayStyle; varies_media: number; sort_order: number; product_count: number };
     type O = { id: string; attribute_id: string; value_code: string; label: string; color_hex: string | null; numeric_value: number | null; sort_order: number; is_active: number; usage: number };
     const rows = <T>(r: unknown) => ((r as { results?: T[] } | undefined)?.results ?? []) as T[];
     const options = new Map<string, AttributeOptionRow[]>();
@@ -35,7 +35,7 @@ export class D1AttributeRepository extends Repository implements AttributeReposi
     }
     return rows<A>(attrs).map((a) => ({
       id: a.id, code: a.code, label: a.label, dataType: a.data_type, unit: a.unit, description: a.description, isVariantAxis: a.is_variant_axis === 1,
-      isFilterable: a.is_filterable === 1, displayStyle: a.display_style, sortOrder: a.sort_order, productCount: a.product_count,
+      isFilterable: a.is_filterable === 1, displayStyle: a.display_style, variesMedia: a.varies_media === 1, sortOrder: a.sort_order, productCount: a.product_count,
       options: options.get(a.id) ?? [], categories: categories.get(a.id) ?? [],
     }));
   }
@@ -63,16 +63,18 @@ export class D1AttributeRepository extends Repository implements AttributeReposi
 
   insertStatement(id: string, code: string, a: AttributeInput): Statement {
     return this.db.statement(
-      `INSERT INTO attribute_definitions (id, code, label, data_type, unit, description, is_variant_axis, is_filterable, display_style, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM attribute_definitions))`,
+      `INSERT INTO attribute_definitions (id, code, label, data_type, unit, description, is_variant_axis, is_filterable, display_style, varies_media, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM attribute_definitions))`,
       id, code, a.label.trim(), a.dataType, a.unit?.trim() || null, a.description?.trim() || null, a.isVariantAxis ? 1 : 0, a.isFilterable ? 1 : 0, a.displayStyle,
+      a.isVariantAxis && a.variesMedia ? 1 : 0,
     );
   }
 
   updateStatement(id: string, a: AttributeInput): Statement {
     return this.db.statement(
-      `UPDATE attribute_definitions SET label = ?, data_type = ?, unit = ?, description = ?, is_variant_axis = ?, is_filterable = ?, display_style = ? WHERE id = ?`,
-      a.label.trim(), a.dataType, a.unit?.trim() || null, a.description?.trim() || null, a.isVariantAxis ? 1 : 0, a.isFilterable ? 1 : 0, a.displayStyle, id,
+      `UPDATE attribute_definitions SET label = ?, data_type = ?, unit = ?, description = ?, is_variant_axis = ?, is_filterable = ?, display_style = ?, varies_media = ? WHERE id = ?`,
+      a.label.trim(), a.dataType, a.unit?.trim() || null, a.description?.trim() || null, a.isVariantAxis ? 1 : 0, a.isFilterable ? 1 : 0, a.displayStyle,
+      a.isVariantAxis && a.variesMedia ? 1 : 0, id,
     );
   }
 

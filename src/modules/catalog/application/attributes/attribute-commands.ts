@@ -84,7 +84,7 @@ export class UpdateAttribute extends AttributeCommand {
     if (current.productCount > 0 && (current.dataType !== input.dataType || current.isVariantAxis !== input.isVariantAxis)) throw AttributeErrors.typeLocked();
     await new UnitOfWork(this.deps.db)
       .add(this.deps.attributes.updateStatement(id, input))
-      .add(this.deps.audit.recordStatement({ actor, action: "attribute.update", entityType: "attribute", entityId: id, diff: { label: input.label, style: input.displayStyle } }))
+      .add(this.deps.audit.recordStatement({ actor, action: "attribute.update", entityType: "attribute", entityId: id, diff: { label: input.label, style: input.displayStyle, variesMedia: Boolean(input.variesMedia) } }))
       .commit();
   }
 }

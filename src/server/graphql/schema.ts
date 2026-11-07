@@ -1,6 +1,7 @@
 import "server-only";
 import { buildSchema } from "graphql";
 import type { Token } from "@/core";
+import { GetProductReviewsToken, PUBLIC_REVIEW_SORTS, type PublicReviewSort } from "@/modules/reviews";
 import {
   GetFacetsToken, GetShellToken, ListCatalogProductsToken, SearchSuggestToken, parseListQuery,
 } from "@/modules/storefront";
@@ -23,7 +24,27 @@ export const schema = buildSchema(/* GraphQL */ `
     categories: [Category!]!
     "Search-as-you-type; fewer than 2 characters answers empty."
     suggest(q: String!): Suggestions!
+    "Published reviews of a product: rating summary + one page (10)."
+    reviews(productId: ID!, sort: ReviewSort, rating: Int, page: Int): ReviewPage!
   }
+
+  enum ReviewSort { newest helpful rating_desc rating_asc }
+  type ReviewReply { body: String!, repliedAt: String! }
+  type Review {
+    id: ID!
+    rating: Int!
+    title: String
+    body: String!
+    "Masked name (A*** D***) or Gizli müşteri."
+    authorName: String!
+    verifiedPurchase: Boolean!
+    variantLabel: String
+    helpfulCount: Int!
+    publishedAt: String!
+    reply: ReviewReply
+  }
+  type RatingSummary { average: Float, count: Int!, "Index 0 = 1 star … 4 = 5 stars." distribution: [Int!]! }
+  type ReviewPage { summary: RatingSummary!, items: [Review!]!, total: Int!, page: Int!, pages: Int! }
 
   enum ProductSort { newest price_asc price_desc name }
 
@@ -108,4 +129,8 @@ export const rootValue = {
     ctx.resolve(GetFacetsToken).execute(parseListQuery(toListQuery(filter))), // sort / page are ignored by facets
   categories: async (_: unknown, ctx: GraphContext) => (await ctx.resolve(GetShellToken).execute()).categories,
   suggest: ({ q }: { q: string }, ctx: GraphContext) => ctx.resolve(SearchSuggestToken).execute(q),
+  reviews: (a: { productId: string; sort?: string | null; rating?: number | null; page?: number | null }, ctx: GraphContext) =>
+    ctx.resolve(GetProductReviewsToken).execute(a.productId.slice(0, 64), {
+      sort: a.sort && a.sort in PUBLIC_REVIEW_SORTS ? (a.sort as PublicReviewSort) : "newest", rating: a.rating, page: a.page ?? 1,
+    }),
 };

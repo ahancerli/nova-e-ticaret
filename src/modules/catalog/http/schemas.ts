@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AT_LEAST_ONE_FIELD, atLeastOneField, entityId, slugInput } from "@/modules/shared/schemas";
+import { ATTRIBUTE_TEMPLATE_KEYS, type AttributeTemplateKey } from "../domain/attribute";
 
 const sortOrder = z.coerce.number().int().min(-100000).max(100000);
 
@@ -19,6 +20,7 @@ const attributeFields = {
   isVariantAxis: z.boolean(),
   isFilterable: z.boolean(),
   displayStyle: z.enum(["button", "swatch", "dropdown"]),
+  variesMedia: z.boolean().default(false),
 };
 export const attributeCreateSchema = z.object({ ...attributeFields, options: z.array(optionInput).max(200).optional() }).strict();
 export const attributeUpdateSchema = z.object(attributeFields).strict();
@@ -26,7 +28,7 @@ export const attributeOptionsAddSchema = z.object({ options: z.array(optionInput
 export const attributeOptionUpdateSchema = optionInput;
 export const attributeOptionsOrderSchema = z.object({ order: z.array(entityId).min(1).max(500) }).strict();
 export const attributeCategoriesSchema = z.object({ categories: z.array(z.object({ categoryId: entityId, isRequired: z.boolean() }).strict()).max(500) }).strict();
-export const attributeTemplateSchema = z.object({ template: z.enum(["color", "clothing_size", "shoe_size", "carpet_size", "area_m2", "volume", "storage", "kids_age"]) }).strict();
+export const attributeTemplateSchema = z.object({ template: z.enum(ATTRIBUTE_TEMPLATE_KEYS as [AttributeTemplateKey, ...AttributeTemplateKey[]]) }).strict();
 export const barcodeGenerateSchema = z.object({ count: z.number().int().min(1).max(500) }).strict();
 export const barcodePrefixSchema = z.object({ prefix: z.string().trim().regex(/^\d{3,10}$/, "Önek 3–10 haneli bir sayı olmalı.") }).strict();
 

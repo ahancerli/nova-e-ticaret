@@ -46,6 +46,11 @@ export function GeneralSection({ form, patch, fe, canPublish, wasPublished }: Se
         <Field id="p-mfr" label="Üretici kodu" error={fe("manufacturerCode")}>
           <input id="p-mfr" className={inputCls} value={form.manufacturerCode} maxLength={64} onChange={(e) => patch({ manufacturerCode: e.target.value })} />
         </Field>
+        <Field id="p-model" label="Model kodu" error={fe("modelCode")}
+          hint="Ürünün tüm varyantlarını bir arada tutan kod (Trendyol “model kodu”). Toplu yüklemede aynı model kodlu satırlar bu ürüne varyant olarak eklenir.">
+          <input id="p-model" className={`${inputCls} font-mono uppercase`} value={form.modelCode} maxLength={64} placeholder="ör. TSH-100" aria-invalid={!!fe("modelCode")}
+            onChange={(e) => patch({ modelCode: e.target.value.toUpperCase() })} />
+        </Field>
       </div>
     </SectionShell>
   );

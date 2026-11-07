@@ -32,6 +32,7 @@ import { registerContent } from "@/modules/content";
 import { registerCustomers } from "@/modules/customers";
 import { GetCurrentPrincipalToken, registerIdentity } from "@/modules/identity";
 import { registerMedia } from "@/modules/media";
+import { registerPanelNotifications } from "@/modules/notifications";
 import { registerNotifications } from "@/modules/notifications/notifications";
 import { registerOrders } from "@/modules/orders";
 import { registerOutbox } from "@/modules/outbox";
@@ -41,6 +42,7 @@ import { registerPlatform } from "@/modules/platform/module";
 import { registerSecrets } from "@/modules/platform/secrets";
 import { registerPricing } from "@/modules/pricing";
 import { registerReporting } from "@/modules/reporting";
+import { registerReviews } from "@/modules/reviews";
 import { registerSettings } from "@/modules/settings";
 import { registerShipping } from "@/modules/shipping";
 import { registerShowcase } from "@/modules/showcase";
@@ -74,10 +76,12 @@ registerMedia(container);
 registerAi(container); // single AI provider + "AI ile ürün ekle" (images via MediaLibrary)
 registerMail(container); // SMTP settings + MailSender port (identity: password reset e-mails)
 registerSettings(container);
+registerPanelNotifications(container); // bell + Bildirimler; NotificationPublisher for reviews, order / payment outbox handlers
 registerContent(container); // {{placeholders}} from settings
 registerCustomers(container); // members + storefront sign-up (consent versions from content)
 registerCatalog(container);
 registerStorefront(container);
+registerReviews(container); // product reviews & ratings: moderation, store reply, reviewer contact (mail + notifications)
 registerPricing(container);
 registerCampaigns(container);
 registerBulk(container);

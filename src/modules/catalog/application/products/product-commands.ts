@@ -44,19 +44,21 @@ abstract class SaveProduct {
     const slug = normalizeProductSlug(input);
     const skus = [...new Set(input.variants.map((v) => normalizeSku(v.sku)))];
     const barcodes = [...new Set(input.variants.map((v) => v.barcode?.trim()).filter((b): b is string => Boolean(b)))];
-    const [meta, slugTaken, brandExists, foundCategoryIds, foundImageIds, skusTakenElsewhere, barcodesTakenElsewhere] = await Promise.all([
+    const modelCode = input.modelCode?.trim().toUpperCase();
+    const [meta, slugTaken, modelCodeTaken, brandExists, foundCategoryIds, foundImageIds, skusTakenElsewhere, barcodesTakenElsewhere] = await Promise.all([
       this.deps.meta.execute(),
       slug.length >= 2 ? products.slugTaken(slug, productId) : Promise.resolve(false),
+      modelCode ? products.modelCodeTaken(modelCode, productId) : Promise.resolve(false),
       input.brandId ? products.brandExists(input.brandId) : Promise.resolve(true),
       products.existingCategoryIds([...new Set(input.categories.map((c) => c.id))]),
-      products.existingImageIds([...new Set(input.media)]),
+      products.existingImageIds([...new Set([...input.media, ...input.variants.flatMap((v) => v.media ?? [])])]),
       products.takenElsewhere("sku", skus, productId),
       products.takenElsewhere("barcode", barcodes, productId),
     ]);
 
     return planProductSave({
       productId, input, current, meta, canPublish: actor.canPublish, now, newId: () => this.deps.ids.newId(),
-      lookups: { slugTaken, brandExists, foundCategoryIds, foundImageIds, skusTakenElsewhere, barcodesTakenElsewhere },
+      lookups: { slugTaken, modelCodeTaken, brandExists, foundCategoryIds, foundImageIds, skusTakenElsewhere, barcodesTakenElsewhere },
     });
   }
 
@@ -112,6 +114,7 @@ abstract class SaveProduct {
       }
       uow.add(...products.variantOptionStatements(v.id, v.options));
     }
+    uow.add(...products.replaceVariantMediaStatements(id, plan.variants, newId));
 
     uow.add(...products.replaceAttributeValuesStatements(id, plan.attributeValues, newId));
     uow.add(products.seoStatement(id, plan.seo, newId));
@@ -159,7 +162,7 @@ export class UpdateProduct extends SaveProduct {
     return {
       action: "product.update",
       diff: {
-        name: input.name, status: input.status, variants: plan.variants.map((v) => v.sku),
+        name: input.name, status: input.status, modelCode: plan.fields.modelCode, variants: plan.variants.map((v) => v.sku),
         archivedVariants: plan.archive.map((v) => v.sku), deletedVariants: plan.destroy.map((v) => v.sku),
       },
     };
@@ -174,7 +177,7 @@ export class DeleteProduct {
     const { products } = this.deps;
     const product = await products.identity(id);
     if (!product) throw ProductErrors.notFound();
-    const media = await products.galleryMediaIds(id);
+    const media = await products.mediaIds(id);
 
     await new UnitOfWork(this.deps.db)
       // The history check runs inside the transaction, so a sale that lands meanwhile blocks the delete.

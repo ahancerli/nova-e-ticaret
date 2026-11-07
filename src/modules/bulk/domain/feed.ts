@@ -134,6 +134,7 @@ const SYNONYMS: Record<FeedField | MatchKey, string[]> = {
   sku: ["sku", "stockcode", "stokkodu", "productcode", "urunkodu", "code", "kod", "modelcode", "itemcode"],
   accounting_code: ["accountingcode", "muhasebekodu", "erpcode", "erpkodu"],
   manufacturer_code: ["mpn", "manufacturercode", "ureticikodu", "tedarikcikodu", "suppliercode", "vendorcode", "productid", "id"],
+  model_code: ["productmainid", "modelkodu", "modelcode", "model", "groupid", "itemgroupid", "parentcode", "anaurunkodu"],
   accountingCode: ["accountingcode", "muhasebekodu", "erpcode"],
   manufacturerCode: ["mpn", "manufacturercode", "ureticikodu", "tedarikcikodu", "suppliercode", "vendorcode"],
   name: ["name", "title", "productname", "urunadi", "urunismi", "adi", "baslik", "label", "isim"],

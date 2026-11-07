@@ -1,28 +1,30 @@
 import { z } from "zod";
 import { entityId } from "@/modules/shared/schemas";
-import { BULK_FIELDS, BULK_FIELD_KEYS, BULK_OP_KEYS, MATCH_KEY_KEYS, type BulkField, type BulkOp, type MatchKey } from "../domain/bulk";
+import { BULK_FIELDS, BULK_FIELD_KEYS, BULK_OP_KEYS, MATCH_KEY_KEYS, MAX_VARIANTS_PER_MODEL, type BulkField, type BulkOp, type MatchKey } from "../domain/bulk";
 import { DEFAULT_FEED_OPTIONS, FEED_FIELDS, type FeedField } from "../domain/feed";
 
 const matchKey = z.enum(MATCH_KEY_KEYS as [MatchKey, ...MatchKey[]]);
 
 /** Raw cells of one row: only known columns, each bounded by its field's maximum. */
 const cells = z.object(Object.fromEntries(BULK_FIELD_KEYS.map((f) => [f, z.string().max(BULK_FIELDS[f].max + 100).optional()])) as Record<BulkField, z.ZodOptional<z.ZodString>>).strict();
-const rawRow = z.object({ line: z.number().int().min(1).max(1_000_000), key: z.string().max(200).optional(), cells }).strict();
+/** Variant columns: attribute code → option text. */
+const variant = z.record(z.string().regex(/^[a-z0-9_]{1,40}$/), z.string().max(160)).refine((v) => Object.keys(v).length <= 8, "En fazla 8 varyant sütunu.");
+const rawRow = z.object({ line: z.number().int().min(1).max(1_000_000), key: z.string().max(200).optional(), cells, variant: variant.optional() }).strict();
 
-/** One chunk of rows (≤ 50) as raw cells. */
+/** One chunk of rows as raw cells: ≤ 50, or one model's variants (≤ 200) that must travel together. */
 export const BULK_ROWS_BODY_LIMIT = 3 * 1024 * 1024;
 
 const rowsBody = {
   op: z.enum(BULK_OP_KEYS as [BulkOp, ...BulkOp[]]),
   matchKey,
   imageMode: z.enum(["replace", "append"]).default("replace"),
-  rows: z.array(rawRow).min(1).max(50),
+  rows: z.array(rawRow).min(1).max(MAX_VARIANTS_PER_MODEL),
 };
 export const bulkCheckSchema = z.object(rowsBody).strict();
 export const bulkApplySchema = z.object({
   ...rowsBody,
   // the closing call of a cancelled import carries no rows
-  rows: z.array(rawRow).max(50),
+  rows: z.array(rawRow).max(MAX_VARIANTS_PER_MODEL),
   jobId: entityId.nullable(),
   source: z.string().trim().min(1).max(200),
   totalRows: z.number().int().min(1).max(100_000),

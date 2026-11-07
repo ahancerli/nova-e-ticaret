@@ -6,10 +6,14 @@ import { formatMinor } from "@/lib/money";
 import { useCart } from "@/features/cart/CartProvider";
 import { MinusIcon, PlusIcon } from "@/components/icons";
 import { PromoBadge } from "@/components/ui/PromoBadge";
+import { CompareToggle } from "../compare/CompareToggle";
+import { ExternalCompare } from "../compare/ExternalCompare";
+import { Stars, formatAverage } from "../reviews/Stars";
 
 /**
  * Variant selection updates gallery, price and stock together; impossible combinations are disabled (spec §04).
- * Sticky add-to-cart bar on mobile.
+ * Photos follow the picked values even before the combination is complete (Renk chosen, Beden not yet): the first
+ * variant matching the selection lends its own photos, which replace the shared gallery. Sticky add-to-cart bar on mobile.
  */
 export function VariantPicker({ product }: { product: ProductDetail }) {
   const { add, busy, error } = useCart();
@@ -23,7 +27,13 @@ export function VariantPicker({ product }: { product: ProductDetail }) {
   );
   const isPossible = (code: string, value: string) =>
     product.variants.some((v) => v.options[code] === value && product.axes.every((a) => a.code === code || !sel[a.code] || v.options[a.code] === sel[a.code]));
-  const gallery = product.media.filter((m) => !m.variantId || m.variantId === variant?.id);
+  const matches = (v: ProductDetail["variants"][number], picked: Record<string, string>) => product.axes.every((a) => !picked[a.code] || v.options[a.code] === picked[a.code]);
+  const ownMedia = (id: string | undefined) => product.media.filter((m) => m.variantId && m.variantId === id);
+  const photoVariant = [variant, ...product.variants.filter((v) => matches(v, sel))].find((v) => v && ownMedia(v.id).length);
+  const shared = product.media.filter((m) => !m.variantId);
+  const gallery = photoVariant ? [...ownMedia(photoVariant.id), ...shared] : shared.length ? shared : product.media.slice(0, 1);
+  /** Thumbnail of a swatch value: the first photo of a variant with that value (Trendyol-style colour pictures). */
+  const thumbOf = (code: string, value: string) => product.variants.map((v) => (v.options[code] === value ? ownMedia(v.id)[0] : undefined)).find(Boolean);
   const [active, setActive] = useState(0);
   const image = gallery[active] ?? gallery[0];
   const max = Math.min(variant?.available ?? 0, 20);
@@ -51,6 +61,11 @@ export function VariantPicker({ product }: { product: ProductDetail }) {
       <div className="pb-24 md:pb-0">
         {product.brandName && <p className="text-sm font-semibold text-brand">{product.brandName}</p>}
         <h1 className="mt-1 text-2xl font-bold leading-snug">{product.name}</h1>
+        <a href="#degerlendirmeler" className="mt-2 inline-flex items-center gap-2 text-sm text-ink-soft hover:text-brand">
+          {product.ratingCount > 0 && product.rating != null ? (
+            <><Stars value={product.rating} /><span className="font-semibold text-ink">{formatAverage(product.rating)}</span><span className="underline-offset-2 hover:underline">{product.ratingCount} değerlendirme</span></>
+          ) : <span className="underline-offset-2 hover:underline">İlk değerlendirmeyi siz yapın</span>}
+        </a>
         {product.shortDescription && <p className="mt-2 text-ink-soft">{product.shortDescription}</p>}
 
         {product.promotions.length > 0 && (
@@ -85,9 +100,19 @@ export function VariantPicker({ product }: { product: ProductDetail }) {
               {axis.options.map((o) => {
                 const possible = isPossible(axis.code, o.value);
                 const selected = sel[axis.code] === o.value;
+                const thumb = axis.style === "swatch" ? thumbOf(axis.code, o.value) : undefined;
+                const pick = () => { setSel((s) => ({ ...s, [axis.code]: o.value })); setActive(0); setQty(1); };
+                if (thumb) {
+                  return (
+                    <button key={o.value} disabled={!possible} aria-pressed={selected} onClick={pick} title={o.label} aria-label={o.label}
+                      className={`h-16 w-12 overflow-hidden rounded-lg border-2 ${selected ? "border-brand" : "border-line"} disabled:cursor-not-allowed disabled:opacity-40`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={thumb.url} alt="" className="h-full w-full object-cover" />
+                    </button>
+                  );
+                }
                 return (
-                  <button key={o.value} disabled={!possible} aria-pressed={selected}
-                    onClick={() => { setSel((s) => ({ ...s, [axis.code]: o.value })); setActive(0); setQty(1); }}
+                  <button key={o.value} disabled={!possible} aria-pressed={selected} onClick={pick}
                     className={`flex min-h-11 min-w-11 items-center gap-2 rounded-lg border px-3 text-sm ${selected ? "border-brand bg-brand-soft font-semibold" : "border-line bg-white"} disabled:cursor-not-allowed disabled:opacity-40 disabled:line-through`}>
                     {o.colorHex && <span className={`${axis.style === "swatch" ? "h-5 w-5" : "h-4 w-4"} rounded-full border border-line`} style={{ background: o.colorHex }} aria-hidden />}
                     {o.label}
@@ -110,6 +135,10 @@ export function VariantPicker({ product }: { product: ProductDetail }) {
           </button>
         </div>
         {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <CompareToggle item={{ id: product.id, slug: product.slug, name: product.name, imageUrl: gallery[0]?.url ?? null }} />
+          <ExternalCompare productName={product.name} />
+        </div>
         {variant && <p className="mt-3 text-xs text-muted">SKU: {variant.sku}</p>}
       </div>
     </div>

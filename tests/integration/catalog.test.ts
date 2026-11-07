@@ -154,11 +154,11 @@ const editorOf = (id: string) => resolve<any>(catalog.GetProductEditorToken).exe
 const inputFrom = (e: any, patch: Record<string, unknown> = {}) => ({
   name: e.name, slug: e.slug, status: e.status, shortDescription: e.shortDescription, descriptionHtml: e.descriptionHtml,
   taxRateBps: e.taxRateBps, warrantyMonths: e.warrantyMonths, countryOfOrigin: e.countryOfOrigin, accountingCode: e.accountingCode,
-  manufacturerCode: e.manufacturerCode, brandId: e.brandId, categories: e.categories, media: e.media.map((m: any) => m.mediaId),
+  manufacturerCode: e.manufacturerCode, modelCode: e.modelCode, brandId: e.brandId, categories: e.categories, media: e.media.map((m: any) => m.mediaId),
   primaryMediaId: e.primaryMediaId, axes: e.axes,
   variants: e.variants.map((v: any) => ({ id: v.id, sku: v.sku, barcode: v.barcode, name: v.name, options: v.options, priceMinor: v.priceMinor,
     compareAtMinor: v.compareAtMinor, stock: v.stock, expectedStock: v.stock, isActive: v.isActive, isDefault: v.isDefault, weightGrams: v.weightGrams,
-    widthMm: v.widthMm, heightMm: v.heightMm, depthMm: v.depthMm })),
+    widthMm: v.widthMm, heightMm: v.heightMm, depthMm: v.depthMm, media: v.media.map((m: any) => m.mediaId) })),
   attributes: e.attributes, seo: e.seo, expectedUpdatedAt: e.updatedAt, ...patch,
 });
 const onHand = (variantId: string) => Number((d1.raw.prepare("SELECT on_hand FROM inventory_balances WHERE variant_id = ?").get(variantId) as any)?.on_hand);
@@ -261,6 +261,36 @@ await t("product publish needs catalog.publish; SKU used by another product is r
   dup.variants[0].sku = "atl-knt-nv-m";
   const err2 = await rejects(() => resolve<any>(catalog.UpdateProductToken).execute(createdId, dup, admin), "validation_error", 422);
   assert(err2.fieldErrors["variants.0.sku"]?.[0]?.includes("başka bir üründe"), JSON.stringify(err2.fieldErrors));
+});
+
+await t("variant photos + model code: photos saved per variant, product publishable with variant photos only, detached photos released, model code unique", async () => {
+  const meta = await resolve<any>(catalog.GetProductMetaToken).execute();
+  assert(meta.attributes.find((a: any) => a.id === "a_color")?.variesMedia === true && meta.attributes.find((a: any) => a.id === "a_size")?.variesMedia === false, "Renk changes photos");
+  const black = await resolve<any>(media.UploadImageToken).execute({ bytes: PNG, fileName: "siyah.png", folder: "products" }, actor);
+  const navy = await resolve<any>(media.UploadImageToken).execute({ bytes: PNG, fileName: "lacivert.png", folder: "products" }, actor);
+  const r = await resolve<any>(catalog.CreateProductToken).execute({
+    name: "Renkli Tişört", status: "published", modelCode: "tst-model", taxRateBps: 1000, categories: [{ id: "c_mutfak", primary: true }], media: [], axes: ["a_color", "a_size"],
+    attributes: [], seo: { noindex: false }, variants: [
+      { sku: "RT-BK-M", options: { a_color: "o_black", a_size: "o_m" }, priceMinor: 100, stock: 0, isActive: true, isDefault: true, media: [black.id] },
+      { sku: "RT-BK-L", options: { a_color: "o_black", a_size: "o_l" }, priceMinor: 100, stock: 0, isActive: true, isDefault: false, media: [black.id] },
+      { sku: "RT-NV-M", options: { a_color: "o_navy", a_size: "o_m" }, priceMinor: 100, stock: 0, isActive: true, isDefault: false, media: [navy.id] },
+    ],
+  }, admin);
+  const e = await editorOf(r.id);
+  assert(e.modelCode === "TST-MODEL" && e.media.length === 0, JSON.stringify({ modelCode: e.modelCode, media: e.media }));
+  assert(e.variants.filter((v: any) => v.media[0]?.mediaId === black.id).length === 2 && e.variants.find((v: any) => v.sku === "RT-NV-M").media[0].mediaId === navy.id, JSON.stringify(e.variants.map((v: any) => v.media)));
+  // navy loses its photo: the file is released (no other row uses it); black stays
+  const input = inputFrom(e);
+  input.variants = input.variants.map((v: any, i: number) => ({ ...v, media: e.variants[i].sku === "RT-NV-M" ? [] : e.variants[i].media.map((m: any) => m.mediaId) }));
+  await resolve<any>(catalog.UpdateProductToken).execute(r.id, input, admin);
+  assert(!objects.has(navy.storageKey) && objects.has(black.storageKey), "detached variant photo released, shared one kept");
+  const err = await rejects(() => resolve<any>(catalog.CreateProductToken).execute({
+    name: "Aynı Model", status: "draft", modelCode: "TST-MODEL", taxRateBps: 1000, categories: [{ id: "c_mutfak", primary: true }], media: [], axes: [], attributes: [],
+    seo: { noindex: false }, variants: [{ sku: "AYNI-1", options: {}, priceMinor: 100, stock: 0, isActive: true, isDefault: true }],
+  }, admin), "validation_error", 422);
+  assert(err.fieldErrors.modelCode?.[0]?.includes("başka bir üründe"), JSON.stringify(err.fieldErrors));
+  const deleted = await resolve<any>(catalog.DeleteProductToken).execute(r.id, actor);
+  assert(deleted.slug === "renkli-tisort" && !objects.has(black.storageKey), "delete releases variant photos too");
 });
 
 console.log(`\n${pass}/${pass + fail} passed`);

@@ -11,18 +11,20 @@ const KEY_SQL: Record<MatchKey, { sql: string; variant: boolean }> = {
   sku: { sql: "SELECT v.sku AS k, v.product_id, v.id AS variant_id FROM product_variants v WHERE v.sku IN", variant: true },
   accounting_code: { sql: "SELECT p.accounting_code AS k, p.id AS product_id, NULL AS variant_id FROM products p WHERE p.accounting_code IN", variant: false },
   manufacturer_code: { sql: "SELECT p.manufacturer_code AS k, p.id AS product_id, NULL AS variant_id FROM products p WHERE p.manufacturer_code IN", variant: false },
+  model_code: { sql: "SELECT p.model_code AS k, p.id AS product_id, NULL AS variant_id FROM products p WHERE p.model_code IN", variant: false },
 };
 
 export class D1ProductLocator extends Repository implements ProductLocator {
   async locate(key: MatchKey, values: string[]): Promise<Map<string, LocatedProduct[]>> {
     const out = new Map<string, LocatedProduct[]>();
-    // SKUs are stored upper-case
-    const wanted = [...new Set(values.map((v) => (key === "sku" ? v.toUpperCase() : v)))];
+    // SKUs and model codes are stored upper-case
+    const upper = key === "sku" || key === "model_code";
+    const wanted = [...new Set(values.map((v) => (upper ? v.toUpperCase() : v)))];
     for (const part of chunk(wanted, 80)) {
       const rows = await this.db.all<{ k: string; product_id: string; variant_id: string | null }>(`${KEY_SQL[key].sql} (${placeholders(part.length)})`, ...part);
       for (const r of rows) out.set(r.k, [...(out.get(r.k) ?? []), { productId: r.product_id, variantId: r.variant_id }]);
     }
-    if (key === "sku") for (const v of values) if (!out.has(v) && out.has(v.toUpperCase())) out.set(v, out.get(v.toUpperCase())!);
+    if (upper) for (const v of values) if (!out.has(v) && out.has(v.toUpperCase())) out.set(v, out.get(v.toUpperCase())!);
     return out;
   }
 }

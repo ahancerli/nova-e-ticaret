@@ -2,6 +2,9 @@
  * Bulk operations (Toplu işlemler) — pure rules shared by the browser (instant pre-check of an Excel file) and the
  * server (the authoritative check). Rows travel as raw cell strings per field; `normalizeRow` turns them into typed
  * values or row errors, so both sides always agree.
+ *
+ * Variants (Trendyol-style): in "Ürün ekle" every row is one variant; rows with the same Model kodu become one product
+ * and the variant columns (Renk, Beden … — one per variant attribute) say which option each row is.
  */
 
 /** Unique values a shop already has on its products; one of them identifies the product of a row. */
@@ -10,6 +13,7 @@ export const MATCH_KEYS = {
   sku: { label: "SKU (stok kodu)", hint: "Varyantın stok kodu", level: "variant" },
   accounting_code: { label: "Muhasebe kodu", hint: "Ürünün muhasebe kodu", level: "product" },
   manufacturer_code: { label: "Üretici / tedarikçi kodu", hint: "Ürünün üretici veya tedarikçi kodu", level: "product" },
+  model_code: { label: "Model kodu", hint: "Ürünün model kodu (tüm varyantları kapsar)", level: "product" },
 } as const;
 export type MatchKey = keyof typeof MATCH_KEYS;
 export const MATCH_KEY_KEYS = Object.keys(MATCH_KEYS) as MatchKey[];
@@ -17,6 +21,7 @@ export const MATCH_KEY_KEYS = Object.keys(MATCH_KEYS) as MatchKey[];
 /** Product fields a bulk row (or a feed item) can carry. */
 export const BULK_FIELDS = {
   name: { label: "Ürün adı", max: 200 },
+  modelCode: { label: "Model kodu", max: 64 },
   sku: { label: "SKU", max: 64 },
   barcode: { label: "Barkod", max: 32 },
   accountingCode: { label: "Muhasebe kodu", max: 64 },
@@ -49,9 +54,10 @@ export interface BulkColumn {
 export const BULK_OPS: Record<BulkOp, { label: string; title: string; job: string; needsKey: boolean; chunk: number; columns: BulkColumn[]; help: string }> = {
   create: {
     label: "Ürün ekle", title: "Excel ile toplu ürün ekleme", job: "excel_create", needsKey: false, chunk: 10,
-    help: "Her satır yeni bir tek varyantlı ürün olur. SKU benzersiz olmalı; kategori adını veya yolunu (Ev ve Yaşam > Mutfak) yazın. Durum boşsa taslak.",
+    help: "Her satır bir varyanttır. Aynı model kodlu satırlar tek ürünün varyantları olur (Renk, Beden gibi varyant sütunlarını doldurun); model kodu boş satır tek varyantlı ayrı bir ürün olur. Mevcut bir ürünün model kodunu yazarsanız satırlar o ürüne yeni varyant olarak eklenir. SKU benzersiz olmalı; kategori adını veya yolunu (Ev ve Yaşam > Mutfak) yazın. Durum boşsa taslak.",
     columns: [
       { field: "name", required: true, example: ["Döküm Tencere 24 cm", "Seramik Kupa 350 ml"] },
+      { field: "modelCode", required: false, example: ["", ""], hint: "Aynı model kodlu satırlar tek ürünün varyantları olur" },
       { field: "sku", required: true, example: ["DKM-TNC-24", "SRM-KUP-350"] },
       { field: "price", required: true, example: ["1.299,90", "149,90"] },
       { field: "stock", required: false, example: ["25", "120"] },
@@ -74,6 +80,7 @@ export const BULK_OPS: Record<BulkOp, { label: string; title: string; job: strin
     columns: [
       { field: "key", required: true, example: ["8690000000017", "8690000000024"] },
       { field: "name", required: false, example: ["Döküm Tencere 24 cm Kırmızı", ""] },
+      { field: "modelCode", required: false, example: ["DKM-TNC", ""] },
       { field: "shortDescription", required: false, example: ["", "Mikrodalgada kullanılabilir"] },
       { field: "description", required: false, example: ["", ""] },
       { field: "brand", required: false, example: ["Daily Living", ""] },
@@ -86,7 +93,7 @@ export const BULK_OPS: Record<BulkOp, { label: string; title: string; job: strin
   },
   images: {
     label: "Görseller", title: "Excel ile toplu görsel güncelleme", job: "excel_images", needsKey: true, chunk: 4,
-    help: "Görseller adresten indirilip mağazanın deposuna kopyalanır (JPG, PNG, WebP, AVIF; en fazla 5 MB, satır başı 10 görsel).",
+    help: "Görseller adresten indirilip mağazanın deposuna kopyalanır (JPG, PNG, WebP, AVIF; en fazla 5 MB, satır başı 10 görsel). Varyantlı bir ürünü barkod veya SKU ile eşlerseniz görseller o varyanta (ör. o renge) yazılır; model / ürün kodu ile eşlerseniz ortak galeriye.",
     columns: [
       { field: "key", required: true, example: ["8690000000017", "8690000000024"] },
       { field: "images", required: true, example: ["https://ornek.com/tencere-1.jpg | https://ornek.com/tencere-2.jpg", "https://ornek.com/kupa.webp"] },
@@ -115,6 +122,31 @@ export const BULK_OP_KEYS = Object.keys(BULK_OPS) as BulkOp[];
 
 export const MAX_ROWS = 5000;
 export const MAX_IMAGES_PER_ROW = 10;
+/** Variants of one model (rows sharing a model code) — the product editor's limit too. */
+export const MAX_VARIANTS_PER_MODEL = 200;
+export const MODEL_CODE_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+/** Variant attribute the sheet can carry as its own column (Renk, Beden …). */
+export interface VariantAxisColumn {
+  code: string;
+  label: string;
+  options: { value: string; label: string }[];
+}
+
+/** Header text → variant attribute code ("Renk", "renk", "Varyant: Renk", "color"), or null. */
+export function variantColumnOf(header: string, axes: VariantAxisColumn[]): string | null {
+  const h = fold(header.replace(/^\s*varyant\s*[:\-]\s*/i, "").replace(/\*/g, ""));
+  if (!h) return null;
+  return axes.find((a) => fold(a.label) === h || fold(a.code) === h)?.code ?? null;
+}
+
+/** Template header of a variant column. */
+export const variantHeader = (a: VariantAxisColumn) => `Varyant: ${a.label}`;
+
+/** Rows of a sheet that become one product: same model code, or (no model code) the row alone. */
+export function groupKeyOf(row: { line: number; values: { modelCode?: string } }): string {
+  return row.values.modelCode ? `m:${row.values.modelCode}` : `l:${row.line}`;
+}
 
 /** Column header of a template column (the key column is named after the chosen match key). */
 export const columnHeader = (c: BulkColumn, key: MatchKey) => (c.field === "key" ? MATCH_KEYS[key].label : `${BULK_FIELDS[c.field].label}${c.required ? " *" : ""}`);
@@ -201,10 +233,14 @@ export interface RawRow {
   line: number;
   key?: string;
   cells: Partial<Record<BulkField, string>>;
+  /** Variant columns: attribute code → option text ("color" → "Siyah"). */
+  variant?: Record<string, string>;
 }
 
 export interface RowValues {
   name?: string;
+  /** Upper-cased; rows sharing it are one product's variants. */
+  modelCode?: string;
   sku?: string;
   barcode?: string;
   accountingCode?: string;
@@ -221,6 +257,8 @@ export interface RowValues {
   taxRateBps?: number;
   status?: "draft" | "published" | "paused" | "archived";
   images?: string[];
+  /** Variant attribute code → option text, as written in the sheet. */
+  variant?: Record<string, string>;
 }
 
 export interface NormalizedRow {
@@ -255,6 +293,16 @@ export function normalizeRow(op: BulkOp | "feed", raw: RawRow): NormalizedRow {
     if (!/^[A-Za-z0-9._-]+$/.test(sku)) fail("sku", "SKU yalnız harf, rakam, nokta, tire ve alt çizgi içerebilir.");
     else v.sku = sku.toUpperCase();
   }
+  const modelCode = cell("modelCode");
+  if (modelCode) {
+    if (!MODEL_CODE_PATTERN.test(modelCode)) fail("modelCode", "Model kodu yalnız harf, rakam, nokta, tire ve alt çizgi içerebilir.");
+    else v.modelCode = modelCode.toUpperCase();
+  }
+  const variant = Object.entries(raw.variant ?? {}).map(([k, x]) => [k, String(x).trim()] as const).filter(([, x]) => x);
+  if (variant.length > 4) errors.push("Bir varyant en fazla 4 özellikle tanımlanır (ör. Renk + Beden).");
+  else if (variant.some(([, x]) => x.length > 60)) errors.push("Varyant değeri en fazla 60 karakter olabilir.");
+  else if (variant.length) v.variant = Object.fromEntries(variant);
+
   const barcode = cell("barcode");
   if (barcode) {
     if (!/^[0-9A-Za-z-]+$/.test(barcode)) errors.push("Barkod yalnız harf, rakam ve tire içerebilir.");

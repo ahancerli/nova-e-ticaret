@@ -91,6 +91,14 @@ await t("rows: required columns per operation, empty update rejected, cross-fiel
   assert(n("update", {}, "869").errors[0].includes("Güncellenecek"), "empty update");
   assert(bulk.columnOf("Fiyat (₺) *", "prices", "barcode") === "price" && bulk.columnOf("barkod", "prices", "barcode") === "key" && bulk.columnOf("fiyat", "stock", "sku") === null, "headers");
 });
+await t("variant columns: headers matched by label / code / “Varyant:” prefix; model code groups rows; variant cells validated", () => {
+  const axes = [{ code: "color", label: "Renk", options: [] }, { code: "shoe_size", label: "Numara", options: [] }];
+  assert(bulk.variantColumnOf("Varyant: Renk", axes) === "color" && bulk.variantColumnOf("NUMARA *", axes) === "shoe_size" && bulk.variantColumnOf("color", axes) === "color" && bulk.variantColumnOf("Beden", axes) === null, "headers");
+  const a = bulk.normalizeRow("create", { line: 2, cells: { name: "Ayakkabı", sku: "a-1", price: "10", category: "X", modelCode: "ayk-1" }, variant: { color: " Siyah ", shoe_size: "38" } });
+  const b = bulk.normalizeRow("create", { line: 3, cells: { name: "Ayakkabı", sku: "a-2", price: "10", category: "X" } });
+  assert(a.values.modelCode === "AYK-1" && a.values.variant?.color === "Siyah" && bulk.groupKeyOf(a) === "m:AYK-1" && bulk.groupKeyOf(b) === "l:3", json([a, b]));
+  assert(bulk.normalizeRow("create", { line: 4, cells: { name: "X Y", sku: "a", price: "1", category: "X", modelCode: "kötü kod" } }).errors[0].includes("Model kodu"), "model code format");
+});
 await t("feed: Google Merchant RSS — list found, fields listed, mapping suggested, item → row with margin", () => {
   const doc = xml.parseXml(`<rss xmlns:g="http://base.google.com/ns/1.0"><channel><title>Mağaza</title><link>https://x</link><description>d</description>
     <item><g:id>A1</g:id><title>Kupa</title><g:gtin>8690000000017</g:gtin><g:price>149.90 TRY</g:price><g:sale_price>129.90 TRY</g:sale_price><g:image_link>https://x.test/1.jpg</g:image_link><g:additional_image_link>https://x.test/2.jpg</g:additional_image_link><g:brand>Nova</g:brand><g:quantity>7</g:quantity></item>
@@ -299,5 +307,44 @@ await t("feed: create missing products in the default category; JSON REST source
   assert(jobs.some((j: any) => j.kind === "feed" && j.feedId === id && j.createdRows === 1), json(jobs.slice(0, 2)));
 });
 
+const vrow = (line: number, cells: any, variant: Record<string, string>) => ({ line, cells, variant });
+await t("create with variants: one model code = one product (photos per colour), a bad row holds back its model, a known model code gets new variants", async () => {
+  web.set("https://cdn.example.com/tsh-siyah.png", PNG);
+  web.set("https://cdn.example.com/tsh-lacivert.png", PNG);
+  const base = { name: "Basic Tişört", modelCode: "tsh-9", price: "349,90", stock: "4", category: "Mutfak" };
+  const rows = [
+    vrow(2, { ...base, sku: "tsh-9-bk-s", barcode: "8699999999991", images: "https://cdn.example.com/tsh-siyah.png" }, { color: "Siyah", size: "S" }),
+    vrow(3, { ...base, sku: "tsh-9-bk-m", images: "https://cdn.example.com/tsh-siyah.png" }, { color: "siyah", size: "M" }),
+    vrow(4, { ...base, sku: "tsh-9-nv-s", images: "https://cdn.example.com/tsh-lacivert.png" }, { color: "Lacivert", size: "S" }),
+    vrow(5, { ...base, name: "Kötü", modelCode: "tsh-8", sku: "tsh-8-1" }, { color: "Mor", size: "S" }),
+    vrow(6, { ...base, name: "Kötü", modelCode: "tsh-8", sku: "tsh-8-2" }, { color: "Siyah", size: "S" }),
+  ];
+  const checked = await resolve(bulkModule.CheckBulkRowsToken).execute({ op: "create", matchKey: "barcode", imageMode: "replace", rows }, actor);
+  assert(checked.slice(0, 3).every((r: any) => r.status === "ok") && checked[0].messages[0].includes("Yeni ürün: Basic Tişört · 3 varyant"), json(checked.slice(0, 3)));
+  assert(checked[3].messages[0].includes("“Mor” değeri tanımlı değil") && checked[4].status === "error" && checked[4].messages[0].includes("5. satır hatalı"), json(checked.slice(3)));
+  const r = await resolve(bulkModule.ApplyBulkRowsToken).execute({ op: "create", matchKey: "barcode", imageMode: "replace", rows: rows.slice(0, 3), jobId: null, source: "varyant.xlsx", totalRows: 3, final: true }, actor);
+  assert(r.results.every((x: any) => x.status === "created" && x.productId === r.results[0].productId), json(r.results));
+  const pid = r.results[0].productId;
+  assert(q("SELECT model_code m FROM products WHERE id = ?", pid).m === "TSH-9" && q("SELECT count(*) n FROM product_variant_axes WHERE product_id = ?", pid).n === 2, "one product, two axes");
+  const photos = d1.raw.prepare("SELECT v.sku, pm.media_id FROM product_media pm JOIN product_variants v ON v.id = pm.variant_id WHERE pm.product_id = ? ORDER BY v.sku").all(pid) as any[];
+  assert(photos.length === 3 && photos[0].media_id === photos[1].media_id && photos[2].media_id !== photos[0].media_id, json(photos));
+  assert(q("SELECT count(*) n FROM product_media WHERE product_id = ? AND variant_id IS NULL", pid).n === 0, "no shared gallery: photos differ per colour");
+  // the same model code later: new variants of that product (same axes required)
+  const more = await resolve(bulkModule.ApplyBulkRowsToken).execute({ op: "create", matchKey: "barcode", imageMode: "replace", jobId: null, source: "ek.xlsx", totalRows: 1, final: true,
+    rows: [vrow(2, { ...base, sku: "tsh-9-or-l" }, { color: "Turuncu", size: "L" })] }, actor);
+  assert(more.results[0].status === "created" && more.results[0].productId === pid && more.results[0].messages[0].includes("ürününe yeni varyant"), json(more.results));
+  assert(q("SELECT count(*) n FROM product_variants WHERE product_id = ?", pid).n === 4, "4 variants");
+  const wrong = await resolve(bulkModule.CheckBulkRowsToken).execute({ op: "create", matchKey: "barcode", imageMode: "replace", rows: [vrow(2, { ...base, sku: "tsh-9-x" }, { color: "Siyah" })] }, actor);
+  assert(wrong[0].messages[0].includes("Renk + Beden ile çeşitleniyor"), json(wrong));
+  // images matched by a variant barcode go to that variant (that colour), not the gallery
+  web.set("https://cdn.example.com/tsh-siyah-2.png", PNG);
+  const img = await resolve(bulkModule.ApplyBulkRowsToken).execute({ op: "images", matchKey: "barcode", imageMode: "append", jobId: null, source: "g.xlsx", totalRows: 1, final: true,
+    rows: [row(2, { images: "https://cdn.example.com/tsh-siyah-2.png" }, "8699999999991")] }, actor);
+  assert(img.results[0].status === "updated" && img.results[0].messages[0].includes("TSH-9-BK-S varyantının"), json(img.results));
+  assert(q("SELECT count(*) n FROM product_media pm JOIN product_variants v ON v.id = pm.variant_id WHERE v.sku = 'TSH-9-BK-S'").n === 2 && q("SELECT count(*) n FROM product_media WHERE product_id = ? AND variant_id IS NULL", pid).n === 0, "variant photos appended");
+  // model code is a match key for product-level updates
+  const upd = await resolve(bulkModule.CheckBulkRowsToken).execute({ op: "update", matchKey: "model_code", imageMode: "replace", rows: [row(2, { name: "Basic Tişört V2" }, "tsh-9")] }, actor);
+  assert(upd[0].status === "ok" && upd[0].productId === pid, json(upd));
+});
 console.log(`${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);

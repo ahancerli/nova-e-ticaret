@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  Bell, ChevronRight, ExternalLink, FileText, FolderTree, LogOut, Menu, Package, Plus, Search, Store, Tags, UserRound, X,
+  ChevronRight, ExternalLink, FileText, FolderTree, LogOut, Menu, Package, Plus, Search, Store, Tags, UserRound, X,
 } from "lucide-react";
 import { UNAUTHORIZED_EVENT } from "@/lib/api-client";
 import { authApi } from "@/features/auth/api";
@@ -14,6 +14,7 @@ import { Popover } from "@/components/ui/Popover";
 import { Portal } from "@/components/ui/Portal";
 import { AdminSidebar, iconMap, type SidebarGroup } from "@/features/admin-shell/AdminSidebar";
 import { CommandPalette, type PaletteItem } from "@/features/admin-shell/CommandPalette";
+import { NotificationBell } from "@/features/notifications/NotificationBell";
 
 export type ShellUser = { displayName: string; email: string; roles: string[] };
 export type QuickCreate = { product: boolean; category: boolean; brand: boolean; page: boolean };
@@ -159,22 +160,7 @@ export function AdminShell({ user, groups, quickCreate, env, children }: { user:
                 <Store className="h-[18px] w-[18px]" />
               </a>
 
-              <Popover label="Bildirimler" buttonClassName={`${iconBtn} relative`} panelClassName="w-80"
-                button={<Bell className="h-[18px] w-[18px]" />}>
-                {() => (
-                  <div>
-                    <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                      <p className="text-sm font-semibold text-slate-800">Bildirimler</p>
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">0 yeni</span>
-                    </div>
-                    <div className="flex flex-col items-center gap-2 px-6 py-10 text-center">
-                      <span className="grid size-11 place-items-center rounded-full bg-slate-100 text-slate-400"><Bell className="h-5 w-5" /></span>
-                      <p className="text-sm font-medium text-slate-700">Her şey yolunda</p>
-                      <p className="text-xs text-slate-500">Yeni sipariş, havale bildirimi ve stok uyarıları burada görünecek.</p>
-                    </div>
-                  </div>
-                )}
-              </Popover>
+              <NotificationBell buttonClassName={iconBtn} />
 
               <span className="mx-1 hidden h-6 w-px bg-slate-200 sm:block" aria-hidden />
 

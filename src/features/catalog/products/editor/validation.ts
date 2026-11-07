@@ -13,7 +13,7 @@ export const SECTIONS: { id: SectionId; label: string; hint: string; icon: Compo
   { id: "general", label: "Genel bilgiler", hint: "Ad, durum, açıklama", icon: FileText },
   { id: "relations", label: "Marka & Kategori", hint: "Nerede listelenecek", icon: FolderTree },
   { id: "media", label: "Görseller", hint: "Galeri ve vitrin", icon: Images },
-  { id: "variants", label: "Varyant & Stok", hint: "SKU, fiyat, stok", icon: Boxes },
+  { id: "variants", label: "Varyant & Stok", hint: "Seçenek, fiyat, stok", icon: Boxes },
   { id: "attributes", label: "Özellikler", hint: "Teknik bilgiler", icon: SlidersHorizontal },
   { id: "seo", label: "SEO", hint: "Arama görünümü", icon: Search },
 ];
@@ -38,11 +38,12 @@ export function validate(f: FormState, ctx: Ctx): Errors {
   if (f.slug.trim() && slugify(f.slug).length < 2) add("slug", "Geçerli bir slug girin.");
   if (f.countryOfOrigin && !/^[A-Z]{2}$/.test(f.countryOfOrigin)) add("countryOfOrigin", "İki harfli ülke kodu girin (örn. TR).");
   if (Number.isNaN(strToInt(f.warrantyMonths))) add("warrantyMonths", "Tam sayı girin.");
+  if (f.modelCode.trim() && !SKU_PATTERN.test(f.modelCode.trim())) add("modelCode", "Harf, rakam, nokta, tire ve alt çizgi kullanın.");
   if (f.status === "published" && !ctx.canPublish && !ctx.wasPublished) add("status", "Yayına alma yetkiniz yok.");
   // relations
   if (!f.categories.length) add("categories", "En az bir kategori seçin.");
   // media
-  if (f.status === "published" && !f.media.length) add("media", "Yayındaki bir ürün için en az bir görsel ekleyin.");
+  if (f.status === "published" && !f.media.length && !f.variants.some((v) => v.isActive && v.media.length)) add("media", "Yayındaki bir ürün için en az bir görsel ekleyin (galeri veya varyant görseli).");
   // variants
   if (!f.axes.length && f.variants.length > 1) add("axes", "Birden fazla varyant için en az bir eksen (Renk, Beden…) seçin.");
   const skus = new Map<string, number>(), combos = new Map<string, number>();

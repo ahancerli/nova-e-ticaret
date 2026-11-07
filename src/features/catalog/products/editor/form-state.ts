@@ -12,12 +12,17 @@ export type VariantState = {
   weightGrams: string; widthMm: string; heightMm: string; depthMm: string; reserved: number; locked: boolean;
   /** Stock as loaded: the server only writes stock that the user actually changed, guarded on this value. */
   loadedStock?: number;
+  /** The variant's own photos (shown instead of the gallery when it is picked in the shop). */
+  media: GalleryItem[];
 };
 export type FormState = {
   name: string; slug: string; status: Status; shortDescription: string; descriptionHtml: string; taxRateBps: number;
-  warrantyMonths: string; countryOfOrigin: string; accountingCode: string; manufacturerCode: string;
+  warrantyMonths: string; countryOfOrigin: string; accountingCode: string; manufacturerCode: string; modelCode: string;
   brandId: string; categories: { id: string; primary: boolean }[]; media: GalleryItem[]; primaryMediaId: string | null;
-  axes: string[]; variants: VariantState[]; attributes: Record<string, (string | number | boolean)[]>;
+  axes: string[]; variants: VariantState[];
+  /** Axis whose values carry the photos (Renk); "none" = every variant uses the gallery; undefined = automatic. Editor only. */
+  imageAxis?: string;
+  attributes: Record<string, (string | number | boolean)[]>;
   seo: { metaTitle: string; metaDescription: string; canonicalUrl: string; noindex: boolean };
 };
 export type Errors = Record<string, string[]>;
@@ -39,27 +44,27 @@ export const uid = () => crypto.randomUUID();
 
 export const emptyVariant = (isDefault: boolean, options: Record<string, string> = {}): VariantState => ({
   key: uid(), sku: "", barcode: "", name: "", options, price: "", compareAt: "", minPrice: "", stock: "0", isActive: true, isDefault,
-  weightGrams: "", widthMm: "", heightMm: "", depthMm: "", reserved: 0, locked: false,
+  weightGrams: "", widthMm: "", heightMm: "", depthMm: "", reserved: 0, locked: false, media: [],
 });
 
 export function fromData(d: ProductEditorData | null): FormState {
   if (!d) {
     return {
       name: "", slug: "", status: "draft", shortDescription: "", descriptionHtml: "", taxRateBps: 2000, warrantyMonths: "", countryOfOrigin: "",
-      accountingCode: "", manufacturerCode: "", brandId: "", categories: [], media: [], primaryMediaId: null, axes: [],
+      accountingCode: "", manufacturerCode: "", modelCode: "", brandId: "", categories: [], media: [], primaryMediaId: null, axes: [],
       variants: [emptyVariant(true)], attributes: {}, seo: { metaTitle: "", metaDescription: "", canonicalUrl: "", noindex: false },
     };
   }
   return {
     name: d.name, slug: d.slug, status: d.status, shortDescription: d.shortDescription ?? "", descriptionHtml: d.descriptionHtml ?? "",
     taxRateBps: d.taxRateBps, warrantyMonths: str(d.warrantyMonths), countryOfOrigin: d.countryOfOrigin ?? "", accountingCode: d.accountingCode ?? "",
-    manufacturerCode: d.manufacturerCode ?? "", brandId: d.brandId ?? "", categories: d.categories, media: d.media, primaryMediaId: d.primaryMediaId,
+    manufacturerCode: d.manufacturerCode ?? "", modelCode: d.modelCode ?? "", brandId: d.brandId ?? "", categories: d.categories, media: d.media, primaryMediaId: d.primaryMediaId,
     axes: d.axes,
     variants: d.variants.map((v) => ({
       key: v.id, id: v.id, sku: v.sku, barcode: v.barcode ?? "", name: v.name ?? "", options: v.options, price: minorToStr(v.priceMinor),
       compareAt: minorToStr(v.compareAtMinor), minPrice: minorToStr(v.minPriceMinor), stock: String(v.stock), isActive: v.isActive, isDefault: v.isDefault,
       weightGrams: str(v.weightGrams), widthMm: str(v.widthMm), heightMm: str(v.heightMm), depthMm: str(v.depthMm), reserved: v.reserved, locked: v.locked,
-      loadedStock: v.stock,
+      loadedStock: v.stock, media: v.media,
     })),
     attributes: Object.fromEntries(d.attributes.map((a) => [a.attributeId, a.values])),
     seo: { metaTitle: d.seo.metaTitle ?? "", metaDescription: d.seo.metaDescription ?? "", canonicalUrl: d.seo.canonicalUrl ?? "", noindex: d.seo.noindex },
@@ -70,7 +75,7 @@ export function toPayload(f: FormState) {
   return {
     name: f.name.trim(), slug: f.slug.trim() || undefined, status: f.status, shortDescription: f.shortDescription || null, descriptionHtml: f.descriptionHtml || null,
     taxRateBps: f.taxRateBps, warrantyMonths: strToInt(f.warrantyMonths), countryOfOrigin: f.countryOfOrigin.trim() || null,
-    accountingCode: f.accountingCode || null, manufacturerCode: f.manufacturerCode || null, brandId: f.brandId || null,
+    accountingCode: f.accountingCode || null, manufacturerCode: f.manufacturerCode || null, modelCode: f.modelCode.trim() || null, brandId: f.brandId || null,
     categories: f.categories, media: f.media.map((m) => m.mediaId), primaryMediaId: f.primaryMediaId, axes: f.axes,
     variants: f.variants.map((v) => ({
       ...(v.id ? { id: v.id } : {}), sku: v.sku.trim(), barcode: v.barcode.trim() || null, name: v.name.trim() || null,
@@ -79,6 +84,7 @@ export function toPayload(f: FormState) {
       ...(v.loadedStock !== undefined ? { expectedStock: v.loadedStock } : {}),
       isActive: v.isActive, isDefault: v.isDefault,
       weightGrams: strToInt(v.weightGrams), widthMm: strToInt(v.widthMm), heightMm: strToInt(v.heightMm), depthMm: strToInt(v.depthMm),
+      media: v.media.map((m) => m.mediaId),
     })),
     attributes: Object.entries(f.attributes).filter(([a]) => !f.axes.includes(a)).map(([attributeId, values]) => ({ attributeId, values: values.filter((v) => v !== "") })),
     seo: { metaTitle: f.seo.metaTitle || null, metaDescription: f.seo.metaDescription || null, canonicalUrl: f.seo.canonicalUrl || null, noindex: f.seo.noindex },

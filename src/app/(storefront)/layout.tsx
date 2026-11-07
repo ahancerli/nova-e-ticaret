@@ -1,6 +1,6 @@
 import { CartProvider } from "@/features/cart/CartProvider";
 import { CartDrawer } from "@/features/cart/CartDrawer";
-import { Footer, Header } from "@/features/shop";
+import { CompareBar, Footer, Header } from "@/features/shop";
 import { GetFooterLinksToken } from "@/modules/content";
 import { GetPublicSettingsToken } from "@/modules/settings";
 import { GetShellToken } from "@/modules/storefront";
@@ -30,6 +30,7 @@ export default async function StorefrontLayout({ children }: { children: React.R
       <main id="main">{children}</main>
       <Footer settings={settings} nav={shell.footer} pageColumns={pageColumns} year={new Date().getFullYear()} />
       <CartDrawer />
+      <CompareBar />
     </CartProvider>
   );
 }

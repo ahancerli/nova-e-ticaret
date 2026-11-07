@@ -1,7 +1,8 @@
 "use client";
 
 import {
-  BULK_FIELDS, BULK_OPS, MATCH_KEYS, MAX_ROWS, columnHeader, columnOf, normalizeRow, safeCell, type BulkField, type BulkOp, type MatchKey, type NormalizedRow, type RawRow, type RowResult,
+  BULK_FIELDS, BULK_OPS, MATCH_KEYS, MAX_ROWS, columnHeader, columnOf, groupKeyOf, normalizeRow, safeCell, variantColumnOf, variantHeader,
+  type BulkColumn, type BulkField, type BulkOp, type MatchKey, type NormalizedRow, type RawRow, type RowResult, type VariantAxisColumn,
 } from "@/modules/bulk/domain/bulk";
 import { MAX_FILE_BYTES, SheetError, readCsv, readXlsx, writeXlsx } from "@/modules/bulk/domain/xlsx";
 
@@ -12,22 +13,45 @@ export function download(name: string, data: BlobPart, type: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+/** Example rows of "Ürün ekle" with variant columns: two colours of one model (photos per colour). */
+function variantExamples(axes: VariantAxisColumn[]): { cells: Partial<Record<BulkColumn["field"], [string, string]>>; options: [string, string][] } {
+  const options = axes.map((a, i) => [a.options[0]?.label ?? "", (i === 0 ? a.options[1] ?? a.options[0] : a.options[0])?.label ?? ""] as [string, string]);
+  const part = (s: string) => s.toLocaleUpperCase("tr-TR").replace(/[^A-Z0-9]+/g, "").slice(0, 8);
+  const sku = (r: 0 | 1) => ["TSH-100", ...options.map((o) => part(o[r]))].filter(Boolean).join("-");
+  return {
+    options,
+    cells: {
+      name: ["Basic Tişört", "Basic Tişört"], modelCode: ["TSH-100", "TSH-100"], sku: [sku(0), sku(1)], price: ["349,90", "349,90"], stock: ["12", "8"],
+      category: ["Giyim", "Giyim"], brand: ["", ""], barcode: ["", ""], compareAt: ["", ""],
+      images: [`https://ornek.com/tsh-100-${part(options[0]?.[0] ?? "a").toLowerCase()}.jpg`, `https://ornek.com/tsh-100-${part(options[0]?.[1] ?? "b").toLowerCase()}.jpg`],
+    },
+  };
+}
+
 /** The template of a tab: header row + two example rows, and a second sheet that explains every column. */
-export function downloadTemplate(op: BulkOp, key: MatchKey) {
+export function downloadTemplate(op: BulkOp, key: MatchKey, axes: VariantAxisColumn[] = []) {
   const spec = BULK_OPS[op];
-  const headers = spec.columns.map((c) => columnHeader(c, key));
-  const rows = [headers, spec.columns.map((c) => c.example[0]), spec.columns.map((c) => c.example[1])];
+  const withAxes = op === "create" && axes.length > 0;
+  const ex = withAxes ? variantExamples(axes) : null;
+  const example = (c: BulkColumn, r: 0 | 1) => ex?.cells[c.field]?.[r] ?? c.example[r];
+  // variant columns go right after "Model kodu"
+  const at = spec.columns.findIndex((c) => c.field === "modelCode") + 1;
+  const insert = <T,>(base: T[], extra: T[]) => (withAxes ? [...base.slice(0, at), ...extra, ...base.slice(at)] : base);
+  const headers = insert(spec.columns.map((c) => columnHeader(c, key)), axes.map(variantHeader));
+  const rows = [headers, insert(spec.columns.map((c) => example(c, 0)), ex?.options.map((o) => o[0]) ?? []), insert(spec.columns.map((c) => example(c, 1)), ex?.options.map((o) => o[1]) ?? [])];
   const help = [
     ["Sütun", "Zorunlu", "Açıklama"],
-    ...spec.columns.map((c) => [columnHeader(c, key).replace(" *", ""), c.required ? "Evet" : "Hayır",
+    ...insert(spec.columns.map((c) => [columnHeader(c, key).replace(" *", ""), c.required ? "Evet" : "Hayır",
       c.field === "key" ? `${MATCH_KEYS[key].hint}. Ürün bu değerle bulunur.` : c.hint ?? fieldHelp(c.field)]),
+    axes.map((a) => [variantHeader(a), "Model kodu varsa", `Bu satırın ${a.label} değeri. Tanımlı değerler: ${a.options.slice(0, 25).map((o) => o.label).join(", ")}${a.options.length > 25 ? " …" : ""}`])),
     [],
     ["İpuçları", "", spec.help],
+    ...(withAxes ? [["", "", "Varyantlı ürün: her varyant bir satır. Aynı model kodu = aynı ürün. Ürün adı, kategori, marka gibi ürün bilgileri ilk satırdan alınır. Her satırın görselleri o varyanta (renge) yazılır; tüm satırlarda aynı görseller varsa ortak galeriye."]] : []),
     ["", "", "Örnek satırları silip kendi ürünlerinizi yazın. Başlık satırını değiştirmeyin; sütun sırası önemli değil."],
     ["", "", `Tek dosyada en fazla ${MAX_ROWS.toLocaleString("tr-TR")} satır. Excel (.xlsx) veya CSV yükleyebilirsiniz.`],
   ];
   download(`toplu-${op}-${key}.xlsx`, writeXlsx([
-    { name: "Ürünler", rows, widths: spec.columns.map((c) => (c.field === "images" || c.field === "description" ? 48 : c.field === "name" ? 32 : 20)) },
+    { name: "Ürünler", rows, widths: insert(spec.columns.map((c) => (c.field === "images" || c.field === "description" ? 48 : c.field === "name" ? 32 : 20)), axes.map(() => 16)) },
     { name: "Nasıl doldurulur", rows: help, widths: [26, 10, 90] },
   ]), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 }
@@ -40,6 +64,7 @@ function fieldHelp(f: BulkField): string {
     case "status": return "Taslak, Yayında, Pasif veya Arşiv.";
     case "category": return "Kategori adı veya yolu (Ev ve Yaşam > Mutfak).";
     case "brand": return "Panelde kayıtlı marka adı.";
+    case "modelCode": return "Ürünün tüm varyantlarını bir arada tutan kod (Trendyol model kodu).";
     default: return `${BULK_FIELDS[f].label}, en fazla ${BULK_FIELDS[f].max.toLocaleString("tr-TR")} karakter.`;
   }
 }
@@ -54,8 +79,8 @@ export interface ParsedSheet {
   missingColumns: string[];
 }
 
-/** Reads an .xlsx / .csv file in the browser; the file itself is never uploaded. */
-export async function parseSheet(file: File, op: BulkOp, key: MatchKey): Promise<ParsedSheet> {
+/** Reads an .xlsx / .csv file in the browser; the file itself is never uploaded. "Ürün ekle" also reads variant columns (Renk, Beden …). */
+export async function parseSheet(file: File, op: BulkOp, key: MatchKey, axes: VariantAxisColumn[] = []): Promise<ParsedSheet> {
   if (file.size > MAX_FILE_BYTES) throw new SheetError("Dosya en fazla 10 MB olabilir.");
   const lower = file.name.toLowerCase();
   let table: string[][];
@@ -65,7 +90,8 @@ export async function parseSheet(file: File, op: BulkOp, key: MatchKey): Promise
   if (!table.length) throw new SheetError("Dosya boş.");
   const [header, ...body] = table;
   const columns = header!.map((h) => columnOf(h, op, key));
-  const unknownHeaders = header!.filter((h, i) => h.trim() && !columns[i]);
+  const variantColumns = header!.map((h, i) => (op === "create" && !columns[i] ? variantColumnOf(h, axes) : null));
+  const unknownHeaders = header!.filter((h, i) => h.trim() && !columns[i] && !variantColumns[i]);
   const missingColumns = BULK_OPS[op].columns.filter((c) => c.required && !columns.includes(c.field)).map((c) => columnHeader(c, key).replace(" *", ""));
   if (body.length > MAX_ROWS) throw new SheetError(`Dosyada ${body.length.toLocaleString("tr-TR")} satır var; en fazla ${MAX_ROWS.toLocaleString("tr-TR")}. Dosyayı bölün.`);
   const rows: RawRow[] = [];
@@ -74,13 +100,36 @@ export async function parseSheet(file: File, op: BulkOp, key: MatchKey): Promise
     const raw: RawRow = { line: i + 2, cells: {} };
     columns.forEach((col, ci) => {
       const v = cells[ci]?.trim();
-      if (!col || !v) return;
-      if (col === "key") raw.key = v.slice(0, 200);
-      else raw.cells[col] = v.slice(0, BULK_FIELDS[col].max + 100);
+      if (!v) return;
+      const axis = variantColumns[ci];
+      if (axis) raw.variant = { ...raw.variant, [axis]: v.slice(0, 160) };
+      else if (col === "key") raw.key = v.slice(0, 200);
+      else if (col) raw.cells[col] = v.slice(0, BULK_FIELDS[col].max + 100);
     });
     rows.push(raw);
   });
   return { fileName: file.name, rows, local: rows.map((r) => normalizeRow(op, r)), unknownHeaders, missingColumns };
+}
+
+/**
+ * Request chunks: plain slices, except in "Ürün ekle" where all rows of one model (same model code) travel together —
+ * the server writes a model all-or-nothing. A model bigger than `size` goes alone.
+ */
+export function chunkRows(op: BulkOp, rows: RawRow[], size: number): RawRow[][] {
+  if (op !== "create") return Array.from({ length: Math.ceil(rows.length / size) }, (_, i) => rows.slice(i * size, (i + 1) * size));
+  const groups = new Map<string, RawRow[]>();
+  for (const r of rows) {
+    const k = groupKeyOf(normalizeRow(op, r));
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  const out: RawRow[][] = [];
+  let cur: RawRow[] = [];
+  for (const g of groups.values()) {
+    if (cur.length && cur.length + g.length > size) { out.push(cur); cur = []; }
+    cur.push(...g);
+  }
+  if (cur.length) out.push(cur);
+  return out;
 }
 
 /** Report of a check / import for the shop (CSV, Excel-safe: formulas neutralised, Turkish separator). */

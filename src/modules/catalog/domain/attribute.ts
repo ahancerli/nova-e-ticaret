@@ -1,10 +1,11 @@
 /**
  * Product attributes and variant axes (Özellikler): what a shop sells by — Renk + Beden for clothes, Renk + Numara for
- * shoes, Ölçü (m²) for carpets, Kapasite for phones. Pure rules shared by the panel and the server.
+ * shoes, Ölçü (m²) for carpets. Pure rules shared by the panel and the server.
  *
  * - A variant axis is a `select` attribute: its options (38, 39, Kırmızı, 160×230) combine into variants, and every
- *   variant carries its own SKU and barcode.
- * - Other attributes describe the product (Materyal, Garanti) and may be required per category.
+ *   variant carries its own SKU, barcode, price, stock and (when the axis `variesMedia`, e.g. Renk) photos.
+ * - Other attributes describe the product (Materyal, Garanti, Disk kapasitesi) and may be required per category. Like
+ *   Trendyol, a laptop with a bigger disk is a separate product, not a variant: its price list, photos and specs differ.
  */
 
 export const ATTRIBUTE_TYPES = {
@@ -23,6 +24,13 @@ export const DISPLAY_STYLES = {
   dropdown: { label: "Açılır liste", hint: "Uzun listeler (halı ölçüleri, 30+ değer)" },
 } as const;
 export type DisplayStyle = keyof typeof DISPLAY_STYLES;
+
+/** The two jobs an attribute can do; the panel asks this first (the DB stores it as `is_variant_axis`). */
+export const ATTRIBUTE_ROLES = {
+  variant: { label: "Varyant (seçenek)", hint: "Müşteri ürün sayfasında seçer; her seçeneğin kendi fiyatı, stoğu, barkodu ve görselleri olur.", examples: "Renk, Beden, Numara, Halı ölçüsü" },
+  spec: { label: "Ürün bilgisi", hint: "Ürünü tanımlar; “Ürün özellikleri” tablosunda ve filtrelerde görünür, fiyatı değiştirmez.", examples: "Materyal, Disk kapasitesi, Garanti" },
+} as const;
+export type AttributeRole = keyof typeof ATTRIBUTE_ROLES;
 
 export interface AttributeOptionRow {
   id: string;
@@ -46,6 +54,8 @@ export interface AttributeRow {
   isVariantAxis: boolean;
   isFilterable: boolean;
   displayStyle: DisplayStyle;
+  /** Variant axis whose values change the product photos (Renk). */
+  variesMedia: boolean;
   sortOrder: number;
   options: AttributeOptionRow[];
   categories: { categoryId: string; isRequired: boolean }[];
@@ -62,6 +72,7 @@ export interface AttributeInput {
   isVariantAxis: boolean;
   isFilterable: boolean;
   displayStyle: DisplayStyle;
+  variesMedia?: boolean;
 }
 
 export interface OptionInput {
@@ -87,6 +98,7 @@ export function attributeProblems(a: AttributeInput): Record<string, string> {
   if (a.code && !/^[a-z0-9_]{2,40}$/.test(a.code)) p.code = "Kod küçük harf, rakam ve alt çizgi (2–40).";
   if (a.isVariantAxis && a.dataType !== "select") p.isVariantAxis = "Varyant ekseni yalnız “Seçenekli (tek)” tipinde olabilir.";
   if (a.displayStyle !== "button" && a.dataType !== "select") p.displayStyle = "Gösterim biçimi yalnız seçenekli özelliklerde seçilir.";
+  if (a.variesMedia && !a.isVariantAxis) p.variesMedia = "Görsele göre değişim yalnız varyant özelliklerinde seçilir.";
   if (a.unit && a.unit.length > 12) p.unit = "Birim en fazla 12 karakter.";
   if (a.description && a.description.length > 300) p.description = "Açıklama en fazla 300 karakter.";
   return p;
@@ -100,11 +112,11 @@ export function optionProblems(o: OptionInput): Record<string, string> {
   return p;
 }
 
-/** Ready-made attributes: one click creates the attribute with its usual values. */
+/** Ready-made attributes: one click creates the attribute with its usual values (variant axes first, then specs). */
 export const ATTRIBUTE_TEMPLATES = {
   color: {
     title: "Renk", hint: "Renk daireleriyle seçilir (13 renk)",
-    attribute: { label: "Renk", code: "color", dataType: "select", isVariantAxis: true, isFilterable: true, displayStyle: "swatch" },
+    attribute: { label: "Renk", code: "color", dataType: "select", isVariantAxis: true, isFilterable: true, displayStyle: "swatch", variesMedia: true },
     options: [
       ["Siyah", "#111111"], ["Beyaz", "#FFFFFF"], ["Gri", "#9CA3AF"], ["Lacivert", "#1E2A5A"], ["Mavi", "#2563EB"], ["Kırmızı", "#DC2626"],
       ["Yeşil", "#16A34A"], ["Sarı", "#FACC15"], ["Turuncu", "#F97316"], ["Pembe", "#EC4899"], ["Mor", "#7C3AED"], ["Bej", "#E7D8BE"], ["Kahverengi", "#7C4A21"],
@@ -136,8 +148,8 @@ export const ATTRIBUTE_TEMPLATES = {
     options: [["250 ml", 0.25], ["500 ml", 0.5], ["750 ml", 0.75], ["1 L", 1], ["1,5 L", 1.5], ["2 L", 2], ["5 L", 5]].map(([label, n]) => ({ label: label as string, numericValue: n as number })),
   },
   storage: {
-    title: "Depolama kapasitesi", hint: "64 GB – 1 TB",
-    attribute: { label: "Kapasite", code: "storage", dataType: "select", isVariantAxis: true, isFilterable: true, displayStyle: "button" },
+    title: "Depolama kapasitesi", hint: "Ürün bilgisi: farklı kapasite ayrı ürün olarak eklenir",
+    attribute: { label: "Kapasite", code: "storage", dataType: "select", isVariantAxis: false, isFilterable: true, displayStyle: "button" },
     options: [["64 GB", 64], ["128 GB", 128], ["256 GB", 256], ["512 GB", 512], ["1 TB", 1024]].map(([label, n]) => ({ label: label as string, numericValue: n as number })),
   },
   kids_age: {
@@ -145,8 +157,24 @@ export const ATTRIBUTE_TEMPLATES = {
     attribute: { label: "Yaş", code: "kids_age", dataType: "select", isVariantAxis: true, isFilterable: true, displayStyle: "dropdown" },
     options: ["0-3 ay", "3-6 ay", "6-9 ay", "9-12 ay", "1-2 yaş", "2-3 yaş", "3-4 yaş", "5-6 yaş", "7-8 yaş", "9-10 yaş", "11-12 yaş", "13-14 yaş"].map((label, i) => ({ label, numericValue: i })),
   },
+  material: {
+    title: "Materyal", hint: "Ürün bilgisi: Pamuk, Polyester, Deri …",
+    attribute: { label: "Materyal", code: "material", dataType: "select", isVariantAxis: false, isFilterable: true, displayStyle: "button" },
+    options: ["Pamuk", "Polyester", "Viskon", "Keten", "Yün", "Deri", "Süet", "Tekstil"].map((label) => ({ label })),
+  },
 } satisfies Record<string, { title: string; hint: string; attribute: AttributeInput & { code: string }; options: OptionInput[] }>;
 export type AttributeTemplateKey = keyof typeof ATTRIBUTE_TEMPLATES;
+export const ATTRIBUTE_TEMPLATE_KEYS = Object.keys(ATTRIBUTE_TEMPLATES) as AttributeTemplateKey[];
+
+/** Header / cell text matching: case, Turkish letters and punctuation are ignored ("Ayakkabı Numarası" = "ayakkabi numarasi"). */
+export const foldLabel = (s: string) => fold(s).replace(/[^a-z0-9]/g, "");
+
+/** An option of `options` written as text (its label or value code), or null. */
+export function findOption<T extends { value: string; label: string }>(options: T[], text: string): T | null {
+  const want = foldLabel(text);
+  if (!want) return null;
+  return options.find((o) => foldLabel(o.label) === want) ?? options.find((o) => foldLabel(o.value) === want) ?? null;
+}
 
 // --- barcodes -----------------------------------------------------------------------------------------
 

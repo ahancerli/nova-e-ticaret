@@ -17,6 +17,8 @@
 - Zod 4: `z.record(z.enum(...), v)` is exhaustive (every key required) — use `z.partialRecord` for optional keys.
 - Framing: storefront pages allow same-origin frames (Vitrin › Önizleme: `X-Frame-Options: SAMEORIGIN`, `frame-ancestors 'self'`); `/admin` stays `DENY` / `'none'` (next.config.ts later entry + src/proxy.ts). Keep both in sync.
 - Trigger codes (`RAISE(ABORT,'insufficient_stock')` …) reach application code as raw errors from `UnitOfWork.commit`; they become AppErrors only in `route()`. Branch on `isAppError(e) ? e.code : databaseErrorCode(e)`.
+- A column added by `ALTER` can't get an index anywhere: not in schema.sql (old DBs fail before migrate), not in its own migration (`test_schema.py` #51 runs every migration probe on a fresh schema DB, so a fresh DB would never get it). Enforce uniqueness in the use case (e.g. `products.model_code`).
 - Marketplaces accept only https raster images (no SVG; seed demo images are SVG → filtered out in `buildTrendyolItem`). Trendyol stage needs IP whitelisting; identical price/stock request within 15 min is rejected (we hash and skip unchanged).
 - Bulk Excel files are never uploaded; never add a server-side xlsx parser. Remote fetches only via `RemoteFetcher` (SSRF guard).
-
+- GraphQL SDL lives in a JS template literal (`src/server/graphql/schema.ts`): `\"` there becomes a bare `"` → SDL parse error at startup (every route importing the graph 500s). Keep descriptions free of quotes; `npm run test:storefront` parses the schema.
+- eslint `react-hooks/set-state-in-effect` is on: no synchronous setState in an effect body (also not via a called helper that sets state before its first await). Load data with `api.get().then(…)` + a `live` flag inside the effect (see `AuditDetailDrawer`), reset state on prop change during render (`if (id !== shownId) { setShownId(id); … }`), and pass stable (`useCallback`) `onClose` props into drawers whose effect depends on them.

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Braces, FileCode2, History, ImageUp, PackagePlus, PencilLine, Tag, Warehouse } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin/ui";
 import type { BulkJob, FeedRecord } from "@/modules/bulk";
-import type { BulkOp } from "@/modules/bulk/domain/bulk";
+import type { BulkOp, VariantAxisColumn } from "@/modules/bulk/domain/bulk";
 import { ExcelImport } from "./ExcelImport";
 import { FeedsPanel } from "./FeedsPanel";
 import { JobsPanel } from "./JobsPanel";
@@ -21,7 +21,7 @@ const GROUPS: { title: string; tabs: { key: BulkTab; label: string; icon: typeof
 ];
 
 /** Toplu işlemler: Excel tabs (template → automatic check → upload), XML and REST feeds, history (?sekme= keeps the tab). */
-export function BulkOperations({ initialTab, feeds, jobs, categories }: { initialTab: BulkTab; feeds: FeedRecord[]; jobs: BulkJob[]; categories: { id: string; label: string }[] }) {
+export function BulkOperations({ initialTab, feeds, jobs, categories, axes }: { initialTab: BulkTab; feeds: FeedRecord[]; jobs: BulkJob[]; categories: { id: string; label: string }[]; axes: VariantAxisColumn[] }) {
   const [tab, setTab] = useState<BulkTab>(initialTab);
   const select = (t: BulkTab) => {
     setTab(t);
@@ -51,7 +51,7 @@ export function BulkOperations({ initialTab, feeds, jobs, categories }: { initia
           </div>
         ))}
       </nav>
-      {op ? <ExcelImport key={op} op={op} /> : null}
+      {op ? <ExcelImport key={op} op={op} axes={axes} /> : null}
       {tab === "xml" ? <FeedsPanel format="xml" feeds={feeds} categories={categories} /> : null}
       {tab === "rest" ? <FeedsPanel format="json" feeds={feeds} categories={categories} /> : null}
       {tab === "gecmis" ? <JobsPanel jobs={jobs} /> : null}

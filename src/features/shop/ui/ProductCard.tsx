@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ProductCard as Card } from "@/lib/types";
 import { PromoBadge } from "@/components/ui/PromoBadge";
+import { CompareToggle } from "../compare/CompareToggle";
 import { AddToCartButton } from "./AddToCartButton";
 import { Price, discountPercent } from "./Price";
 import { Rating } from "./Rating";
@@ -25,6 +26,10 @@ export function ProductCard({ p, priority = false }: { p: Card; priority?: boole
         )}
         {!p.inStock && <span className="absolute inset-x-0 bottom-0 bg-ink/70 py-1 text-center text-xs font-semibold text-white">Tükendi</span>}
       </Link>
+      {/* z-10: above the card-wide link overlay; always visible on touch, on hover / focus from md */}
+      <div className="absolute right-2 top-2 z-10 transition md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+        <CompareToggle variant="icon" item={{ id: p.id, slug: p.slug, name: p.name, imageUrl: p.imageUrl }} />
+      </div>
       <div className="flex flex-1 flex-col gap-1.5 px-3 pb-3">
         <h3 className="line-clamp-2 min-h-10 text-sm leading-5">
           <Link href={`/urun/${p.slug}`} className="after:absolute after:inset-0 after:content-[''] hover:text-brand">

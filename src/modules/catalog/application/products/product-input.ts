@@ -26,6 +26,8 @@ const variantInput = z
     widthMm: optInt(0, 100_000),
     heightMm: optInt(0, 100_000),
     depthMm: optInt(0, 100_000),
+    /** The variant's own photos (Renk: every size of a colour shares them). */
+    media: z.array(entityId).max(20).default([]),
   })
   .strict()
   .refine((v) => v.compareAtMinor == null || v.compareAtMinor > v.priceMinor, { path: ["compareAtMinor"], message: "Eski fiyat, satış fiyatından büyük olmalı." })
@@ -43,6 +45,7 @@ export const productSaveSchema = z
     countryOfOrigin: z.string().trim().regex(/^[A-Za-z]{2}$/, "İki harfli ülke kodu girin (örn. TR).").optional().nullable().or(z.literal("")),
     accountingCode: optText(64),
     manufacturerCode: optText(64),
+    modelCode: z.string().trim().max(64).regex(/^[A-Za-z0-9._-]*$/, "Model kodu harf, rakam, nokta, tire ve alt çizgi içerebilir.").optional().nullable(),
     brandId: entityId.optional().nullable(),
     categories: z.array(z.object({ id: entityId, primary: z.boolean() }).strict()).max(20),
     media: z.array(entityId).max(30),

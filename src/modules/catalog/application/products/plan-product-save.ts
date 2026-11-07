@@ -25,13 +25,15 @@ export interface CurrentProduct {
   publishedAt: string | null;
   updatedAt: string;
   variants: CurrentVariant[];
-  /** Gallery (non-variant) media currently attached. */
+  /** Every media attached (gallery and variant photos). */
   mediaIds: string[];
 }
 
 /** Results of the existence / uniqueness lookups for the values in the input. */
 export interface SaveLookups {
   slugTaken: boolean;
+  /** The model code belongs to another product. */
+  modelCodeTaken: boolean;
   brandExists: boolean;
   foundCategoryIds: ReadonlySet<string>;
   foundImageIds: ReadonlySet<string>;
@@ -63,6 +65,8 @@ export interface PlannedVariant {
   compareAtMinor: number | null;
   minPriceMinor: number | null;
   stock: StockChange;
+  /** The variant's own photos, in order. */
+  mediaIds: string[];
 }
 
 export interface AttributeValueRow {
@@ -87,6 +91,7 @@ export interface ProductSavePlan {
     descriptionHtml: string | null;
     accountingCode: string | null;
     manufacturerCode: string | null;
+    modelCode: string | null;
     status: ProductStatus;
     taxRateBps: number;
     warrantyMonths: number | null;
@@ -105,7 +110,7 @@ export interface ProductSavePlan {
   archive: { id: string; sku: string }[];
   attributeValues: AttributeValueRow[];
   seo: { metaTitle: string | null; metaDescription: string | null; canonicalUrl: string | null; noindex: boolean } | null;
-  /** Gallery media no longer attached: released after commit. */
+  /** Media (gallery or variant photos) no longer attached anywhere: released after commit. */
   detachedMediaIds: string[];
 }
 
@@ -143,11 +148,15 @@ export function planProductSave(args: {
   if (!requestedCats.length) push("categories", "En az bir kategori seçin.");
   const primaryCategoryId = input.categories.find((c) => c.primary && lookups.foundCategoryIds.has(c.id))?.id ?? categoryIds[0] ?? null;
 
-  // --- media ---
+  const modelCode = textOrNull(input.modelCode)?.toUpperCase() ?? null;
+  if (modelCode && lookups.modelCodeTaken) push("modelCode", "Bu model kodu başka bir üründe kullanılıyor.");
+
+  // --- media (a product with photos only on its variants — every colour has its own — is still publishable) ---
   const mediaIds = [...new Set(input.media)];
   if (mediaIds.some((m) => !lookups.foundImageIds.has(m))) push("media", "Galerideki bir görsel bulunamadı; yeniden yükleyin.");
   const primaryMediaId = input.primaryMediaId && mediaIds.includes(input.primaryMediaId) ? input.primaryMediaId : mediaIds[0] ?? null;
-  if (input.status === "published" && !mediaIds.length) push("media", "Yayındaki bir ürün için en az bir görsel gerekli.");
+  const hasVariantMedia = input.variants.some((v) => v.isActive && v.media?.length);
+  if (input.status === "published" && !mediaIds.length && !hasVariantMedia) push("media", "Yayındaki bir ürün için en az bir görsel gerekli (galeri veya varyant görseli).");
 
   // --- variant axes ---
   const attrById = new Map<string, AttributeMeta>(meta.attributes.map((a) => [a.id, a]));
@@ -194,6 +203,8 @@ export function planProductSave(args: {
       push(k("sku"), "Satılmış / stok hareketi olan varyantın SKU ve kombinasyonu değiştirilemez. Yeni varyant ekleyin.");
     }
     if (cur && v.stock < cur.reserved) push(k("stock"), `Rezerve edilmiş ${cur.reserved} adetin altına düşürülemez.`);
+    const variantMedia = [...new Set(v.media ?? [])];
+    if (variantMedia.some((m) => !lookups.foundImageIds.has(m))) push(k("media"), "Varyant görsellerinden biri bulunamadı; yeniden yükleyin.");
 
     // Stock is written only when the user changed it, relative to what the editor showed (expectedStock).
     // Comparing with the current DB value instead would silently undo sales made while the editor was open.
@@ -222,6 +233,7 @@ export function planProductSave(args: {
       compareAtMinor: v.compareAtMinor ?? null,
       minPriceMinor: v.minPriceMinor ?? null,
       stock,
+      mediaIds: variantMedia,
     };
     return { planned, wantsDefault: v.isDefault && v.isActive };
   });
@@ -291,6 +303,7 @@ export function planProductSave(args: {
         descriptionHtml: textOrNull(input.descriptionHtml),
         accountingCode: textOrNull(input.accountingCode),
         manufacturerCode: textOrNull(input.manufacturerCode),
+        modelCode,
         status: input.status,
         taxRateBps: input.taxRateBps,
         warrantyMonths: input.warrantyMonths ?? null,
@@ -307,7 +320,7 @@ export function planProductSave(args: {
       archive: archive.map((v) => ({ id: v.id, sku: v.sku })),
       attributeValues,
       seo: hasSeo ? { metaTitle: seoTitle, metaDescription: seoDesc, canonicalUrl: canonical, noindex: input.seo.noindex } : null,
-      detachedMediaIds: (current?.mediaIds ?? []).filter((m) => !mediaIds.includes(m)),
+      detachedMediaIds: (current?.mediaIds ?? []).filter((m) => !mediaIds.includes(m) && !variants.some((v) => v.mediaIds.includes(m))),
     },
   };
 }

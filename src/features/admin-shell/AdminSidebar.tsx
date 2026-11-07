@@ -4,6 +4,7 @@ import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ComponentType } from "react";
 import {
+  Bell,
   FileSpreadsheet,
   ChevronRight,
   Contact,
@@ -13,6 +14,7 @@ import {
   FolderTree,
   LayoutGrid,
   Megaphone,
+  MessageSquareText,
   MonitorCog,
   Package,
   PlugZap,
@@ -38,7 +40,9 @@ export type SidebarIcon =
   | "users"
   | "settings"
   | "content"
-  | "audit";
+  | "audit"
+  | "reviews"
+  | "notifications";
 
 type SidebarLink = {
   type: "link";
@@ -77,6 +81,8 @@ export const iconMap: Record<SidebarIcon, ComponentType<{ className?: string }>>
   settings: Settings,
   content: FileText,
   audit: FileCheck2,
+  reviews: MessageSquareText,
+  notifications: Bell,
 };
 
 function ItemIcon({ icon }: { icon: SidebarIcon }) {

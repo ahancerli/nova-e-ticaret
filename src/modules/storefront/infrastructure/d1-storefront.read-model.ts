@@ -1,5 +1,5 @@
 import { Repository, placeholders } from "@/core";
-import type { CategoryNode, Facets, HomeData, ProductDetail, SearchSuggestions } from "@/lib/types";
+import type { CategoryNode, ComparedProduct, Facets, HomeData, ProductCard, ProductDetail, SearchSuggestions } from "@/lib/types";
 import { DEFAULT_PRICE_LIST } from "@/modules/catalog/domain/product";
 import type { ListParams, NavItem, ShellData, StorefrontReadModel } from "../application/ports";
 import { HOME_SECTION_LOADERS, type HomeSectionRow } from "./home-sections";
@@ -231,8 +231,13 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
 
   // --- product detail ------------------------------------------------------------------------------
   async productBySlug(slug: string): Promise<ProductDetail | null> {
-    const product = await this.db.first<{ id: string; slug: string; name: string; short_description: string | null; description_html: string | null; tax_rate_bps: number; brand_name: string | null; brand_slug: string | null }>(
-      `SELECT p.id, p.slug, p.name, p.short_description, p.description_html, p.tax_rate_bps, b.name AS brand_name, b.slug AS brand_slug
+    const product = await this.db.first<{
+      id: string; slug: string; name: string; short_description: string | null; description_html: string | null; tax_rate_bps: number; brand_name: string | null; brand_slug: string | null;
+      rating: number | null; rating_count: number;
+    }>(
+      `SELECT p.id, p.slug, p.name, p.short_description, p.description_html, p.tax_rate_bps, b.name AS brand_name, b.slug AS brand_slug,
+              (SELECT ROUND(AVG(r.rating), 1) FROM reviews r WHERE r.product_id = p.id AND r.status = 'approved') AS rating,
+              (SELECT COUNT(*) FROM reviews r WHERE r.product_id = p.id AND r.status = 'approved') AS rating_count
          FROM products p LEFT JOIN brands b ON b.id = p.brand_id
         WHERE p.slug = ? AND p.status = 'published'`,
       slug,
@@ -296,7 +301,84 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
       specs: [...specs.values()].map((s) => ({ label: s.label, value: s.values.join(", ") })),
       related: rows<CardRow>(related).map(toCard),
       breadcrumb: rows<{ name: string; slug: string }>(breadcrumb),
+      rating: product.rating, ratingCount: product.rating_count,
     };
+  }
+
+  // --- similar products ------------------------------------------------------------------------------
+  async similarProducts(productId: string, limit: number, offset: number): Promise<{ items: ProductCard[]; total: number }> {
+    // Candidates share a category with the product or sit in a sibling category (same parent). Score weights:
+    // own category 40 / sibling 15, shared spec values 6 each (max 5), brand 10, price closeness up to 20, stock 5.
+    const found = await this.db.all<CardRow & { total: number }>(
+      `WITH me AS (
+         SELECT p.id, p.brand_id,
+                (SELECT MIN(vp.unit_price_minor) FROM product_variants v JOIN variant_prices vp ON vp.variant_id = v.id AND vp.price_list_id = ?
+                  WHERE v.product_id = p.id AND v.is_active = 1) AS price
+           FROM products p WHERE p.id = ?),
+       own AS (SELECT category_id AS id FROM product_categories WHERE product_id = (SELECT id FROM me)),
+       pool AS (
+         SELECT id, 0 AS dist FROM own
+         UNION SELECT c.id, 1 FROM categories c
+          WHERE c.is_active = 1 AND c.id NOT IN (SELECT id FROM own)
+            AND c.parent_id IN (SELECT parent_id FROM categories WHERE id IN (SELECT id FROM own) AND parent_id IS NOT NULL)),
+       cand AS (
+         SELECT pc.product_id AS id, MIN(pool.dist) AS dist FROM product_categories pc JOIN pool ON pool.id = pc.category_id
+          WHERE pc.product_id <> (SELECT id FROM me) GROUP BY pc.product_id),
+       scored AS (
+         SELECT c.*,
+                (CASE cand.dist WHEN 0 THEN 40 ELSE 15 END)
+                + 6 * MIN(5, (SELECT COUNT(*) FROM product_attribute_values a JOIN product_attribute_values m
+                                 ON m.product_id = (SELECT id FROM me) AND m.attribute_id = a.attribute_id
+                                AND (a.option_id = m.option_id OR a.text_value = m.text_value OR a.number_value = m.number_value OR a.boolean_value = m.boolean_value)
+                               WHERE a.product_id = c.id))
+                + (CASE WHEN p2.brand_id IS NOT NULL AND p2.brand_id = (SELECT brand_id FROM me) THEN 10 ELSE 0 END)
+                + (CASE WHEN c.min_price > 0 AND (SELECT price FROM me) > 0
+                        THEN 20.0 * MIN(c.min_price, (SELECT price FROM me)) / MAX(c.min_price, (SELECT price FROM me)) ELSE 0 END)
+                + 5 * c.in_stock AS score
+           FROM (${CARD_SELECT} WHERE p.status = 'published') c
+           JOIN cand ON cand.id = c.id JOIN products p2 ON p2.id = c.id)
+       SELECT scored.*, COUNT(*) OVER () AS total FROM scored
+        ORDER BY score DESC, rating_count DESC, published_at DESC, id LIMIT ? OFFSET ?`,
+      DEFAULT_PRICE_LIST, productId, limit, offset,
+    );
+    return { items: found.map(toCard), total: found[0]?.total ?? (offset ? (await this.similarProducts(productId, 1, 0)).total : 0) };
+  }
+
+  // --- comparison ----------------------------------------------------------------------------------
+  async compare(slugs: string[]): Promise<ComparedProduct[]> {
+    const products = await this.db.all<CardRow & { short_description: string | null; category_name: string | null }>(
+      `SELECT c.*, p2.short_description,
+              (SELECT cat.name FROM product_categories pc JOIN categories cat ON cat.id = pc.category_id WHERE pc.product_id = c.id AND pc.is_primary = 1) AS category_name
+         FROM (${CARD_SELECT} WHERE p.slug IN (${placeholders(slugs.length)}) AND p.status = 'published') c
+         JOIN products p2 ON p2.id = c.id`,
+      ...slugs,
+    );
+    if (!products.length) return [];
+    type AttrRow = { product_id: string; code: string; label: string; unit: string | null; text_value: string | null; number_value: number | null; boolean_value: number | null; option_label: string | null };
+    const attrs = await this.db.all<AttrRow>(
+      `SELECT pav.product_id, d.code, d.label, d.unit, pav.text_value, pav.number_value, pav.boolean_value, ao.label AS option_label
+         FROM product_attribute_values pav JOIN attribute_definitions d ON d.id = pav.attribute_id
+         LEFT JOIN attribute_options ao ON ao.id = pav.option_id
+        WHERE pav.product_id IN (${placeholders(products.length)}) ORDER BY d.label, pav.value_index`,
+      ...products.map((p) => p.id),
+    );
+    const specs = new Map<string, Map<string, { label: string; values: string[] }>>();
+    for (const a of attrs) {
+      const v = a.option_label ?? a.text_value ?? (a.number_value != null ? `${a.number_value}${a.unit ? " " + a.unit : ""}` : a.boolean_value != null ? (a.boolean_value ? "Evet" : "Hayır") : "");
+      const bySpec = specs.get(a.product_id) ?? new Map<string, { label: string; values: string[] }>();
+      specs.set(a.product_id, bySpec);
+      if (!bySpec.has(a.code)) bySpec.set(a.code, { label: a.label, values: [] });
+      bySpec.get(a.code)!.values.push(v);
+    }
+    const bySlug = new Map(products.map((p) => [p.slug, p]));
+    return slugs.flatMap((slug) => {
+      const p = bySlug.get(slug);
+      if (!p) return [];
+      return [{
+        card: toCard(p), shortDescription: p.short_description, categoryName: p.category_name,
+        specs: [...(specs.get(p.id) ?? new Map()).entries()].map(([code, s]) => ({ code, label: s.label, value: s.values.join(", ") })),
+      }];
+    });
   }
 }
 

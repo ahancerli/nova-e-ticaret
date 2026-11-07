@@ -33,6 +33,8 @@ export interface AttributeMeta {
   isVariantAxis: boolean;
   /** How shoppers pick it (variant axes). */
   displayStyle?: "button" | "swatch" | "dropdown";
+  /** Variant axis whose values change the photos (Renk): the editor assigns images per value. */
+  variesMedia?: boolean;
   /** Inactive options stay on existing variants but are not offered for new ones. */
   options: { id: string; value: string; label: string; colorHex: string | null; isActive?: boolean; numericValue?: number | null }[];
 }
@@ -66,6 +68,8 @@ export interface EditorVariant {
   depthMm: number | null;
   /** Sold / moved / reserved: SKU and combination are frozen, the variant is archived instead of deleted. */
   locked: boolean;
+  /** The variant's own photos (shown instead of the shared gallery when it is picked). */
+  media: { mediaId: string; url: string }[];
 }
 
 export interface ProductEditorData {
@@ -80,6 +84,8 @@ export interface ProductEditorData {
   countryOfOrigin: string | null;
   accountingCode: string | null;
   manufacturerCode: string | null;
+  /** Model kodu (Trendyol productMainId): groups the variants of one model in bulk sheets and on marketplaces. */
+  modelCode: string | null;
   brandId: string | null;
   publishedAt: string | null;
   createdAt: string;

@@ -2,6 +2,7 @@
 
 import { api } from "@/lib/api-client";
 import type { Facets, ProductCard, SearchSuggestions } from "@/lib/types";
+import type { PublicReviewSort, ReviewPage } from "@/modules/reviews/domain/review";
 
 /**
  * Browser side of the storefront graph (POST /api/graphql, read-only). Documents are fixed strings, so the
@@ -45,7 +46,17 @@ export const SUGGEST_QUERY = `query Suggest($q: String!) {
   suggest(q: $q) { products { ${PRODUCT_FIELDS} } categories { name href } brands { name href } }
 }`;
 
+export const REVIEWS_QUERY = `query Reviews($productId: ID!, $sort: ReviewSort, $rating: Int, $page: Int) {
+  reviews(productId: $productId, sort: $sort, rating: $rating, page: $page) {
+    total page pages
+    summary { average count distribution }
+    items { id rating title body authorName verifiedPurchase variantLabel helpfulCount publishedAt reply { body repliedAt } }
+  }
+}`;
+
 export const shopGraph = {
+  reviews: (v: { productId: string; sort: PublicReviewSort; rating: number | null; page: number }, signal?: AbortSignal) =>
+    graph<{ reviews: ReviewPage }>(REVIEWS_QUERY, v, signal).then((d) => d.reviews),
   listing: (filter: ListingFilter, signal?: AbortSignal) => graph<ListingData>(LISTING_QUERY, { filter }, signal),
   suggest: (q: string, signal?: AbortSignal) => graph<{ suggest: SearchSuggestions }>(SUGGEST_QUERY, { q }, signal).then((d) => d.suggest),
 };

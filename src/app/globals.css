@@ -53,6 +53,8 @@
   --animate-float: float 6s ease-in-out infinite;
   --animate-sheet-in: sheet-in 420ms var(--ease-spring) both;
   --animate-sheet-out: sheet-out 220ms var(--ease-in-quart) both;
+  /* Admin bell: one short swing when new notifications arrive. */
+  --animate-ring: ring 900ms var(--ease-out-expo) 1;
 
   @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
   @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
@@ -74,6 +76,7 @@
   @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
   @keyframes sheet-in { from { transform: translateY(100%); } to { transform: none; } }
   @keyframes sheet-out { from { transform: none; } to { transform: translateY(100%); } }
+  @keyframes ring { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(14deg); } 30% { transform: rotate(-12deg); } 45% { transform: rotate(8deg); } 60% { transform: rotate(-5deg); } 75% { transform: rotate(2deg); } }
   @keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
   @keyframes progress { from { transform: translateX(-100%) scaleX(0.3); } 50% { transform: translateX(10%) scaleX(0.55); } to { transform: translateX(100%) scaleX(0.3); } }
 }

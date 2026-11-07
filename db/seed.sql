@@ -31,12 +31,13 @@ INSERT OR IGNORE INTO permissions (id, code, description) VALUES
  ('perm_13','settings.write','Genel site ve SEO ayarları'),
  ('perm_14','customers.read','Müşteri bilgisi görüntüleme'),
  ('perm_15','content.write','İçerik yönetimi: yasal metinler, kurumsal ve yardım sayfaları'),
- ('perm_16','customers.write','Müşteri hesabı düzenleme, askıya alma, şifre sıfırlama bağlantısı');
+ ('perm_16','customers.write','Müşteri hesabı düzenleme, askıya alma, şifre sıfırlama bağlantısı'),
+ ('perm_17','reviews.moderate','Ürün yorumlarını onaylama, yanıtlama, müşteriyle iletişim');
 
 INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES
  ('role_catalog','perm_01'),('role_catalog','perm_02'),('role_catalog','perm_07'),
  ('role_order','perm_04'),('role_order','perm_05'),('role_order','perm_06'),('role_order','perm_14'),('role_order','perm_16'),
- ('role_marketing','perm_01'),('role_marketing','perm_07'),('role_marketing','perm_08'),('role_marketing','perm_15');
+ ('role_marketing','perm_01'),('role_marketing','perm_07'),('role_marketing','perm_08'),('role_marketing','perm_15'),('role_marketing','perm_17');
 INSERT OR IGNORE INTO role_permissions (role_id, permission_id) SELECT 'role_admin', id FROM permissions;
 
 -- Core config -------------------------------------------------------------------
@@ -614,8 +615,35 @@ INSERT OR IGNORE INTO wishlist_items (wishlist_id, product_id) VALUES
 INSERT OR IGNORE INTO recent_views (visitor_key_hash, product_id, viewed_at) VALUES
  ('visitor_demo_1','p_knit','2026-10-12T09:00:00.000Z');
 
-INSERT OR IGNORE INTO reviews (id, product_id, user_id, order_item_id, rating, title, body, status) VALUES
- ('rev_demo_1','p_knit','u_customer','oi_demo_1',5,'Cok iyi','Kumas kalitesi ve kalip beklentimin ustunde.','approved');
+INSERT OR IGNORE INTO reviews
+ (id, product_id, user_id, order_item_id, variant_id, rating, title, body, status, is_anonymous, verified_purchase, helpful_count,
+  reject_reason, moderated_by, moderated_at, published_at, reply_body, reply_by, replied_at, contact_status, created_at, updated_at)
+ VALUES
+ ('rev_demo_1','p_knit','u_customer','oi_demo_1','v_knit_bk_m',5,'Çok iyi','Kumaş kalitesi ve kalıp beklentimin üstünde.','approved',0,1,2,
+  NULL,'u_admin','2026-10-13T09:00:00.000Z','2026-10-13T09:00:00.000Z','Güzel yorumunuz için teşekkür ederiz, iyi günlerde giymenizi dileriz!','u_admin','2026-10-13T09:05:00.000Z','none',
+  '2026-10-12T18:00:00.000Z','2026-10-13T09:05:00.000Z'),
+ ('rev_demo_2','p_knit','u_cust_2',NULL,NULL,4,'Rengi fotoğraftaki gibi','Bir beden büyük almanızı öneririm, onun dışında çok memnunum.','approved',0,0,1,
+  NULL,'u_admin','2026-10-21T10:00:00.000Z','2026-10-21T10:00:00.000Z',NULL,NULL,NULL,'none','2026-10-20T20:15:00.000Z','2026-10-21T10:00:00.000Z'),
+ ('rev_demo_3','p_speaker','u_cust_3',NULL,NULL,2,'Ses beklediğim gibi değil','Bas sesler zayıf, pil süresi de 12 saat değil.','pending',0,0,0,
+  NULL,NULL,NULL,NULL,NULL,NULL,NULL,'none','2026-11-06T14:30:00.000Z','2026-11-06T14:30:00.000Z'),
+ ('rev_demo_4','p_pan','u_cust_4',NULL,NULL,5,NULL,'Yapışmaz yüzeyi gerçekten çok iyi, kolay temizleniyor.','pending',1,0,0,
+  NULL,NULL,NULL,NULL,NULL,NULL,NULL,'none','2026-11-07T08:10:00.000Z','2026-11-07T08:10:00.000Z'),
+ ('rev_demo_5','p_bed','u_cust_2',NULL,NULL,1,'Reklam','En ucuzu burada: http://ornek-site.example','rejected',0,0,0,
+  'advertising','u_admin','2026-11-02T09:00:00.000Z',NULL,NULL,NULL,NULL,'none','2026-11-01T22:00:00.000Z','2026-11-02T09:00:00.000Z');
+
+INSERT OR IGNORE INTO review_votes (review_id, user_id) VALUES ('rev_demo_1','u_cust_2'),('rev_demo_1','u_cust_3'),('rev_demo_2','u_customer');
+
+INSERT OR IGNORE INTO review_contacts (id, review_id, channel, subject, body, delivery, visible_to_customer, created_by, created_at) VALUES
+ ('rc_demo_1','rev_demo_5','note',NULL,'Bağlantı içeren reklam yorumu, reddedildi.','logged',0,'u_admin','2026-11-02T09:00:00.000Z');
+
+INSERT OR IGNORE INTO review_settings (id) VALUES (1);
+
+INSERT OR IGNORE INTO admin_notifications (id, type, severity, title, body, href, permission, entity_type, entity_id, dedupe_key, created_at) VALUES
+ ('an_demo_1','review.pending','info','Yeni ürün yorumu onay bekliyor','Mini Kablosuz Hoparlör · 2 yıldız · “Ses beklediğim gibi değil”','/admin/yorumlar?durum=pending&yorum=rev_demo_3','reviews.moderate','review','rev_demo_3','review.pending:rev_demo_3','2026-11-06T14:30:00.000Z'),
+ ('an_demo_2','review.pending','info','Yeni ürün yorumu onay bekliyor','Granit Tava & Sahan Seti · 5 yıldız','/admin/yorumlar?durum=pending&yorum=rev_demo_4','reviews.moderate','review','rev_demo_4','review.pending:rev_demo_4','2026-11-07T08:10:00.000Z'),
+ ('an_demo_3','order.placed','success','Yeni sipariş: NOVA-2026-0001','1.039,89 ₺ · Havale/EFT','/admin/siparisler/ord_demo_1','orders.read','order','ord_demo_1','order.placed:ord_demo_1','2026-10-11T10:00:00.000Z');
+
+INSERT OR IGNORE INTO admin_notification_states (notification_id, user_id, read_at) VALUES ('an_demo_3','u_admin','2026-10-11T10:30:00.000Z');
 
 INSERT OR IGNORE INTO comparison_sessions (id, visitor_key_hash, expires_at) VALUES
  ('cmp_session_1','visitor_demo_1','2099-01-01T00:00:00.000Z');
@@ -656,3 +684,9 @@ INSERT OR IGNORE INTO rate_limit_buckets (bucket_key, window_start, attempts, ex
 
 -- Variant display (2026-11-07): colours are picked with swatches.
 UPDATE attribute_definitions SET display_style = 'swatch' WHERE id = 'a_color' AND display_style = 'button';
+
+-- Variant images + model code (2026-11-09): colours change the photos; the knit's variants share one model code.
+UPDATE attribute_definitions SET varies_media = 1 WHERE id = 'a_color' AND varies_media = 0;
+UPDATE attribute_options SET color_hex = CASE id WHEN 'o_black' THEN '#111111' WHEN 'o_navy' THEN '#1E2A5A' ELSE '#F97316' END
+ WHERE id IN ('o_black','o_navy','o_orange') AND color_hex IS NULL;
+UPDATE products SET model_code = 'ATL-TRK-01' WHERE id = 'p_knit' AND model_code IS NULL;

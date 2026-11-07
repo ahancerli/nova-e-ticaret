@@ -251,7 +251,7 @@ export function ProductEditor({ initial, meta, canPublish, ai = null }: { initia
             </div>
           </SectionShell>
         )}
-        {current.id === "variants" && <VariantsSection form={form} setForm={setForm} fe={fe} axisAttrs={meta.attributes.filter((a) => a.isVariantAxis)} />}
+        {current.id === "variants" && <VariantsSection form={form} setForm={setForm} fe={fe} axisAttrs={meta.attributes.filter((a) => a.isVariantAxis)} onUploadingChange={setUploading} />}
         {current.id === "attributes" && <AttributesSection form={form} patch={patch} fe={fe} meta={meta} />}
         {current.id === "seo" && <SeoSection form={form} patch={patch} fe={fe} />}
       </div>

@@ -314,13 +314,13 @@ export class D1MarketplaceRepository extends Repository implements MarketplaceRe
     const out: VariantSnapshot[] = [];
     type R = {
       variant_id: string; product_id: string; sku: string; barcode: string | null; is_active: number; weight_grams: number | null; width_mm: number | null; height_mm: number | null; depth_mm: number | null;
-      name: string; description_html: string | null; short_description: string | null; brand_id: string | null; status: string; tax_rate_bps: number; manufacturer_code: string | null; slug: string;
+      name: string; description_html: string | null; short_description: string | null; brand_id: string | null; status: string; tax_rate_bps: number; manufacturer_code: string | null; model_code: string | null; slug: string;
       category_id: string | null; unit_price_minor: number | null; compare_at_minor: number | null; available: number; images: string; var_opts: string | null; prod_vals: string | null;
     };
     for (const part of chunk(variantIds, 80)) {
       const rows = await this.db.all<R>(
         `SELECT v.id AS variant_id, v.product_id, v.sku, v.barcode, v.is_active, v.weight_grams, v.width_mm, v.height_mm, v.depth_mm,
-                p.name, p.description_html, p.short_description, p.brand_id, p.status, p.tax_rate_bps, p.manufacturer_code, p.slug,
+                p.name, p.description_html, p.short_description, p.brand_id, p.status, p.tax_rate_bps, p.manufacturer_code, p.model_code, p.slug,
                 (SELECT pc.category_id FROM product_categories pc WHERE pc.product_id = p.id ORDER BY pc.is_primary DESC LIMIT 1) AS category_id,
                 vp.unit_price_minor, vp.compare_at_minor,
                 COALESCE((SELECT SUM(ib.on_hand - ib.reserved) FROM inventory_balances ib WHERE ib.variant_id = v.id), 0) AS available,
@@ -346,7 +346,7 @@ export class D1MarketplaceRepository extends Repository implements MarketplaceRe
         Object.assign(options, JSON.parse(r.var_opts ?? "{}") as Record<string, string>);
         const abs = (u: string) => (u.startsWith("http") ? u : `${siteUrl}${u.startsWith("/") ? "" : "/"}${u}`);
         out.push({
-          variantId: r.variant_id, productId: r.product_id, productMainId: (r.manufacturer_code || r.slug).slice(0, 40), title: r.name,
+          variantId: r.variant_id, productId: r.product_id, productMainId: (r.model_code || r.manufacturer_code || r.slug).slice(0, 40), title: r.name,
           description: r.description_html || r.short_description || r.name, brandId: r.brand_id, categoryId: r.category_id, sku: r.sku, barcode: r.barcode,
           sellable: r.is_active === 1 && r.status === "published", priceMinor: r.unit_price_minor, compareAtMinor: r.compare_at_minor, available: r.available,
           taxRateBps: r.tax_rate_bps, weightGrams: r.weight_grams,

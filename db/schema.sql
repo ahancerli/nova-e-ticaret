@@ -224,7 +224,11 @@ CREATE TABLE IF NOT EXISTS products (
   country_of_origin TEXT CHECK (country_of_origin IS NULL OR length(country_of_origin) = 2),
   published_at      TEXT,
   created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  -- Added 2026-11-09 (existing DBs: db/migrations/2026-11-09-variant-media.sql). Model kodu (Trendyol productMainId): keeps the
+  -- variants of one model together in bulk sheets and on marketplaces. Unique when set — checked by the product save use
+  -- case (no index: an index on an ALTER-added column would break schema.sql on old databases before the migration).
+  model_code        TEXT CHECK (model_code IS NULL OR (length(model_code) BETWEEN 1 AND 64 AND model_code NOT GLOB '*[^A-Za-z0-9._-]*'))
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS product_categories (
@@ -277,6 +281,9 @@ CREATE TABLE IF NOT EXISTS attribute_definitions (
   display_style   TEXT NOT NULL DEFAULT 'button' CHECK (display_style IN ('button','swatch','dropdown')),
   sort_order      INTEGER NOT NULL DEFAULT 0,
   description     TEXT CHECK (description IS NULL OR length(description) <= 300),
+  -- Added 2026-11-09: product images change with this axis (Renk): the editor assigns photos per value and the shop swaps
+  -- the gallery when it is picked. Only meaningful on variant axes (checked by the attribute use cases).
+  varies_media    INTEGER NOT NULL DEFAULT 0 CHECK (varies_media IN (0,1)),
   CHECK (is_variant_axis = 0 OR data_type = 'select')
 ) STRICT;
 
@@ -1473,7 +1480,101 @@ CREATE TABLE IF NOT EXISTS reviews (
   status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','hidden')),
   created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  -- Added 2026-11-08 (db/migrations/2026-11-08-reviews-notifications.sql): moderation, store reply, customer contact.
+  variant_id        TEXT REFERENCES product_variants(id) ON DELETE SET NULL,
+  is_anonymous      INTEGER NOT NULL DEFAULT 0 CHECK (is_anonymous IN (0,1)),
+  verified_purchase INTEGER NOT NULL DEFAULT 0 CHECK (verified_purchase IN (0,1)),
+  helpful_count     INTEGER NOT NULL DEFAULT 0 CHECK (helpful_count >= 0),
+  reject_reason     TEXT CHECK (reject_reason IS NULL OR reject_reason IN ('spam','offensive','personal_data','irrelevant','advertising','other')),
+  moderation_note   TEXT CHECK (moderation_note IS NULL OR length(moderation_note) <= 1000),
+  moderated_by      TEXT REFERENCES users(id) ON DELETE SET NULL,
+  moderated_at      TEXT,
+  published_at      TEXT,
+  reply_body        TEXT CHECK (reply_body IS NULL OR length(reply_body) BETWEEN 1 AND 2000),
+  reply_by          TEXT REFERENCES users(id) ON DELETE SET NULL,
+  replied_at        TEXT,
+  contact_status    TEXT NOT NULL DEFAULT 'none' CHECK (contact_status IN ('none','contacted','resolved')),
+  version           INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
   UNIQUE (product_id, user_id)
+) STRICT;
+
+-- "Faydalı buldum": one vote per signed-in customer; reviews.helpful_count is the cached total.
+CREATE TABLE IF NOT EXISTS review_votes (
+  review_id  TEXT NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (review_id, user_id)
+) STRICT;
+
+-- Staff ↔ reviewer contact log: e-mails sent from the panel (shown to the customer under Hesabım), phone calls and
+-- internal notes (staff only).
+CREATE TABLE IF NOT EXISTS review_contacts (
+  id                  TEXT PRIMARY KEY,
+  review_id           TEXT NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+  channel             TEXT NOT NULL CHECK (channel IN ('email','phone','note')),
+  subject             TEXT CHECK (subject IS NULL OR length(subject) BETWEEN 1 AND 200),
+  body                TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 5000),
+  delivery            TEXT NOT NULL DEFAULT 'logged' CHECK (delivery IN ('logged','sent','failed','not_configured')),
+  visible_to_customer INTEGER NOT NULL DEFAULT 0 CHECK (visible_to_customer IN (0,1)),
+  created_by          TEXT REFERENCES users(id) ON DELETE SET NULL,
+  created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  CHECK (channel <> 'email' OR subject IS NOT NULL)
+) STRICT;
+
+-- Single row (id = 1). 'manual' = every review waits for approval; 'auto_trusted' publishes verified buyers' 4–5 star
+-- reviews without links / blocked words at once, everything else still waits.
+CREATE TABLE IF NOT EXISTS review_settings (
+  id               INTEGER PRIMARY KEY CHECK (id = 1),
+  moderation_mode  TEXT NOT NULL DEFAULT 'manual' CHECK (moderation_mode IN ('manual','auto_trusted')),
+  require_purchase INTEGER NOT NULL DEFAULT 1 CHECK (require_purchase IN (0,1)),
+  allow_anonymous  INTEGER NOT NULL DEFAULT 1 CHECK (allow_anonymous IN (0,1)),
+  min_body_length  INTEGER NOT NULL DEFAULT 10 CHECK (min_body_length BETWEEN 1 AND 500),
+  blocked_words    TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(blocked_words) AND json_type(blocked_words) = 'array'),
+  updated_by       TEXT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+) STRICT;
+
+-- Panel notifications (bell + Bildirimler): one row per event, visible to staff holding `permission` (NULL = all
+-- staff). Read / archived state is per staff member. `dedupe_key` makes producers (outbox handlers) idempotent.
+CREATE TABLE IF NOT EXISTS admin_notifications (
+  id          TEXT PRIMARY KEY,
+  type        TEXT NOT NULL CHECK (length(type) BETWEEN 3 AND 60 AND type NOT GLOB '*[^a-z0-9_.]*'),
+  severity    TEXT NOT NULL DEFAULT 'info' CHECK (severity IN ('info','success','warning','danger')),
+  title       TEXT NOT NULL CHECK (length(title) BETWEEN 1 AND 200),
+  body        TEXT CHECK (body IS NULL OR length(body) <= 1000),
+  href        TEXT CHECK (href IS NULL OR (href GLOB '/admin*' AND length(href) <= 300)),
+  permission  TEXT CHECK (permission IS NULL OR length(permission) <= 60),
+  entity_type TEXT,
+  entity_id   TEXT,
+  dedupe_key  TEXT UNIQUE,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS admin_notification_states (
+  notification_id TEXT NOT NULL REFERENCES admin_notifications(id) ON DELETE CASCADE,
+  user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  read_at         TEXT,
+  archived_at     TEXT,
+  PRIMARY KEY (notification_id, user_id)
+) STRICT;
+
+-- Per notification type (shop-wide, Bildirimler › Ayarlar): show in the panel, and e-mail to a fixed list.
+-- A type without a row uses the defaults of NOTIFICATION_TYPES (code).
+CREATE TABLE IF NOT EXISTS admin_notification_rules (
+  type       TEXT PRIMARY KEY CHECK (length(type) BETWEEN 3 AND 60),
+  in_app     INTEGER NOT NULL DEFAULT 1 CHECK (in_app IN (0,1)),
+  email      INTEGER NOT NULL DEFAULT 0 CHECK (email IN (0,1)),
+  email_to   TEXT CHECK (email_to IS NULL OR length(email_to) <= 500),
+  updated_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+) STRICT;
+
+-- Personal preference: a staff member hides one notification type for themselves.
+CREATE TABLE IF NOT EXISTS admin_notification_mutes (
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type       TEXT NOT NULL CHECK (length(type) BETWEEN 3 AND 60),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (user_id, type)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS comparison_sessions (
@@ -1649,6 +1750,13 @@ CREATE INDEX IF NOT EXISTS ix_bank_transfers_status      ON bank_transfers(statu
 CREATE INDEX IF NOT EXISTS ix_refunds_payment            ON refunds(payment_id, status);
 CREATE INDEX IF NOT EXISTS ix_shipments_order            ON shipments(order_id);
 CREATE INDEX IF NOT EXISTS ix_reviews_product_status     ON reviews(product_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_reviews_status_created     ON reviews(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_reviews_user                ON reviews(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_review_votes_user           ON review_votes(user_id);
+CREATE INDEX IF NOT EXISTS ix_review_contacts_review      ON review_contacts(review_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_admin_notifications_created ON admin_notifications(created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_admin_notifications_type    ON admin_notifications(type, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_admin_notif_states_user     ON admin_notification_states(user_id, read_at);
 CREATE INDEX IF NOT EXISTS ix_recent_views_visitor       ON recent_views(visitor_key_hash, viewed_at DESC);
 CREATE INDEX IF NOT EXISTS ix_external_offers_product    ON external_offers(product_id, observed_at DESC);
 CREATE INDEX IF NOT EXISTS ix_outbox_pending             ON outbox_events(status, next_attempt_at);
@@ -1972,7 +2080,7 @@ INSERT OR IGNORE INTO pricing_policy (id, conflict_strategy, max_discount_bps) V
 -- block a write. Stock is captured only when the sellable amount (on_hand − reserved) changes.
 -- -----------------------------------------------------------------------------
 CREATE TRIGGER IF NOT EXISTS trg_ccl_products
-AFTER UPDATE OF name, short_description, description_html, brand_id, status, tax_rate_bps, accounting_code, manufacturer_code, country_of_origin ON products
+AFTER UPDATE OF name, short_description, description_html, brand_id, status, tax_rate_bps, accounting_code, manufacturer_code, country_of_origin, model_code ON products
 BEGIN
   INSERT INTO catalog_change_log (kind, product_id) VALUES ('content', NEW.id);
 END;
@@ -2036,3 +2144,6 @@ END;
 -- Integrations reference rows (insert only).
 INSERT OR IGNORE INTO integration_relay_state (id, last_change_id) VALUES (1, 0);
 INSERT OR IGNORE INTO barcode_sequences (id, prefix, next_value) VALUES ('default', '2000000', 1);
+
+-- Reviews / notifications reference rows (insert only: the panel owns the values afterwards).
+INSERT OR IGNORE INTO review_settings (id) VALUES (1);

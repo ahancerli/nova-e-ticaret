@@ -44,7 +44,7 @@ DataGrip/TablePlus ile bu dosyaya bağlanılabilir (WAL modunda; açık araçta 
 | 4 | Kampanya & kupon | `campaigns`, `campaign_products/brands/categories`, `campaign_tiers`, `campaign_conditions`, `pricing_policy`, `campaign_reward_products`, `coupons`, `coupon_redemptions`, `campaign_allocations` | Fiyat motoru (`modules/pricing`), panel `/admin/kampanyalar`. `campaigns.offer_type` = gerçek tür (NULL → `kind`); `cart_percentage`/`tiered_quantity`/`cross_sell` `kind='percentage'` ile saklanır (canlı D1'de `kind` CHECK'i değiştirilemez: tabloyu yeniden kurmak kuponları/hedefleri CASCADE ile siler). Taban fiyat `variant_prices.min_price_minor` |
 | 5 | Sepet & sipariş | `carts`, `cart_items`, `cart_coupons`, `checkout_sessions`, `orders`, `order_addresses`, `order_items`, `order_adjustments`, `order_events` | Checkout, admin sipariş yönetimi |
 | 6 | Ödeme & lojistik | `payment_configs`, `bank_accounts`, `payments`, `payment_events`, `bank_transfers`, `refunds`, `integration_providers`, `integrations`, `integration_secrets`, `ai_integration`, `ai_models`, `mail_integration`, `mail_deliveries`, `shipping_methods`, `shipments`, `shipment_items`, `shipment_events`, `carrier_shipments` | iyzico/havale, iade, kargo, webhook, tek AI sağlayıcısı, SMS/kargo firma kataloğu |
-| 7 | Etkileşim & operasyon | `wishlists(_items)`, `recent_views`, `reviews`, `comparison_sessions/items`, `external_search_jobs`, `external_offers`, `idempotency_keys`, `outbox_events`, `audit_logs`, `rate_limit_buckets`, `batch_guards` | Idempotency, outbox worker, audit (panelde `/admin/denetim`, salt okunur), rate limit, batch eşzamanlılık koruması (diğerlerinin UI'ı yok) |
+| 7 | Etkileşim & operasyon | `wishlists(_items)`, `recent_views`, `reviews` (+ `review_votes`, `review_contacts`, `review_settings` tek satır), `admin_notifications` (+ `_states` kişi başı okundu/arşiv, `_rules` tür başı panel/e-posta, `_mutes` kişisel), `comparison_sessions/items` (kullanılmıyor: karşılaştırma listesi tarayıcıda), `external_search_jobs`, `external_offers`, `idempotency_keys`, `outbox_events`, `audit_logs`, `rate_limit_buckets`, `batch_guards` | Idempotency, outbox worker, audit (panelde `/admin/denetim`, salt okunur), rate limit, batch eşzamanlılık koruması (diğerlerinin UI'ı yok) |
 
 ## 3. Kuralları kim koruyor?
 
@@ -69,6 +69,8 @@ DataGrip/TablePlus ile bu dosyaya bağlanılabilir (WAL modunda; açık araçta 
 
 ### Uygulama katmanı (src/modules/*/application) — DB'nin bilmediği kurallar
 - SKU ve barkod katalog genelinde benzersiz (payload içinde + diğer ürünler); varyant kombinasyonu ürün içinde benzersiz; eksensiz ürün tek varyant.
+- **Varyant = fiyatı/stoğu/görseli ayrı seçenek** (Renk, Beden, Numara, Ölçü): `attribute_definitions.is_variant_axis = 1`. Disk kapasitesi gibi farklar ürün bilgisidir (ayrı ürün açılır). `varies_media = 1` olan eksen (Renk) ürün görsellerini değiştirir: editör her değere görsel yükler, kayıt `product_media.variant_id` satırlarıdır (o değerdeki tüm varyantlara aynı görseller; `is_primary` hep 0 — vitrin kapağı galerinindir). Galeri boşsa varsayılan varyantın görseli kart görselidir; yayın için galeri **veya** aktif bir varyantın görseli yeterli.
+- **Model kodu** `products.model_code` (Trendyol `productMainId`): büyük harf, `[A-Za-z0-9._-]`, doluysa benzersiz (index yok — kolon ALTER ile eklendiği için; kaydetme use case'i kontrol eder). Toplu "Ürün ekle"de aynı model kodlu satırlar tek ürünün varyantları olur; var olan model koduna yazılan satırlar o ürüne yeni varyant olarak eklenir. Pazaryerine `productMainId` = model kodu › üretici kodu › slug.
 - **Satılmış/hareketli varyant** (sipariş satırı, stok hareketi veya rezervasyonu olan) SKU/kombinasyon değiştiremez; kaldırılırsa silinmez, `is_active = 0` olur.
 - Ürün: en az 1 kategori; `published` için en az 1 görsel ve `catalog.publish` izni; kategorinin (üst kategoriler dahil) `category_attributes.is_required` özellikleri dolu olmalı (varyant ekseni olarak seçilmişse sağlanmış sayılır).
 - Stok, rezerve miktarın altına inemez; her stok değişikliği aynı batch'te `inventory_movements`'a yazılır.
@@ -76,7 +78,7 @@ DataGrip/TablePlus ile bu dosyaya bağlanılabilir (WAL modunda; açık araçta 
 - İade: toplam iade (requested + processing + succeeded) ≤ tahsil edilen; stoğa geri alma ≤ sipariş adedi − önceden geri alınan.
 - Havale onayı: gelen ≠ beklenen → `mismatch`, sipariş ödendi **yapılmaz**; rezervasyon süresi dolmuşsa onay reddedilir.
 - Kategori/marka silme: alt kategorisi/ürünü olan kategori, ürünü veya hikayesi olan marka silinmez (`stories.brand_id` CASCADE olduğu için servis engeller).
-- Yüklenen medya, artık hiçbir `categories / brands / product_media` satırı göstermiyorsa DB'den ve R2'den silinir; seed/demo medyaya dokunulmaz.
+- Yüklenen medya, artık hiçbir `categories / brands / product_media` satırı göstermiyorsa DB'den ve R2'den silinir (varyant görselleri dahil: kaydetmede çıkan veya silinen ürünün tüm görselleri); seed/demo medyaya dokunulmaz.
 
 ## 4. Durumlar ve geçişler
 
@@ -100,6 +102,9 @@ cron expire: süresi dolan rezervasyonlu ödenmemiş sipariş ──► cancelle
 | `checkout_sessions.status` | `open` → `confirmed` / `cancelled` (yeni quote) / `expired` |
 | `products.status` | `draft` · `in_review` · `published` (vitrinde) · `paused` · `archived` |
 | `outbox_events.status` | `pending` → `processing` (5 dk kilit) → `done` / `pending` (geri çekilme) / `dead` (8 deneme veya işleyici yok) |
+| `reviews.status` | `pending` (yeni / düzenlenmiş yorum, panel bildirimi) → `approved` (Yayınla; `published_at`) / `rejected` (Yayınlama, `reject_reason` zorunlu); `approved` → `hidden` (Yayından kaldır) → `approved`; `rejected` / `hidden` → `approved`. Müşteri düzenlerse yeniden `pending` (`auto_trusted` kuralı tutarsa doğrudan `approved`). Yalnız `approved` puana ve vitrine girer |
+| `reviews.contact_status` | `none` → `contacted` (ilk iletişim kaydı) → `resolved` (elle) |
+| `review_contacts.delivery` | `logged` (telefon / not; e-postada gönderim sonucu yazılana kadar) → `sent` / `failed` / `not_configured` (SMTP yok) |
 
 ## 5. Uygulamanın kullandığı sözlükler
 
@@ -150,7 +155,7 @@ cron expire: süresi dolan rezervasyonlu ödenmemiş sipariş ──► cancelle
 
 1. `schema.sql` içinde ilgili tabloyu/indeksi/trigger'ı değiştir (bölüm başlıklarına uy, STRICT + CHECK ekle).
 2. **Var olan veritabanı için:** `CREATE TABLE IF NOT EXISTS` mevcut tabloya kolon **eklemez**. Ya `ALTER TABLE … ADD COLUMN …` komutunu ayrıca çalıştır (`db:query[:local]`), ya da local'de `npm run db:reset:local`. Remote'ta reset veri siler.
-   Hazır migration: `db/migrations/2026-11-06-campaign-engine.sql` (kampanya motoru kolonları + demo kampanyasını açar) → önce `db:schema:<local|remote>`, sonra **bir kez** `npm run db:migrate:<local|remote>`. `db/tests/test_schema.py` #48 bunu önceki commit'in şemasıyla doğrular.
+   Hazır migration: `db/migrations/2026-11-06-campaign-engine.sql` (kampanya motoru kolonları + demo kampanyasını açar) → önce `db:schema:<local|remote>`, sonra **bir kez** `npm run db:migrate:<local|remote>`. `db/tests/test_schema.py` #48 bunu önceki commit'in şemasıyla doğrular. `2026-11-09-variant-media.sql`: `products.model_code`, `attribute_definitions.varies_media`, `trg_ccl_products` yeniden (model kodu değişince pazaryerine içerik gider); #55 doğrular.
 3. Yeni tablo eklediysen `drop_all.sql` (FK sırası: önce çocuklar) ve `tests/test_schema.py` içindeki tablo sayısını güncelle.
 4. Trigger'lar her çalıştırmada drop + create edildiğinden değişiklikleri yeniden `db:schema:*` ile uygulanır.
 5. `npm test` (tüm şema ve modül testleri, bkz. kök README §9) yeşil olmalı. Seed'e eklenen veri `INSERT OR IGNORE` olmalı.

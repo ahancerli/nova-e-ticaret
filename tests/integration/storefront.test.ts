@@ -8,6 +8,7 @@ const core = await import(`${ROOT}/src/core/index.ts`);
 const pricing = await import(`${ROOT}/src/modules/pricing/index.ts`);
 const cart = await import(`${ROOT}/src/modules/cart/index.ts`);
 const storefront = await import(`${ROOT}/src/modules/storefront/index.ts`);
+const reviews = await import(`${ROOT}/src/modules/reviews/index.ts`);
 const identity = await import(`${ROOT}/src/modules/identity/index.ts`);
 const identityModule = await import(`${ROOT}/src/modules/identity/module.ts`);
 const { registerPlatform } = await import(`${ROOT}/src/modules/platform/module.ts`);
@@ -182,6 +183,7 @@ identity.registerIdentity(root);
 pricing.registerPricing(root);
 cart.registerCart(root);
 storefront.registerStorefront(root);
+reviews.registerReviews(root);
 root.singleton(identityModule.SessionCookiesToken, () => cookies);
 const scope = () => root.createScope().provide(EnvToken, { DB: d1, SESSION_SECRET: "s3cret", PUBLIC_SITE_URL: "https://nova.test" });
 const resolve = (tok: any): any => scope().resolve(tok);
@@ -268,6 +270,26 @@ await t("storefront: search suggestions — short input skips D1; products / cat
   const wild = await resolve(storefront.SearchSuggestToken).execute("%_%");
   assert(!wild.products.length && !wild.categories.length && !wild.brands.length, JSON.stringify(wild));
 });
+await t("storefront: similar products — own category, then same brand, then siblings; never itself / unpublished; stable paging", async () => {
+  d1.raw.exec(`INSERT INTO categories (id, parent_id, name, slug) VALUES ('c_sim', NULL, 'Sim', 'sim'), ('c_sim_a', 'c_sim', 'Sim A', 'sim-a'), ('c_sim_b', 'c_sim', 'Sim B', 'sim-b'), ('c_sim_x', NULL, 'Sim X', 'sim-x');
+    INSERT INTO products (id, brand_id, name, slug, status, published_at) VALUES
+      ('p_sim', (SELECT MIN(id) FROM brands), 'Sim', 'sim', 'published', '2026-01-01'),
+      ('p_sim_brand', (SELECT MIN(id) FROM brands), 'Sim marka', 'sim-marka', 'published', '2026-01-01'),
+      ('p_sim_same', NULL, 'Sim aynı', 'sim-ayni', 'published', '2026-01-02'),
+      ('p_sim_draft', NULL, 'Sim taslak', 'sim-taslak', 'draft', NULL),
+      ('p_sim_sibling', NULL, 'Sim kardeş', 'sim-kardes', 'published', '2026-01-03'),
+      ('p_sim_far', (SELECT MIN(id) FROM brands), 'Sim uzak', 'sim-uzak', 'published', '2026-01-04');
+    INSERT INTO product_categories (product_id, category_id, is_primary) VALUES ('p_sim', 'c_sim_a', 1), ('p_sim_brand', 'c_sim_a', 1), ('p_sim_same', 'c_sim_a', 1),
+      ('p_sim_draft', 'c_sim_a', 1), ('p_sim_sibling', 'c_sim_b', 1), ('p_sim_far', 'c_sim_x', 1);`);
+  const ids = (r: any) => r.items.map((c: any) => c.id);
+  const all = await resolve(storefront.GetSimilarProductsToken).execute("p_sim");
+  assert(JSON.stringify(ids(all)) === JSON.stringify(["p_sim_brand", "p_sim_same", "p_sim_sibling"]) && all.total === 3 && all.pages === 1, JSON.stringify(ids(all)));
+  const [p1, p2] = await Promise.all([1, 2].map((page) => resolve(storefront.GetSimilarProductsToken).execute("p_sim", { page, pageSize: 2 })));
+  assert(JSON.stringify([...ids(p1), ...ids(p2)]) === JSON.stringify(ids(all)) && p1.pages === 2 && p2.total === 3, JSON.stringify([p1, p2]));
+  const far = await resolve(storefront.GetSimilarProductsToken).execute("p_sim", { page: 9 });
+  assert(!far.items.length && far.total === 3, JSON.stringify(far));
+  assert((await resolve(storefront.GetSimilarProductsToken).execute("missing")).total === 0, "unknown product");
+});
 
 // --- GraphQL (src/server/graphql) — runs in the same request scope a route would give it -----------------
 const { runGraph } = await import(`${ROOT}/src/server/graphql/execute.ts`);
@@ -288,6 +310,15 @@ await t("graphql: suggestions query mirrors the use case", async () => {
   const d = await gql(`query S($q: String!) { suggest(q: $q) { products { slug name } categories { name href } brands { name href } } }`, { q: "atlas" });
   assert(d.suggest.products[0]?.slug === "cocuklar-icin-dunya-atlasi", JSON.stringify(d.suggest));
 });
+await t("graphql: product reviews — summary, masked authors, store reply; sort enum and star filter", async () => {
+  const q = `query R($id: ID!, $sort: ReviewSort, $rating: Int) { reviews(productId: $id, sort: $sort, rating: $rating) { total pages summary { average count distribution } items { rating authorName verifiedPurchase reply { body } } } }`;
+  const d = await gql(q, { id: "p_knit" });
+  assert(d.reviews.summary.count === 2 && d.reviews.summary.distribution.length === 5 && d.reviews.items.some((r: any) => r.reply?.body), JSON.stringify(d.reviews));
+  assert(d.reviews.items.every((r: any) => /\*\*\*/.test(r.authorName)), "masked");
+  const five = await gql(q, { id: "p_knit", sort: "rating_desc", rating: 5 });
+  assert(five.reviews.total === 1 && five.reviews.items[0].rating === 5, JSON.stringify(five.reviews));
+  await rejects(() => gql(q, { id: "p_knit", sort: "DROP" }), "graphql_invalid");
+});
 await t("graphql: bad syntax, unknown fields, mutations, deep nesting and bad variables are 400s; introspection only when allowed", async () => {
   await rejects(() => gql("{ products { "), "graphql_syntax");
   await rejects(() => gql("{ products { nope } }"), "graphql_invalid");
@@ -297,6 +328,19 @@ await t("graphql: bad syntax, unknown fields, mutations, deep nesting and bad va
   await rejects(() => gql("{ __schema { types { name } } }"), "graphql_invalid");
   const intro = await gql("{ __schema { queryType { name } } }", undefined, true);
   assert(intro.__schema.queryType.name === "Query", JSON.stringify(intro));
+});
+
+await t("comparison: published products by slug in URL order (max 4), unknown / duplicate slugs dropped, specs and rating carried", async () => {
+  const list = await resolve(storefront.GetComparisonToken).execute(["mini-kablosuz-hoparlor", "yok-boyle", "yarim-balikci-yaka-triko", "mini-kablosuz-hoparlor"]);
+  assert(list.map((p: any) => p.card.slug).join() === "mini-kablosuz-hoparlor,yarim-balikci-yaka-triko", JSON.stringify(list.map((p: any) => p.card.slug)));
+  const knit = list[1];
+  assert(knit.card.ratingCount >= 1 && knit.card.priceMinor > 0 && knit.categoryName, JSON.stringify(knit.card));
+  assert(Array.isArray(knit.specs) && list[0].card.promotions !== undefined, "specs + promotions");
+  const many = await resolve(storefront.GetComparisonToken).execute(["a", "b", "c", "d", "yarim-balikci-yaka-triko"]);
+  assert(many.length === 0, "only the first 4 slugs are looked at");
+  assert((await resolve(storefront.GetComparisonToken).execute([])).length === 0, "empty");
+  const detail = await resolve(storefront.GetProductDetailToken).execute("yarim-balikci-yaka-triko");
+  assert(detail.rating === 4.5 && detail.ratingCount === 2, JSON.stringify({ r: detail.rating, c: detail.ratingCount }));
 });
 
 console.log(`\n${pass}/${pass + fail} passed`);

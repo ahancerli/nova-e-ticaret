@@ -1,5 +1,5 @@
 import type { Clock } from "@/core";
-import type { Facets, HomeData, ProductCard, ProductDetail, SearchSuggestions } from "@/lib/types";
+import type { ComparedProduct, Facets, HomeData, ProductCard, ProductDetail, SearchSuggestions } from "@/lib/types";
 import type { CategoryPageData, ListParams, ProductPage, ProductPromotions, ShellData, StorefrontReadModel } from "./ports";
 
 /** Cards with their active campaigns (badge + "Sepette ₺X"), so every listing shows the same deal the cart applies. */
@@ -67,6 +67,37 @@ export class GetProductDetail {
       promotions: variants[0]?.badges ?? [],
       variants: p.variants.map((v, i) => ({ ...v, campaignPriceMinor: variants[i]?.campaignPriceMinor ?? null })),
     };
+  }
+}
+
+/** "Benzer ürünler" page size; the product page rail asks for fewer. */
+export const SIMILAR_PAGE_SIZE = 24;
+
+/** Query: products similar to one product ("Benzer ürünler" rail + /urun/[slug]/benzer), best match first, with campaign prices. */
+export class GetSimilarProducts {
+  constructor(private readonly read: StorefrontReadModel, private readonly promotions: ProductPromotions) {}
+
+  async execute(productId: string, opts: { page?: number; pageSize?: number } = {}): Promise<ProductPage> {
+    const pageSize = Math.min(Math.max(1, Math.trunc(opts.pageSize ?? SIMILAR_PAGE_SIZE)), 48);
+    const page = Math.min(Math.max(1, Math.trunc(opts.page ?? 1) || 1), 50);
+    const r = await this.read.similarProducts(productId, pageSize, (page - 1) * pageSize);
+    return { items: await withPromotions(this.promotions, r.items), total: r.total, page, pageSize, pages: Math.max(1, Math.ceil(r.total / pageSize)) };
+  }
+}
+
+/** Shop comparison: at most this many products side by side. */
+export const COMPARE_MAX = 4;
+
+/** Query: products side by side (/karsilastir) — cards with campaign prices + the union of their specs. */
+export class GetComparison {
+  constructor(private readonly read: StorefrontReadModel, private readonly promotions: ProductPromotions) {}
+
+  async execute(slugs: string[]): Promise<ComparedProduct[]> {
+    const wanted = [...new Set(slugs.map((s) => s.trim()).filter(Boolean))].slice(0, COMPARE_MAX);
+    if (!wanted.length) return [];
+    const items = await this.read.compare(wanted);
+    const cards = await withPromotions(this.promotions, items.map((i) => i.card));
+    return items.map((i, n) => ({ ...i, card: cards[n]! }));
   }
 }
 

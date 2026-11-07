@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { GetProductDetailToken } from "@/modules/storefront";
+import { GetProductDetailToken, GetSimilarProductsToken } from "@/modules/storefront";
 import { resolveService } from "@/server/app";
-import { sanitizeRichHtml } from "@/core";
-import { ProductGrid, VariantPicker } from "@/features/shop";
+import { ProductGrid, ProductInfoTabs, SimilarProducts, VariantPicker } from "@/features/shop";
+import { GetProductReviewsToken } from "@/modules/reviews";
 
 const getProductBySlug = async (slug: string) => (await resolveService(GetProductDetailToken)).execute(slug);
 
-type Props = { params: Promise<{ slug: string }> };
+type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ degerlendir?: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const p = await getProductBySlug((await params).slug);
@@ -20,9 +20,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * Product detail is server-rendered for SEO (architecture note: the spec's client-side middle
  * area applies to the home page; product pages benefit from SSR + JSON-LD).
  */
-export default async function ProductPage({ params }: Props) {
+export default async function ProductPage({ params, searchParams }: Props) {
   const p = await getProductBySlug((await params).slug);
   if (!p) notFound();
+  const [reviews, similar, { degerlendir }] = await Promise.all([
+    (await resolveService(GetProductReviewsToken)).execute(p.id, {}),
+    (await resolveService(GetSimilarProductsToken)).execute(p.id, { pageSize: 12 }),
+    searchParams,
+  ]);
   const def = p.variants.find((v) => v.isDefault) ?? p.variants[0];
   const jsonLd = {
     "@context": "https://schema.org",
@@ -32,6 +37,12 @@ export default async function ProductPage({ params }: Props) {
     brand: p.brandName ? { "@type": "Brand", name: p.brandName } : undefined,
     sku: def?.sku,
     offers: def?.priceMinor != null ? { "@type": "Offer", priceCurrency: "TRY", price: (def.priceMinor / 100).toFixed(2), availability: def.available > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock" } : undefined,
+    // Only published reviews (moderated) reach structured data.
+    aggregateRating: reviews.summary.count ? { "@type": "AggregateRating", ratingValue: reviews.summary.average, reviewCount: reviews.summary.count, bestRating: 5, worstRating: 1 } : undefined,
+    review: reviews.items.slice(0, 5).map((r) => ({
+      "@type": "Review", author: { "@type": "Person", name: r.authorName }, datePublished: r.publishedAt.slice(0, 10), name: r.title ?? undefined, reviewBody: r.body,
+      reviewRating: { "@type": "Rating", ratingValue: r.rating, bestRating: 5, worstRating: 1 },
+    })),
   };
 
   return (
@@ -44,23 +55,8 @@ export default async function ProductPage({ params }: Props) {
       </nav>
       <VariantPicker product={p} />
 
-      <section className="mt-12 grid gap-6 md:grid-cols-2">
-        {p.descriptionHtml && (
-          <div className="card p-5">
-            <h2 className="mb-3 text-lg font-semibold">Ürün açıklaması</h2>
-            {/* Admin-authored HTML, sanitized server-side with an allowlist. */}
-            <div className="rich-text max-w-none text-sm text-ink-soft" dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(p.descriptionHtml) }} />
-          </div>
-        )}
-        {p.specs.length > 0 && (
-          <div className="card p-5">
-            <h2 className="mb-3 text-lg font-semibold">Ürün özellikleri</h2>
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-              {p.specs.map((s) => (<div key={s.label} className="contents"><dt className="text-muted">{s.label}</dt><dd>{s.value}</dd></div>))}
-            </dl>
-          </div>
-        )}
-      </section>
+      <ProductInfoTabs p={p} reviews={reviews} openReviews={degerlendir === "1"} />
+      <SimilarProducts slug={p.slug} products={similar.items} total={similar.total} />
 
       {p.related.length > 0 && (
         <section className="mt-12" aria-labelledby="related">

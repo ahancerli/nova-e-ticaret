@@ -9,7 +9,7 @@ export interface ProductReadModel {
   /** Brands + attribute catalogue + category→attribute rules (the category tree comes from the category module). */
   reference(): Promise<{
     brands: { id: string; name: string; isActive: boolean }[];
-    attributes: { id: string; code: string; label: string; dataType: string; unit: string | null; isVariantAxis: boolean; displayStyle: "button" | "swatch" | "dropdown" }[];
+    attributes: { id: string; code: string; label: string; dataType: string; unit: string | null; isVariantAxis: boolean; displayStyle: "button" | "swatch" | "dropdown"; variesMedia: boolean }[];
     options: { id: string; attributeId: string; value: string; label: string; colorHex: string | null; isActive: boolean; numericValue: number | null }[];
     categoryAttributes: { categoryId: string; attributeId: string; isRequired: boolean }[];
   }>;
@@ -22,8 +22,10 @@ export interface ProductReadModel {
 export interface ProductRepository {
   current(id: string): Promise<CurrentProduct | null>;
   identity(id: string): Promise<{ name: string; slug: string } | null>;
-  galleryMediaIds(id: string): Promise<string[]>;
+  /** Gallery and variant photos. */
+  mediaIds(id: string): Promise<string[]>;
   slugTaken(slug: string, exceptProductId: string | null): Promise<boolean>;
+  modelCodeTaken(code: string, exceptProductId: string | null): Promise<boolean>;
   brandExists(id: string): Promise<boolean>;
   existingCategoryIds(ids: string[]): Promise<Set<string>>;
   existingImageIds(ids: string[]): Promise<Set<string>>;
@@ -33,6 +35,7 @@ export interface ProductRepository {
   upsertProductStatement(plan: ProductSavePlan, now: string): Statement;
   replaceCategoriesStatements(productId: string, categoryIds: string[], primaryId: string | null): Statement[];
   replaceGalleryStatements(productId: string, mediaIds: string[], primaryId: string | null, newId: () => string): Statement[];
+  replaceVariantMediaStatements(productId: string, variants: PlannedVariant[], newId: () => string): Statement[];
   resetAxesStatements(productId: string, axes: string[]): Statement[];
   /** Deletes a never-used variant; the DELETE re-checks "no history" (changes = 1 required). */
   destroyVariantStatements(productId: string, variantId: string): { balance: Statement; variant: Statement };

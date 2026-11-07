@@ -54,11 +54,11 @@ def setup_checkout(c, cid="co_1", cart="cart_1"):
 
 
 # --- structure ---------------------------------------------------------------
-@test("01 119 tables exist")
+@test("01 126 tables exist")
 def _():
     c = new_db()
     n = c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()[0]
-    assert n == 119, n
+    assert n == 126, n
 
 
 @test("02 all tables are STRICT")
@@ -573,6 +573,84 @@ def _():
     c.execute("DELETE FROM marketplace_connections WHERE id = 'm1'")
     assert c.execute("SELECT count(*) FROM marketplace_listings").fetchone()[0] == 0, "cascade"
     assert c.execute("SELECT prefix FROM barcode_sequences").fetchone()[0] == "2000000"
+
+
+
+@test("53 reviews + panel notifications: moderation values, one review per customer, votes / contacts cascade, single settings row")
+def _():
+    c = new_db()
+    assert c.execute("SELECT count(*) FROM reviews WHERE status = 'pending'").fetchone()[0] == 2
+    expect_error(c, "INSERT INTO reviews (id, product_id, user_id, rating, body) VALUES ('r_dup','p_knit','u_customer',4,'tekrar')", contains="UNIQUE")
+    expect_error(c, "INSERT INTO reviews (id, product_id, user_id, rating, body) VALUES ('r_x','p_atlas','u_customer',6,'x')", contains="CHECK")
+    expect_error(c, "UPDATE reviews SET reject_reason = 'boring' WHERE id = 'rev_demo_5'", contains="CHECK")
+    expect_error(c, "UPDATE reviews SET contact_status = 'waiting' WHERE id = 'rev_demo_3'", contains="CHECK")
+    expect_error(c, "INSERT INTO review_votes (review_id, user_id) VALUES ('rev_demo_1','u_cust_2')", contains="UNIQUE")
+    expect_error(c, "INSERT INTO review_contacts (id, review_id, channel, body) VALUES ('rc_x','rev_demo_3','email','mail without subject')", contains="CHECK")
+    expect_error(c, "INSERT INTO review_settings (id) VALUES (2)", contains="CHECK")
+    expect_error(c, "UPDATE review_settings SET blocked_words = '{}'", contains="CHECK")
+    expect_error(c, "INSERT INTO admin_notifications (id, type, title, href) VALUES ('n_x','review.pending','x','https://evil.test')", contains="CHECK")
+    expect_error(c, "INSERT INTO admin_notifications (id, type, title, dedupe_key) VALUES ('n_y','order.placed','x','order.placed:ord_demo_1')", contains="UNIQUE")
+    c.execute("DELETE FROM reviews WHERE id = 'rev_demo_1'")
+    assert c.execute("SELECT count(*) FROM review_votes WHERE review_id = 'rev_demo_1'").fetchone()[0] == 0, "votes cascade"
+    c.execute("DELETE FROM admin_notifications WHERE id = 'an_demo_3'")
+    assert c.execute("SELECT count(*) FROM admin_notification_states").fetchone()[0] == 0, "states cascade"
+
+
+@test("54 migration 2026-11-08 upgrades reviews of a database created by the previous schema")
+def _():
+    import subprocess
+    try:
+        old = subprocess.run(["git", "show", "56b4be8:db/schema.sql"], cwd=ROOT.parent, capture_output=True, text=True, check=True).stdout
+        old_seed = subprocess.run(["git", "show", "56b4be8:db/seed.sql"], cwd=ROOT.parent, capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return
+    c = sqlite3.connect(":memory:", isolation_level=None)
+    c.execute("PRAGMA foreign_keys = ON")
+    c.executescript(old)
+    c.executescript(old_seed)
+    c.executescript(SCHEMA)
+    c.executescript((ROOT / "migrations" / "2026-11-08-reviews-notifications.sql").read_text(encoding="utf-8"))
+    cols = {r[1] for r in c.execute("PRAGMA table_info(reviews)")}
+    assert {"verified_purchase", "reply_body", "contact_status", "version", "published_at"} <= cols, cols
+    assert c.execute("SELECT published_at IS NOT NULL FROM reviews WHERE id = 'rev_demo_1'").fetchone()[0] == 1
+    assert c.execute("SELECT count(*) FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE p.code = 'reviews.moderate'").fetchone()[0] == 2
+    assert c.execute("SELECT count(*) FROM review_settings").fetchone()[0] == 1
+
+@test("55 variants v2: model code (format CHECK, change capture), varies_media; migration 2026-11-09 upgrades the previous schema")
+def _():
+    c = new_db()
+    assert c.execute("SELECT varies_media FROM attribute_definitions WHERE id = 'a_color'").fetchone()[0] == 1
+    assert c.execute("SELECT model_code FROM products WHERE id = 'p_knit'").fetchone()[0] == "ATL-TRK-01"
+    expect_error(c, "UPDATE products SET model_code = 'kötü kod' WHERE id = 'p_pan'", contains="CHECK")
+    expect_error(c, "UPDATE attribute_definitions SET varies_media = 2 WHERE id = 'a_size'", contains="CHECK")
+    c.execute("DELETE FROM catalog_change_log")
+    c.execute("UPDATE products SET model_code = 'GRN-SET' WHERE id = 'p_pan'")
+    assert c.execute("SELECT kind, product_id FROM catalog_change_log").fetchall() == [("content", "p_pan")]
+    # variant photos (product_media.variant_id) must belong to a variant of the same product
+    expect_error(c, "INSERT INTO product_media (id, product_id, variant_id, media_id) VALUES ('pm_x', 'p_pan', 'v_knit_bk_l', (SELECT id FROM media_assets LIMIT 1))", contains="FOREIGN KEY")
+    import subprocess
+    try:
+        old = subprocess.run(["git", "show", "56b4be8:db/schema.sql"], cwd=ROOT.parent, capture_output=True, text=True, check=True).stdout
+        old_seed = subprocess.run(["git", "show", "56b4be8:db/seed.sql"], cwd=ROOT.parent, capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return
+    u = sqlite3.connect(":memory:", isolation_level=None)
+    u.execute("PRAGMA foreign_keys = ON")
+    u.executescript(old)
+    u.executescript(old_seed)
+    u.executescript(SCHEMA)
+    for m in sorted((ROOT / "migrations").glob("*.sql")):
+        first = m.read_text(encoding="utf-8").splitlines()[0][len("-- probe: "):]
+        try:
+            u.execute(first)
+            continue  # already applied (what scripts/migrate.mjs does)
+        except sqlite3.DatabaseError:
+            u.executescript(m.read_text(encoding="utf-8"))
+    assert "model_code" in {r[1] for r in u.execute("PRAGMA table_info(products)")}
+    assert u.execute("SELECT varies_media FROM attribute_definitions WHERE id = 'a_color'").fetchone()[0] == 1
+    u.execute("DELETE FROM catalog_change_log")
+    u.execute("UPDATE products SET model_code = 'X-1' WHERE id = 'p_pan'")
+    assert u.execute("SELECT count(*) FROM catalog_change_log").fetchone()[0] == 1, "trigger recreated with model_code"
 
 
 if __name__ == "__main__":

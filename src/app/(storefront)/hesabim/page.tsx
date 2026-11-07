@@ -2,10 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChangePasswordForm } from "@/features/account/ChangePasswordForm";
 import { LogoutButton } from "@/features/account/LogoutButton";
+import { MyReviews } from "@/features/account/MyReviews";
 import { OrderStatusPill } from "@/features/account/order-status";
 import { formatMinor } from "@/lib/money";
 import { GetCustomerProfileToken } from "@/modules/identity";
 import { ListCustomerOrdersToken } from "@/modules/orders";
+import { ListMyReviewsToken } from "@/modules/reviews";
 import { currentPrincipal, resolveService } from "@/server/app";
 
 export const metadata = { title: "Hesabım", robots: { index: false } };
@@ -15,9 +17,10 @@ const day = new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "long", ye
 export default async function AccountPage({ searchParams }: { searchParams: Promise<{ hosgeldin?: string }> }) {
   const user = await currentPrincipal("storefront");
   if (!user) redirect("/giris?next=/hesabim");
-  const [profile, orders, { hosgeldin }] = await Promise.all([
+  const [profile, orders, myReviews, { hosgeldin }] = await Promise.all([
     resolveService(GetCustomerProfileToken).then((q) => q.execute(user.id)),
     resolveService(ListCustomerOrdersToken).then((q) => q.execute(user.id)),
+    resolveService(ListMyReviewsToken).then((q) => q.execute(user.id)),
     searchParams,
   ]);
 
@@ -72,6 +75,8 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
           </section>
         </div>
       </div>
+
+      <MyReviews reviews={myReviews.reviews} reviewable={myReviews.reviewable} />
     </div>
   );
 }

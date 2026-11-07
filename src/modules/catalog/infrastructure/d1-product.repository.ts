@@ -19,7 +19,7 @@ export class D1ProductRepository extends Repository implements ProductRepository
           WHERE v.product_id = ?`,
         DEFAULT_WAREHOUSE, id,
       ),
-      this.galleryMediaIds(id),
+      this.mediaIds(id),
     ]);
     return {
       status: p.status,
@@ -37,8 +37,13 @@ export class D1ProductRepository extends Repository implements ProductRepository
     return this.db.first<{ name: string; slug: string }>("SELECT name, slug FROM products WHERE id = ?", id);
   }
 
-  async galleryMediaIds(id: string): Promise<string[]> {
-    return (await this.db.all<{ media_id: string }>("SELECT media_id FROM product_media WHERE product_id = ? AND variant_id IS NULL", id)).map((m) => m.media_id);
+  /** Every media attached to the product: gallery and variant photos. */
+  async mediaIds(id: string): Promise<string[]> {
+    return (await this.db.all<{ media_id: string }>("SELECT DISTINCT media_id FROM product_media WHERE product_id = ?", id)).map((m) => m.media_id);
+  }
+
+  async modelCodeTaken(code: string, exceptProductId: string | null): Promise<boolean> {
+    return (await this.db.first("SELECT 1 AS hit FROM products WHERE model_code = ? AND (? IS NULL OR id <> ?)", code, exceptProductId, exceptProductId)) !== null;
   }
 
   async slugTaken(slug: string, exceptProductId: string | null): Promise<boolean> {
@@ -81,19 +86,19 @@ export class D1ProductRepository extends Repository implements ProductRepository
   // --- product row ---------------------------------------------------------------------------------
   upsertProductStatement(plan: ProductSavePlan, now: string): Statement {
     const f = plan.fields;
-    const values = [f.brandId, f.name, f.slug, f.shortDescription, f.descriptionHtml, f.accountingCode, f.manufacturerCode,
+    const values = [f.brandId, f.name, f.slug, f.shortDescription, f.descriptionHtml, f.accountingCode, f.manufacturerCode, f.modelCode,
       f.status, f.taxRateBps, f.warrantyMonths, f.countryOfOrigin, f.publishedAt];
     if (plan.isNew) {
       return this.db.statement(
-        `INSERT INTO products (brand_id, name, slug, short_description, description_html, accounting_code, manufacturer_code,
+        `INSERT INTO products (brand_id, name, slug, short_description, description_html, accounting_code, manufacturer_code, model_code,
                                status, tax_rate_bps, warranty_months, country_of_origin, published_at, created_at, updated_at, id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ...values, now, now, plan.productId,
       );
     }
     return this.db.statement(
       `UPDATE products SET brand_id = ?, name = ?, slug = ?, short_description = ?, description_html = ?, accounting_code = ?, manufacturer_code = ?,
-                           status = ?, tax_rate_bps = ?, warranty_months = ?, country_of_origin = ?, published_at = ?, updated_at = ?
+                           model_code = ?, status = ?, tax_rate_bps = ?, warranty_months = ?, country_of_origin = ?, published_at = ?, updated_at = ?
         WHERE id = ? AND (? IS NULL OR updated_at = ?)`,
       ...values, now, plan.productId, plan.expectedUpdatedAt, plan.expectedUpdatedAt,
     );
@@ -113,6 +118,17 @@ export class D1ProductRepository extends Repository implements ProductRepository
         "INSERT INTO product_media (id, product_id, variant_id, media_id, sort_order, is_primary) VALUES (?, ?, NULL, ?, ?, ?)",
         newId(), productId, m, i, bit(m === primaryId),
       )),
+    ];
+  }
+
+  /** Variant photos are rebuilt after the variants are written (FK to the variant). Never primary: that flag is the gallery's. */
+  replaceVariantMediaStatements(productId: string, variants: PlannedVariant[], newId: () => string): Statement[] {
+    return [
+      this.db.statement("DELETE FROM product_media WHERE product_id = ? AND variant_id IS NOT NULL", productId),
+      ...variants.flatMap((v) => v.mediaIds.map((m, i) => this.db.statement(
+        "INSERT INTO product_media (id, product_id, variant_id, media_id, sort_order, is_primary) VALUES (?, ?, ?, ?, ?, 0)",
+        newId(), productId, v.id, m, i,
+      ))),
     ];
   }
 

@@ -15,6 +15,7 @@ type Pending = { key: string; preview: string; progress: number };
 /**
  * Ordered multi-image gallery: upload from the computer (multi-select or drag & drop),
  * reorder, choose the primary (storefront cover) image, remove. Files go to R2 via /api/admin/media.
+ * `compact`: small tiles without a cover star (a variant's / colour's own photos, where order alone decides).
  */
 export function MediaGallery({
   folder,
@@ -23,6 +24,8 @@ export function MediaGallery({
   onChange,
   onUploadingChange,
   error,
+  max = 30,
+  compact = false,
 }: {
   folder: "products";
   items: GalleryItem[];
@@ -30,6 +33,8 @@ export function MediaGallery({
   onChange: (items: GalleryItem[], primaryId: string | null) => void;
   onUploadingChange?: (uploading: boolean) => void;
   error?: string;
+  max?: number;
+  compact?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<Pending[]>([]);
@@ -67,8 +72,8 @@ export function MediaGallery({
 
   const addFiles = (files: FileList | null) => {
     const list = [...(files ?? [])];
-    if (items.length + pending.length + list.length > 30) notify.warning("Bir ürüne en fazla 30 görsel eklenebilir.");
-    list.slice(0, Math.max(0, 30 - items.length - pending.length)).forEach((f) => void upload(f));
+    if (items.length + pending.length + list.length > max) notify.warning(`Buraya en fazla ${max} görsel eklenebilir.`);
+    list.slice(0, Math.max(0, max - items.length - pending.length)).forEach((f) => void upload(f));
   };
 
   const move = (i: number, d: -1 | 1) => {
@@ -86,9 +91,9 @@ export function MediaGallery({
     <div className="space-y-3">
       <input ref={inputRef} type="file" multiple accept={ACCEPT.join(",")} className="sr-only" tabIndex={-1} aria-hidden
         onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      <ul className={compact ? "grid grid-cols-4 gap-2 sm:grid-cols-6 xl:grid-cols-8" : "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"}>
         {items.map((it, i) => {
-          const primary = it.mediaId === effectivePrimary;
+          const primary = !compact && it.mediaId === effectivePrimary;
           return (
             <li key={it.mediaId} className={`group relative animate-scale-in overflow-hidden rounded-xl border-2 bg-slate-50 ${primary ? "border-[#7367f0]" : "border-slate-200"}`}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -100,7 +105,7 @@ export function MediaGallery({
                   <IconBtn label="Sağa taşı" disabled={i === items.length - 1} onClick={() => move(i, 1)}><ChevronRight className="h-4 w-4" /></IconBtn>
                 </span>
                 <span className="flex gap-1">
-                  <IconBtn label="Vitrin görseli yap" pressed={primary} onClick={() => onChange(items, it.mediaId)}><Star className={`h-4 w-4 ${primary ? "fill-current" : ""}`} /></IconBtn>
+                  {compact ? null : <IconBtn label="Vitrin görseli yap" pressed={primary} onClick={() => onChange(items, it.mediaId)}><Star className={`h-4 w-4 ${primary ? "fill-current" : ""}`} /></IconBtn>}
                   <IconBtn label="Görseli kaldır" danger onClick={() => remove(it.mediaId)}><Trash2 className="h-4 w-4" /></IconBtn>
                 </span>
               </div>
@@ -124,12 +129,12 @@ export function MediaGallery({
             className={`flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-3 text-center transition duration-200 ${
               dragging ? "scale-[1.02] border-[#7367f0] bg-indigo-50" : "border-slate-300 bg-slate-50/60 hover:border-[#7367f0]/60 hover:bg-indigo-50/40"
             }`}>
-            <span className="grid size-10 place-items-center rounded-full bg-white text-[#7367f0] shadow-sm ring-1 ring-slate-200"><ImagePlus className="h-5 w-5" /></span>
-            <span className="text-xs text-slate-600">{dragging ? "Bırakın" : <>Görsel ekle<br /><span className="text-slate-400">sürükle veya seç</span></>}</span>
+            <span className={`grid place-items-center rounded-full bg-white text-[#7367f0] shadow-sm ring-1 ring-slate-200 ${compact ? "size-7" : "size-10"}`}><ImagePlus className={compact ? "h-4 w-4" : "h-5 w-5"} /></span>
+            <span className="text-xs text-slate-600">{dragging ? "Bırakın" : compact ? "Ekle" : <>Görsel ekle<br /><span className="text-slate-400">sürükle veya seç</span></>}</span>
           </button>
         </li>
       </ul>
-      <p className="text-xs text-slate-500">JPG, PNG, WebP, AVIF · en fazla 5 MB · 30 görsel. Yıldızlı görsel vitrinde ve listelerde kullanılır.</p>
+      {compact ? null : <p className="text-xs text-slate-500">JPG, PNG, WebP, AVIF · en fazla 5 MB · {max} görsel. Yıldızlı görsel vitrinde ve listelerde kullanılır.</p>}
       {error ? <p className="text-xs text-red-600">{error}</p> : null}
     </div>
   );
