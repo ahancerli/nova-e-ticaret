@@ -6,7 +6,8 @@ tablo/kolon ayrıntıları için doğrudan [`schema.sql`](schema.sql) okunmalıd
 
 | Dosya | İçerik |
 |---|---|
-| `schema.sql` | Tek DDL scripti: **93 STRICT tablo · 57 indeks · 25 trigger**. Tekrar çalıştırılabilir (tablolar/indeksler `IF NOT EXISTS`, trigger'lar drop + create). |
+| `schema.sql` | Tek DDL scripti: **126 STRICT tablo · 81 indeks · 37 trigger**. Tekrar çalıştırılabilir (tablolar/indeksler `IF NOT EXISTS`, trigger'lar drop + create). Her tablonun başında Türkçe `-- TABLO:` açıklaması, her kolonun sonunda Türkçe yorum var (yeni kolon eklerken yorumunu da yaz). |
+| `nova-veritabani-rehberi.pdf` | Tüm tabloların kolon kolon açıklaması + iş akışları (sipariş, ödeme, kampanya, pazaryeri) ve durum makineleri. |
 | `seed.sql` | Roller/izinler, demo katalog, demo kullanıcılar ve **demo bir sipariş zinciri** (sepet → checkout → sipariş → havale → kargo). `INSERT OR IGNORE`, tekrar çalıştırılabilir. Gerçek kişi verisi, sır veya gerçek IBAN yok. |
 | `drop_all.sql` | Tüm tabloları FK sırasıyla siler (`db:reset:*`). |
 | `tests/test_schema.py` | 44 bağımlılıksız şema testi (`npm run db:test`, python3). |
