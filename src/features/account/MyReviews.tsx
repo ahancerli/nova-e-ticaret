@@ -28,7 +28,7 @@ export function MyReviews({ reviews, reviewable }: { reviews: MyReview[]; review
             {reviewable.map((p) => (
               <li key={p.productId} className="w-36 flex-none">
                 <Link href={`/urun/${p.slug}?degerlendir=1#degerlendirmeler`} className="group block rounded-xl border border-line p-2 transition hover:border-brand">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset */}
+                  {/* eslint-disable-next-line @next/next/no-img-element -- uploaded / demo asset */}
                   <img src={p.imageUrl ?? "/demo/placeholder.svg"} alt="" className="aspect-square w-full rounded-lg bg-white object-contain" />
                   <span className="mt-2 line-clamp-2 text-xs font-medium">{p.name}</span>
                   <span className="mt-2 flex items-center justify-center gap-1 rounded-lg bg-brand-soft py-1.5 text-xs font-semibold text-brand-dark group-hover:bg-brand group-hover:text-white">
@@ -48,7 +48,7 @@ export function MyReviews({ reviews, reviewable }: { reviews: MyReview[]; review
           {reviews.map((r) => (
             <li key={r.id} className="py-4 first:pt-0">
               <div className="flex gap-3">
-                {/* eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset */}
+                {/* eslint-disable-next-line @next/next/no-img-element -- uploaded / demo asset */}
                 <img src={r.product.imageUrl ?? "/demo/placeholder.svg"} alt="" className="size-14 flex-none rounded-xl border border-line bg-white object-contain p-1" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">

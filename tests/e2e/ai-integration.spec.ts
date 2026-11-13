@@ -6,7 +6,7 @@ test("AI integration: choose Claude with a key → the product editor offers “
   await page.goto("/admin/entegrasyonlar/ai");
   await expect(page.getByRole("heading", { name: "AI entegrasyonları" })).toBeVisible();
   await page.getByRole("radio", { name: /Claude/ }).click();
-  await page.getByLabel("Model").fill("claude-sonnet-5-5");
+  await page.getByLabel("Model").selectOption({ index: 0 }); // models come from the provider catalog
   await page.getByLabel("API anahtarı").fill("sk-ant-e2e-0000000000000000000000000000");
   await page.getByRole("button", { name: "Entegrasyonu ekle" }).click();
   await expect(page.getByText("AI entegrasyonu eklendi")).toBeVisible();

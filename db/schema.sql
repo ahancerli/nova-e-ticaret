@@ -1,18 +1,17 @@
 -- =============================================================================
--- NOVA E-COMMERCE — SINGLE DDL SCRIPT (Cloudflare D1 / SQLite)
+-- NOVA E-COMMERCE — SINGLE DDL SCRIPT (SQLite, node:sqlite)
 -- 126 STRICT tables · 81 indexes · 37 triggers
 -- Every table has a Turkish `-- TABLO:` description and every column a trailing Turkish comment (kept inside the
 -- CREATE TABLE text, so it is also visible in sqlite_master / DataGrip). Keep them in sync when adding columns.
 -- Data rules, status transitions and value vocabularies used by the app: db/README.md
 --
 -- Apply:
---   npm run db:schema:remote   (wrangler d1 execute nova-db --remote --file=db/schema.sql)
+--   npm run db:setup   (scripts/db.mjs init — also run by the Docker container on every start)
 --
--- D1 notes (differs from the original SQLite design in the handoff PDF):
---   * D1 enforces foreign keys by default; PRAGMA foreign_keys / WAL /
---     busy_timeout / BEGIN IMMEDIATE are NOT used. Atomicity is achieved with
---     db.batch([...]) (one implicit transaction) and with the triggers below.
---   * Do not put BEGIN/COMMIT in this file: wrangler d1 execute rejects them.
+-- Notes:
+--   * The connection runs with PRAGMA foreign_keys = ON and WAL (src/server/sqlite-driver.ts).
+--     Atomicity is achieved with db.batch([...]) (one BEGIN IMMEDIATE … COMMIT) and with the triggers below.
+--   * Do not put BEGIN/COMMIT in this file.
 --   * Money = INTEGER minor units (kuruş), tax-inclusive. Time = UTC ISO-8601 ms.
 --   * Script is idempotent for tables/indexes (IF NOT EXISTS). Triggers are
 --     dropped and recreated so re-running picks up changes.
@@ -177,10 +176,10 @@ CREATE TABLE IF NOT EXISTS addresses (
 -- 2. CATALOG & INVENTORY
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS media_assets (
-  -- TABLO: Yüklenen tüm dosyalar (ürün/kategori/marka görselleri, logo, dekont). Dosyanın kendisi R2 de durur, burada
+  -- TABLO: Yüklenen tüm dosyalar (ürün/kategori/marka görselleri, logo, dekont). Dosyanın kendisi medya deposunda (MEDIA_DIR) durur, burada
   --        kaydı tutulur. Hiçbir yerden kullanılmayan görsel otomatik silinir.
   id          TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
-  storage_key TEXT NOT NULL UNIQUE,  -- R2 içindeki yol: <klasör>/<uuid>.<uzantı>
+  storage_key TEXT NOT NULL UNIQUE,  -- Medya deposundaki yol: <klasör>/<uuid>.<uzantı>
   public_url  TEXT CHECK (public_url IS NULL OR public_url GLOB 'https://*' OR public_url GLOB '/*'),  -- Tarayıcının kullandığı adres (/assets/… veya https://…)
   mime_type   TEXT NOT NULL CHECK (mime_type IN ('image/jpeg','image/png','image/webp','image/avif','image/svg+xml','video/mp4','application/pdf')),  -- Dosya türü (jpeg, png, webp, avif, svg, mp4, pdf)
   byte_size   INTEGER NOT NULL CHECK (byte_size > 0),  -- Dosya boyutu (byte)

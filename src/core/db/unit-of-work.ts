@@ -5,7 +5,7 @@ const GUARD_FAILED = /batch_guard_failed:(\d+)/;
 const defaultConflict = () => new ConflictError("concurrent_modification", "Kayıt bu sırada değişti. Sayfayı yenileyip tekrar deneyin.");
 
 /**
- * Unit of Work over one D1 batch (D1 runs a batch as a single transaction).
+ * Unit of Work over one batch (the driver runs a batch as a single transaction).
  *
  *   const uow = new UnitOfWork(db);
  *   uow.add(db.statement("UPDATE orders SET status = ? WHERE id = ? AND status = ?", to, id, from))
@@ -47,7 +47,7 @@ export class UnitOfWork {
   }
 
   /** Executes everything atomically. Returns the results of the caller's statements (guard rows removed). */
-  async commit(): Promise<D1Result[]> {
+  async commit(): Promise<SqlResult[]> {
     this.assertOpen();
     this.committed = true;
     if (!this.statements.length) return [];

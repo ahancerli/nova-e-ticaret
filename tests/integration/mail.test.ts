@@ -15,7 +15,7 @@ const { classifySmtpFailure } = await import(`${ROOT}/src/modules/mail/domain/sm
 const { registerAudit } = await import(`${ROOT}/src/modules/audit/audit-log.ts`);
 const { registerPlatform } = await import(`${ROOT}/src/modules/platform/module.ts`);
 const {
-  Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger,
+  Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger,
   buildConfig, toBase64,
 } = core;
 
@@ -73,7 +73,7 @@ const root = new Container()
   .singleton(ClockToken, () => clock)
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
   .scoped(ConfigToken, (r: any) => buildConfig(r.resolve(EnvToken)))
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 registerPlatform(root);
 registerAudit(root);
 mail.registerMail(root);
@@ -292,7 +292,7 @@ await t("reset: without SMTP settings the link is logged in development only", a
 });
 
 await t("login: \"Beni hatırla\" extends the admin session from 8 hours to 7 days", async () => {
-  const req = new Request("https://shop.example/api/admin/auth/login", { headers: { "cf-connecting-ip": "10.1.1.1" } });
+  const req = new Request("https://shop.example/api/admin/auth/login", { headers: { "x-real-ip": "10.1.1.1" } });
   const short = await resolve(identity.LoginToken).execute({ email: "ops@nova.test", password: "Yeni-Guclu-Parola-77", audience: "admin", req });
   const long = await resolve(identity.LoginToken).execute({ email: "ops@nova.test", password: "Yeni-Guclu-Parola-77", audience: "admin", req, remember: true });
   const hours = (iso: string) => (Date.parse(iso) - clock.now().getTime()) / 3_600_000;

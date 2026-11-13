@@ -26,8 +26,11 @@ export class SameOriginGuard implements OriginGuard {
   }
 }
 
-/** Client IP as seen by Cloudflare (CF-Connecting-IP is set by the edge, not the client). */
-export const clientIp = (req: Request): string => req.headers.get("cf-connecting-ip") ?? "0.0.0.0";
+/**
+ * Client IP as seen by the reverse proxy (Caddy sets X-Real-IP to the TCP peer and overwrites whatever the client sent;
+ * the app container publishes no port in production, so nothing else can reach it).
+ */
+export const clientIp = (req: Request): string => req.headers.get("x-real-ip") ?? "0.0.0.0";
 
 /**
  * Fixed-window rate limiter stored in D1 (rate_limit_buckets). Bucket keys are "<name>:<subject>";

@@ -1,5 +1,5 @@
 /**
- * Small, safe XML → plain-data parser (no I/O, runs on Workers and in the browser).
+ * Small, safe XML → plain-data parser (no I/O, runs on the server and in the browser).
  *
  * Supplier feeds and the XML inside .xlsx files are data documents, so the parser keeps exactly that: elements,
  * attributes, text and CDATA. Security by construction:

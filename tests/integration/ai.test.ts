@@ -13,7 +13,7 @@ const prompts = await import(`${ROOT}/src/modules/ai/prompts/system-prompts.ts`)
 const clients = await import(`${ROOT}/src/modules/ai/infrastructure/ai-clients.ts`);
 const { registerAudit } = await import(`${ROOT}/src/modules/audit/audit-log.ts`);
 const {
-  Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger,
+  Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger,
   buildConfig, toBase64,
 } = core;
 
@@ -28,10 +28,11 @@ async function rejects(fn: () => Promise<unknown>, code: string) {
 }
 const json = (v: unknown) => JSON.stringify(v);
 
-// --- container: real modules; only R2, the clock and the provider client are doubles --------------
+// --- container: real modules; only media storage, the clock and the provider client are doubles --------------
 const d1 = makeD1([`${ROOT}/db/schema.sql`, `${ROOT}/db/seed.sql`]);
 const objects = new Map<string, Uint8Array>();
 const bucket = {
+  available: true,
   put: async (k: string, v: Uint8Array) => { objects.set(k, v); return null; },
   get: async (k: string) => (objects.has(k) ? { body: new Response(objects.get(k)).body, httpEtag: '"e"', writeHttpMetadata() {} } : null),
   head: async () => null,
@@ -54,12 +55,12 @@ const root = new Container()
   .singleton(ClockToken, () => clock)
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
   .scoped(ConfigToken, (r: any) => buildConfig(r.resolve(EnvToken)))
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 registerAudit(root);
 media.registerMedia(root);
 ai.registerAi(root);
 root.singleton(ai.AiClientFactoryToken, () => fakeClients);
-const resolve = (tok: any): any => root.createScope().provide(EnvToken, { DB: d1, ASSETS_BUCKET: bucket, SECRETS_MASTER_KEY: MASTER, SESSION_SECRET: "s3cret" }).resolve(tok);
+const resolve = (tok: any): any => root.createScope().provide(EnvToken, { DB: d1, MEDIA_STORAGE: bucket, SECRETS_MASTER_KEY: MASTER, SESSION_SECRET: "s3cret" }).resolve(tok);
 const actor = { userId: "u_admin", requestId: "req-ai" };
 const KEY_A = "sk-ant-test-0000000000000000000000-AAAA";
 const KEY_B = "sk-openai-test-111111111111111111111-BBBB";

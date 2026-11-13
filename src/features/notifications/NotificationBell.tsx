@@ -63,9 +63,10 @@ export function NotificationBell({ buttonClassName }: { buttonClassName: string 
     <Popover label={unread ? `Bildirimler, ${unread} okunmamış` : "Bildirimler"} buttonClassName={`${buttonClassName} relative`} panelClassName="w-[min(380px,calc(100vw-1.5rem))]"
       button={
         <>
-          <Bell key={unread} className={`h-[18px] w-[18px] ${unread ? "origin-top animate-ring motion-reduce:animate-none" : ""}`} />
+          {/* keys differ per sibling (a shared key duplicates the bell when the count changes); changing them replays the animations */}
+          <Bell key={`bell-${unread}`} className={`h-[18px] w-[18px] ${unread ? "origin-top animate-ring motion-reduce:animate-none" : ""}`} />
           {unread ? (
-            <span key={unread} className="absolute right-1 top-1 grid h-[18px] min-w-[18px] animate-bump place-items-center rounded-full bg-red-500 px-1 text-[10px] font-bold tabular-nums text-white ring-2 ring-white">
+            <span key={`badge-${unread}`} className="absolute right-1 top-1 grid h-[18px] min-w-[18px] animate-bump place-items-center rounded-full bg-red-500 px-1 text-[10px] font-bold tabular-nums text-white ring-2 ring-white">
               {unread > 99 ? "99+" : unread}
             </span>
           ) : null}

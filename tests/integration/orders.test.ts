@@ -11,7 +11,7 @@ const [identity, identityModule, pricing, cart, checkout, orders, platform, audi
 ]);
 const ordersModule = await mod("orders/module");
 const {
-  Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger, buildConfig,
+  Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger, buildConfig,
 } = core;
 
 let pass = 0, fail = 0;
@@ -36,7 +36,7 @@ const root = new Container()
   .singleton(ClockToken, () => clock)
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
   .scoped(ConfigToken, (r: any) => buildConfig(r.resolve(EnvToken)))
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 platform.registerPlatform(root);
 identity.registerIdentity(root);
 audit.registerAudit(root);

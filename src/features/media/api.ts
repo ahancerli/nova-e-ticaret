@@ -5,7 +5,7 @@ import type { UploadedImage as ServerUploadedImage } from "@/modules/media";
 
 export type MediaFolder = "categories" | "brands" | "products" | "branding" | "showcase" | "campaigns";
 
-/** Multipart image upload to R2 with progress. */
+/** Multipart image upload to media storage with progress. */
 export function uploadImage(file: File, folder: MediaFolder, opts: { onProgress?: (fraction: number) => void; signal?: AbortSignal } = {}) {
   const form = new FormData();
   form.set("file", file);

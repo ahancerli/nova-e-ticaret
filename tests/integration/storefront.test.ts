@@ -13,7 +13,7 @@ const identity = await import(`${ROOT}/src/modules/identity/index.ts`);
 const identityModule = await import(`${ROOT}/src/modules/identity/module.ts`);
 const { registerPlatform } = await import(`${ROOT}/src/modules/platform/module.ts`);
 const {
-  Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator,
+  Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator,
   JsonLogger, buildConfig,
 } = core;
 
@@ -177,7 +177,7 @@ const root = new Container()
   .singleton(ClockToken, () => clock)
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
   .scoped(ConfigToken, (r: any) => buildConfig(r.resolve(EnvToken)))
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 registerPlatform(root);
 identity.registerIdentity(root);
 pricing.registerPricing(root);
@@ -187,7 +187,7 @@ reviews.registerReviews(root);
 root.singleton(identityModule.SessionCookiesToken, () => cookies);
 const scope = () => root.createScope().provide(EnvToken, { DB: d1, SESSION_SECRET: "s3cret", PUBLIC_SITE_URL: "https://nova.test" });
 const resolve = (tok: any): any => scope().resolve(tok);
-const ip = (addr: string) => new Request("https://nova.test/api/x", { headers: { "cf-connecting-ip": addr } });
+const ip = (addr: string) => new Request("https://nova.test/api/x", { headers: { "x-real-ip": addr } });
 
 await t("cart: guest cart via cookie; concurrent adds both count (relative upsert), cap still holds", async () => {
   jar.clear();

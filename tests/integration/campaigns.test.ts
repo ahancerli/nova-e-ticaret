@@ -8,7 +8,7 @@ const core = await import(`${ROOT}/src/core/index.ts`);
 const campaigns = await import(`${ROOT}/src/modules/campaigns/index.ts`);
 const media = await import(`${ROOT}/src/modules/media/index.ts`);
 const { registerAudit } = await import(`${ROOT}/src/modules/audit/audit-log.ts`);
-const { Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, FixedClock, CryptoIdGenerator, JsonLogger } = core;
+const { Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, FixedClock, CryptoIdGenerator, JsonLogger } = core;
 
 let pass = 0, fail = 0;
 async function t(name: string, fn: () => Promise<void> | void) {
@@ -27,7 +27,7 @@ const root = new Container()
   .singleton(LoggerToken, () => new JsonLogger({ level: "error", sink: () => {} }))
   .singleton(ClockToken, () => clock)
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 registerAudit(root);
 media.registerMedia(root);
 campaigns.registerCampaigns(root);

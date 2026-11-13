@@ -1,5 +1,5 @@
 // Catalog + media modules: real use cases and repositories on node:sqlite (schema + seed), wired through
-// the DI container exactly like production — only the R2 bucket and the clock are test doubles.
+// the DI container exactly like production — only the media storage and the clock are test doubles.
 // Run: npm run test:catalog
 import { makeD1 } from "./d1-sqlite.mjs";
 
@@ -8,7 +8,7 @@ const core = await import(`${ROOT}/src/core/index.ts`);
 const { registerAudit } = await import(`${ROOT}/src/modules/audit/audit-log.ts`);
 const media = await import(`${ROOT}/src/modules/media/index.ts`);
 const catalog = await import(`${ROOT}/src/modules/catalog/index.ts`);
-const { Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, FixedClock, CryptoIdGenerator, JsonLogger } = core;
+const { Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, FixedClock, CryptoIdGenerator, JsonLogger } = core;
 
 let pass = 0, fail = 0;
 async function t(name: string, fn: () => Promise<void>) {
@@ -26,6 +26,7 @@ async function rejects(fn: () => Promise<unknown>, code: string, status?: number
 const d1 = makeD1([`${ROOT}/db/schema.sql`, `${ROOT}/db/seed.sql`]);
 const objects = new Map<string, Uint8Array>();
 const bucket = {
+  available: true,
   put: async (k: string, v: Uint8Array) => { objects.set(k, v); return null; },
   get: async (k: string) => (objects.has(k) ? { body: new ReadableStream(), httpEtag: '"e"', writeHttpMetadata() {} } : null),
   head: async () => null,
@@ -36,11 +37,11 @@ const root = new Container()
   .singleton(LoggerToken, () => new JsonLogger({ level: "error", sink: () => {} }))
   .singleton(ClockToken, () => new FixedClock(new Date("2026-11-01T10:00:00.000Z")))
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 registerAudit(root);
 media.registerMedia(root);
 catalog.registerCatalog(root);
-const scope = () => root.createScope().provide(EnvToken, { DB: d1, ASSETS_BUCKET: bucket });
+const scope = () => root.createScope().provide(EnvToken, { DB: d1, MEDIA_STORAGE: bucket });
 const resolve = <T>(tok: any): T => scope().resolve(tok);
 
 const actor = { userId: "u_admin", requestId: "req-test" };
@@ -123,7 +124,7 @@ await t("media: rejects empty, oversized, SVG/unknown bytes; seed assets are nev
 });
 await t("media: storage failure leaves no row; failed row write removes the stored object", async () => {
   const before = objects.size;
-  const brokenScope = root.createScope().provide(EnvToken, { DB: d1, ASSETS_BUCKET: undefined });
+  const brokenScope = root.createScope().provide(EnvToken, { DB: d1, MEDIA_STORAGE: undefined });
   await rejects(() => brokenScope.resolve(media.UploadImageToken).execute({ bytes: PNG, fileName: "x.png", folder: "brands" }, actor), "storage_unavailable", 500);
   d1.raw.exec("CREATE TRIGGER trg_test_fail BEFORE INSERT ON media_assets BEGIN SELECT RAISE(ABORT, 'boom'); END;");
   try { await resolve<any>(media.UploadImageToken).execute({ bytes: PNG, fileName: "x.png", folder: "brands" }, actor); } catch { /* expected */ }
@@ -231,7 +232,7 @@ await t("product update: removed variants — unused deleted, sold one archived"
 await t("product delete: history blocks (also when a sale lands between check and commit)", async () => {
   await rejects(() => resolve<any>(catalog.DeleteProductToken).execute("p_knit", actor), "product_has_history", 409);
   // A repository double that lets a stock movement land right after the delete use case read the product.
-  const racing = root.createScope().provide(EnvToken, { DB: d1, ASSETS_BUCKET: bucket });
+  const racing = root.createScope().provide(EnvToken, { DB: d1, MEDIA_STORAGE: bucket });
   const real = racing.resolve(productsModule.ProductRepositoryToken);
   const e = await editorOf(createdId);
   racing.provide(productsModule.ProductRepositoryToken, Object.assign(Object.create(Object.getPrototypeOf(real)), real, {

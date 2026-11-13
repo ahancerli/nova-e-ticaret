@@ -12,7 +12,7 @@ const MAX_BYTES = 5 * 1024 * 1024;
 
 /**
  * Image picker that only takes files from the user's computer (click or drag & drop).
- * The file is uploaded immediately to /api/admin/media (R2); the parent receives { id, url }
+ * The file is uploaded immediately to /api/admin/media (media storage); the parent receives { id, url }
  * and saves only the media id on its own record.
  */
 export function ImageUpload({

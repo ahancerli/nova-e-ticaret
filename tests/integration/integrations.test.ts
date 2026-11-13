@@ -12,7 +12,7 @@ const [identity, identityModule, pricing, cart, checkout, orders, platform, secr
   mod("integrations/index"), mod("settings/index"),
 ]);
 const {
-  Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger,
+  Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger,
   buildConfig, encryptSecret, hmacHex,
 } = core;
 
@@ -58,7 +58,7 @@ const root = new Container()
   .singleton(ClockToken, () => clock)
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
   .scoped(ConfigToken, (r: any) => buildConfig(r.resolve(EnvToken)))
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 platform.registerPlatform(root);
 secrets.registerSecrets(root);
 outbox.registerOutbox(root);

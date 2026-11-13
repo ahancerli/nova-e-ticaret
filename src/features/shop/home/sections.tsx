@@ -35,7 +35,7 @@ export function StoryStrip({ s }: { s: Of<"story_strip"> }) {
           <li key={st.id} className="flex-none">
             <Link href={st.frames[0]?.href ?? `/marka/${st.brandSlug}`} className="group flex w-[76px] flex-col items-center gap-1.5">
               <span className="block size-[72px] rounded-full bg-gradient-to-tr from-brand via-amber-400 to-brand-dark p-[3px] transition group-hover:scale-105">
-                {/* eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset */}
+                {/* eslint-disable-next-line @next/next/no-img-element -- uploaded / demo asset */}
                 <img src={st.coverUrl ?? "/demo/placeholder.svg"} alt="" loading="lazy" className="size-full rounded-full border-[3px] border-white bg-white object-cover" />
               </span>
               <span className="w-full truncate text-center text-xs font-medium group-hover:text-brand">{st.title}</span>
@@ -71,7 +71,7 @@ export function BrandStrip({ s }: { s: Of<"brand_strip"> }) {
       <Rail label={s.title} itemClass="w-36 md:w-44">
         {s.brands.map((b) => (
           <Link key={b.id} href={b.href} className="flex h-20 items-center justify-center rounded-xl border border-line bg-white px-4 text-center font-bold text-ink-soft transition hover:border-brand hover:text-brand">
-            {/* eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- uploaded / demo asset */}
             {b.logoUrl ? <img src={b.logoUrl} alt={b.name} loading="lazy" className="max-h-12 max-w-full object-contain" /> : b.name}
           </Link>
         ))}

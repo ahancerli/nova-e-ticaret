@@ -4,7 +4,7 @@ import { resolveService } from "@/server/app";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /assets/<folder>/<file> — streams an uploaded image from R2 with long-lived caching.
+ * GET /assets/<folder>/<file> — streams an uploaded image from media storage with long-lived caching.
  * Only keys we generate ("<folder>/<uuid>.<ext>") are served; anything else is a 404 (no traversal, no listing).
  * Not a JSON route, so it does not use the route() envelope.
  */

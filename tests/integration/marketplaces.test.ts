@@ -13,7 +13,7 @@ const messaging = await import(`${ROOT}/src/modules/messaging/index.ts`);
 const mp = await import(`${ROOT}/src/modules/marketplaces/index.ts`);
 const { TrendyolClient } = await import(`${ROOT}/src/modules/marketplaces/infrastructure/trendyol-client.ts`);
 const { KafkaRestBus } = await import(`${ROOT}/src/modules/messaging/infrastructure/kafka-rest-bus.ts`);
-const { Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger } = core;
+const { Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger } = core;
 
 let pass = 0, fail = 0;
 async function t(name: string, fn: () => Promise<void> | void) {
@@ -137,7 +137,7 @@ const root = new Container()
   .singleton(ClockToken, () => clock)
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
   .scoped(ConfigToken, () => ({ secretsMasterKey: btoa(String.fromCharCode(...new Uint8Array(32).fill(3))), publicSiteUrl: "https://shop.test", integrationBus: "database", kafka: { topicPrefix: "nova" } }))
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 registerAudit(root);
 media.registerMedia(root);
 catalog.registerCatalog(root);

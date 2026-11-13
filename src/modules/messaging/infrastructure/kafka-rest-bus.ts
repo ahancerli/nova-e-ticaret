@@ -2,8 +2,8 @@ import { ExternalServiceError } from "@/core";
 import type { BusMessage, ConsumedBatch, MessageBus } from "../application/ports";
 
 /**
- * Kafka through its REST proxy, API v2 (Confluent REST Proxy, Redpanda HTTP Proxy / pandaproxy, Aiven Karapace).
- * Cloudflare Workers cannot open Kafka's binary TCP protocol, so produce and consume go over HTTPS:
+ * Kafka through its REST proxy, API v2 (Confluent REST Proxy — the `kafka-rest` container in docker-compose.yml —,
+ * Redpanda HTTP Proxy / pandaproxy, Aiven Karapace). Produce and consume go over HTTP(S):
  *
  *   produce  POST /topics/{topic}                                         records [{key, value}]
  *   consume  POST /consumers/{group}                                      → instance (auto commit OFF, earliest)
@@ -12,7 +12,7 @@ import type { BusMessage, ConsumedBatch, MessageBus } from "../application/ports
  *            POST /consumers/{group}/instances/{name}/offsets             {} = commit everything fetched
  *            DELETE /consumers/{group}/instances/{name}
  *
- * Every poll uses a short-lived consumer instance of the group (Workers keep no state between requests); offsets live in
+ * Every poll uses a short-lived consumer instance of the group (no state kept between cron requests); offsets live in
  * Kafka's consumer group, so delivery is at-least-once and consumers are idempotent.
  */
 export class KafkaRestBus implements MessageBus {

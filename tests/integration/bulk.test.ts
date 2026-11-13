@@ -138,11 +138,12 @@ const catalog = await import(`${ROOT}/src/modules/catalog/index.ts`);
 const bulkModule = await import(`${ROOT}/src/modules/bulk/module.ts`);
 const url = await import(`${ROOT}/src/modules/bulk/domain/url.ts`);
 const { SafeFetcher } = await import(`${ROOT}/src/modules/bulk/infrastructure/safe-fetcher.ts`);
-const { Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger } = core;
+const { Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger } = core;
 
 const d1 = makeD1([`${ROOT}/db/schema.sql`, `${ROOT}/db/seed.sql`]);
 const objects = new Map<string, Uint8Array>();
 const bucket = {
+  available: true,
   put: async (k: string, v: Uint8Array) => { objects.set(k, v); return null; },
   get: async () => null, head: async () => null,
   delete: async (k: string | string[]) => { for (const x of [k].flat()) objects.delete(x); },
@@ -162,13 +163,13 @@ const root = new Container()
   .singleton(ClockToken, () => clock)
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
   .scoped(ConfigToken, () => ({ secretsMasterKey: btoa(String.fromCharCode(...new Uint8Array(32).fill(7))) }))
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 registerAudit(root);
 media.registerMedia(root);
 catalog.registerCatalog(root);
 bulkModule.registerBulk(root);
 root.singleton(bulkModule.RemoteFetcherToken, () => fetcher);
-const resolve = (tok: any): any => root.createScope().provide(EnvToken, { DB: d1, ASSETS_BUCKET: bucket }).resolve(tok);
+const resolve = (tok: any): any => root.createScope().provide(EnvToken, { DB: d1, MEDIA_STORAGE: bucket }).resolve(tok);
 const actor = { userId: "u_admin", requestId: "req-bulk", canPublish: true };
 const row = (line: number, cells: any, key?: string) => ({ line, key, cells });
 const q = (sql: string, ...a: unknown[]) => d1.raw.prepare(sql).get(...a) as any;
@@ -240,12 +241,18 @@ await t("SSRF guard: private / internal / non-https URLs refused; a redirect to 
     assert(threw, `allowed ${bad}`);
   }
   url.assertPublicUrl("https://tedarikci.com.tr/feed.xml");
-  const redirecting = new SafeFetcher(async () => new Response(null, { status: 302, headers: { location: "https://192.168.1.10/admin" } }));
+  const publicDns = async () => ["93.184.215.14"];
+  const redirecting = new SafeFetcher(async () => new Response(null, { status: 302, headers: { location: "https://192.168.1.10/admin" } }), publicDns);
   let msg = ""; try { await redirecting.text("https://ok.example.com/f.xml", { maxBytes: 1000, timeoutMs: 1000 }); } catch (e: any) { msg = e.message; }
   assert(msg.includes("özel / yerel IP"), msg);
-  const huge = new SafeFetcher(async () => new Response("x".repeat(5000)));
+  const huge = new SafeFetcher(async () => new Response("x".repeat(5000)), publicDns);
   msg = ""; try { await huge.text("https://ok.example.com/f.xml", { maxBytes: 1000, timeoutMs: 1000 }); } catch (e: any) { msg = e.message; }
   assert(msg.includes("sınırını aşıyor"), msg);
+  // a public-looking name that resolves into the private network (e.g. the Docker network) is refused before fetching
+  let fetched = false;
+  const rebinding = new SafeFetcher(async () => { fetched = true; return new Response("x"); }, async () => ["172.18.0.5"]);
+  msg = ""; try { await rebinding.text("https://feed.example.com/f.xml", { maxBytes: 1000, timeoutMs: 1000 }); } catch (e: any) { msg = e.message; }
+  assert(msg.includes("özel / yerel IP") && !fetched, msg);
 });
 
 const FEED_URL = "https://tedarikci.example.com/urunler.xml";

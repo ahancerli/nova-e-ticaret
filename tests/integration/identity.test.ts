@@ -12,7 +12,7 @@ const { registerPlatform } = await import(`${ROOT}/src/modules/platform/module.t
 const { registerAudit } = await import(`${ROOT}/src/modules/audit/audit-log.ts`);
 const { safeInternalPath } = await import(`${ROOT}/src/lib/safe-redirect.ts`);
 const {
-  Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator,
+  Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator,
   JsonLogger, buildConfig, AuthenticatorToken, OriginGuardToken, IdempotencyStoreToken,
 } = core;
 
@@ -41,7 +41,7 @@ const root = new Container()
   .singleton(ClockToken, () => clock)
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
   .scoped(ConfigToken, (r: any) => buildConfig(r.resolve(EnvToken)))
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 registerPlatform(root);
 identity.registerIdentity(root);
 registerAudit(root);
@@ -49,7 +49,7 @@ root.singleton(identityModule.SessionCookiesToken, () => cookies);
 identity.addLoginListener(() => ({ onLogin: async (e: any) => void loginEvents.push(`${e.audience}:${e.userId}`) }));
 const scope = () => root.createScope().provide(EnvToken, { DB: d1, SESSION_SECRET: "test-secret", PUBLIC_SITE_URL: "https://nova.test" });
 
-const req = (ip: string) => new Request("https://nova.test/api/x", { headers: { "cf-connecting-ip": ip } });
+const req = (ip: string) => new Request("https://nova.test/api/x", { headers: { "x-real-ip": ip } });
 const login = (email: string, password: string, audience: "admin" | "storefront", ip = "10.0.0.1") =>
   scope().resolve(identity.LoginToken).execute({ email, password, audience, req: req(ip) });
 const principal = (audience: "admin" | "storefront") => scope().resolve(AuthenticatorToken).current(audience);

@@ -24,7 +24,7 @@ export function CartLine({ line: l, index = 0, highlight = false, size = "md", o
       // both tokens write `animation`, so the highlighted row combines them instead of using two utilities
       style={highlight ? { animation: "var(--animate-item-in), var(--animate-flash)" } : { animation: "var(--animate-item-in)", animationDelay: `${Math.min(index, 8) * 50}ms` }}>
       <Link href={href} onClick={onNavigate} className="flex-none" tabIndex={-1} aria-hidden>
-        {/* eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset */}
+        {/* eslint-disable-next-line @next/next/no-img-element -- uploaded / demo asset */}
         <img src={l.imageUrl ?? "/demo/placeholder.svg"} alt="" className={`${img} rounded-xl border border-line bg-white object-contain p-1`} />
       </Link>
       <div className="flex min-w-0 flex-1 flex-col">

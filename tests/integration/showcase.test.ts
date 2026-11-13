@@ -10,7 +10,7 @@ const storefront = await import(`${ROOT}/src/modules/storefront/index.ts`);
 const media = await import(`${ROOT}/src/modules/media/index.ts`);
 const pricing = await import(`${ROOT}/src/modules/pricing/index.ts`);
 const { registerAudit } = await import(`${ROOT}/src/modules/audit/audit-log.ts`);
-const { Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, FixedClock, CryptoIdGenerator, JsonLogger } = core;
+const { Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, FixedClock, CryptoIdGenerator, JsonLogger } = core;
 
 let pass = 0, fail = 0;
 async function t(name: string, fn: () => Promise<void> | void) {
@@ -29,14 +29,14 @@ const root = new Container()
   .singleton(LoggerToken, () => new JsonLogger({ level: "error", sink: () => {} }))
   .singleton(ClockToken, () => clock)
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 registerAudit(root);
 media.registerMedia(root);
 showcase.registerShowcase(root);
 pricing.registerPricing(root); // storefront cards carry campaign badges
 storefront.registerStorefront(root);
-const bucket = { put: async () => null, get: async () => null, head: async () => null, delete: async () => {} };
-const resolve = (tok: any): any => root.createScope().provide(EnvToken, { DB: d1, ASSETS_BUCKET: bucket }).resolve(tok);
+const bucket = { available: true, put: async () => null, get: async () => null, head: async () => null, delete: async () => {} };
+const resolve = (tok: any): any => root.createScope().provide(EnvToken, { DB: d1, MEDIA_STORAGE: bucket }).resolve(tok);
 const actor = { userId: "u_admin", requestId: "req-sc" };
 
 await t("storefront home renders the seeded layout in order, including category tiles, banner, product grid and brand strip", async () => {

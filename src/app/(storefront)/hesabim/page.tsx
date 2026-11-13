@@ -48,7 +48,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
               {orders.map((o) => (
                 <li key={o.orderNumber}>
                   <Link href={`/hesabim/siparis/${encodeURIComponent(o.orderNumber)}`} className="flex items-center gap-4 py-3.5 transition hover:bg-ground/60">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset */}
+                    {/* eslint-disable-next-line @next/next/no-img-element -- uploaded / demo asset */}
                     <img src={o.imageUrl ?? "/demo/placeholder.svg"} alt="" className="size-14 flex-none rounded-xl border border-line bg-white object-contain p-1" />
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-2"><span className="font-semibold">{o.orderNumber}</span><OrderStatusPill status={o.status} /></span>

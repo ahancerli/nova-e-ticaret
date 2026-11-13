@@ -103,7 +103,7 @@ export class RateLimitError extends AppError {
   }
 }
 
-/** 502 — a provider (iyzico, carrier, R2) failed or answered something unusable. */
+/** 502 — a provider (iyzico, carrier, media storage) failed or answered something unusable. */
 export class ExternalServiceError extends AppError {
   constructor(code = "external_service_error", message = "Dış servis yanıt vermedi. Lütfen tekrar deneyin.", options?: AppErrorOptions) {
     super(502, code, message, { ...options, expose: true });

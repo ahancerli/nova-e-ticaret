@@ -31,6 +31,7 @@ test("expired session during an action → back to login with a return address",
   await adminLogin(page);
   await page.goto("/admin/siparisler/ord_demo_1");
   await expect(page.getByRole("button", { name: "Not ekle" })).toBeVisible();
+  await page.waitForLoadState("networkidle"); // the bell's first poll would otherwise hit the 401 and redirect before the click
   await context.clearCookies(); // the session ends while the page is open
   await page.getByPlaceholder(/Ekibe görünür bir not/).fill("oturum yok");
   await page.getByRole("button", { name: "Not ekle" }).click();

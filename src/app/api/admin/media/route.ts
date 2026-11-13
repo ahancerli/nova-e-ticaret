@@ -15,7 +15,7 @@ const MULTIPART_OVERHEAD = 64 * 1024;
 
 /**
  * POST /api/admin/media  (multipart/form-data: file, folder)
- * Stores the image in R2 and returns { id, url } to attach to a record (e.g. categories.image_media_id).
+ * Stores the image in media storage (MEDIA_DIR) and returns { id, url } to attach to a record (e.g. categories.image_media_id).
  */
 export const POST = route({
   auth: { audience: "admin" },

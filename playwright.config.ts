@@ -1,8 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Browser tests (npm run test:e2e). They run against `next dev` on its own port with an ISOLATED local D1
- * (.wrangler/e2e, rebuilt by scripts/e2e-setup.mjs before the server starts) — the developer's local
+ * Browser tests (npm run test:e2e). They run against `next dev` on its own port with an ISOLATED database
+ * (data/e2e, rebuilt by scripts/e2e-setup.mjs before the server starts) — the developer's local
  * database is never touched. Tests are serial: they share one database and tell a story (order → admin).
  */
 const PORT = 3210;
@@ -25,7 +25,7 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `D1_MODE=local node scripts/e2e-setup.mjs && D1_MODE=local NOVA_PERSIST_DIR=.wrangler/e2e npm run dev -- -p ${PORT}`,
+    command: `node scripts/e2e-setup.mjs && DATABASE_PATH=data/e2e/nova.db MEDIA_DIR=data/e2e/uploads INTEGRATION_BUS=database CRON_SECRET=e2e-cron-secret npm run dev -- -p ${PORT}`,
     url: `http://localhost:${PORT}/api/health`,
     timeout: 180_000,
     reuseExistingServer: false,

@@ -1,5 +1,5 @@
 /**
- * Minimal typed dependency-injection container (no decorators, no reflect-metadata — Workers friendly).
+ * Minimal typed dependency-injection container (no decorators, no reflect-metadata).
  *
  *   const Clock = token<Clock>("Clock");
  *   root.singleton(Clock, () => new SystemClock());

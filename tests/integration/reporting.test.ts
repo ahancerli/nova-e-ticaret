@@ -6,7 +6,7 @@ import { makeD1 } from "./d1-sqlite.mjs";
 const ROOT = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 const core = await import(`${ROOT}/src/core/index.ts`);
 const reporting = await import(`${ROOT}/src/modules/reporting/index.ts`);
-const { Container, D1DatabaseAdapter, DatabaseToken, ClockToken, LoggerToken, EnvToken, FixedClock, JsonLogger } = core;
+const { Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, LoggerToken, EnvToken, FixedClock, JsonLogger } = core;
 
 let pass = 0, fail = 0;
 async function t(name: string, fn: () => Promise<void> | void) {
@@ -44,7 +44,7 @@ const d1 = makeD1([`${ROOT}/db/schema.sql`, `${ROOT}/db/seed.sql`]);
 const root = new Container()
   .singleton(LoggerToken, () => new JsonLogger({ level: "error", sink: () => {} }))
   .singleton(ClockToken, () => new FixedClock(NOW))
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 reporting.registerReporting(root);
 const dashboard = (period: string, access = { canSeeCustomer: true, canSeeCatalog: true }) =>
   root.createScope().provide(EnvToken, { DB: d1 }).resolve(reporting.GetDashboardToken).execute(period, access);

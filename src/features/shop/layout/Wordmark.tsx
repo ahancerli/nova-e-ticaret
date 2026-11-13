@@ -4,7 +4,7 @@
  */
 export function Wordmark({ name, logoUrl, className = "h-9" }: { name: string; logoUrl: string | null; className?: string }) {
   if (logoUrl) {
-    // eslint-disable-next-line @next/next/no-img-element -- R2 asset path; next/image optimisation is not configured for it
+    // eslint-disable-next-line @next/next/no-img-element -- uploaded asset path; next/image optimisation is not configured for it
     return <img src={logoUrl} alt={name} className={`${className} w-auto max-w-48 object-contain`} />;
   }
   const dot = name.endsWith(".");

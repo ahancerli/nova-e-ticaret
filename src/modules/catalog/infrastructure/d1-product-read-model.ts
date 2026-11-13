@@ -19,7 +19,7 @@ type VariantRaw = {
 };
 type ValueRaw = { attribute_id: string; text_value: string | null; number_value: number | null; boolean_value: number | null; option_id: string | null };
 
-const rows = <T>(r: D1Result | undefined) => (r?.results ?? []) as T[];
+const rows = <T>(r: SqlResult | undefined) => (r?.results ?? []) as T[];
 
 export class D1ProductReadModel extends Repository implements ProductReadModel {
   async list(): Promise<ProductListRow[]> {

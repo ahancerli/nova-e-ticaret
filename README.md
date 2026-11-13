@@ -1,6 +1,6 @@
 # nova. — E-ticaret vitrini + yönetim paneli
 
-Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · Cloudflare Workers (OpenNext) · Cloudflare D1 (SQLite) · R2.
+Next.js 16 (App Router) · React 19 · Tailwind CSS 4 · Node.js 24 · SQLite (`node:sqlite`) · Kafka · Docker Compose.
 Tek satıcılı mağaza: müşteri vitrini (`/`) ve yönetim paneli (`/admin`) aynı uygulamada.
 **Kod İngilizce, arayüz Türkçe.** Para birimi TRY; tutarlar **kuruş cinsinden INTEGER ve KDV dahil**.
 
@@ -12,69 +12,113 @@ Tek satıcılı mağaza: müşteri vitrini (`/`) ve yönetim paneli (`/admin`) a
 
 ## 1. Hızlı başlangıç (local)
 
+İki yol var; ikisi de aynı `.env.local` ve aynı `data/` klasörünü kullanır (**ikisini aynı anda çalıştırmayın** — aynı SQLite dosyasına iki süreç yazar).
+
+**A) Docker ile (canlıdakiyle aynı ortam: app + Kafka + Kafka REST + zamanlayıcı)**
 ```bash
-nvm use 25                       # Node ≥ 22.13 zorunlu (v18 / v22.9 → tsc/next/servis testleri bozulur)
-npm install
-npm run db:schema:local          # local SQLite-D1: 95 tablo · 60 indeks · 25 trigger (tekrar çalıştırılabilir: yeni tablolar + firma kataloğu)
-npm run db:seed:local            # roller/izinler + demo katalog + demo sipariş
-npm run admin:create:local -- siz@ornek.com "Ad Soyad"   # panel kullanıcısı (parolayı terminal sorar, ≥12 karakter)
-npm run dev                      # http://localhost:3000 · panel: /admin (giriş: /admin/giris)
+cp .env.example .env.local       # yoksa; sırları doldurun (dosyadaki komutla üretilir)
+docker compose up -d --build     # http://localhost:3000 · ilk açılışta şema + seed + migration otomatik
+docker compose exec app node scripts/create-admin.mjs siz@ornek.com "Ad Soyad"   # panel kullanıcısı (parolayı sorar, ≥ 12 karakter)
+docker compose logs -f app scheduler
+docker compose down              # durdur (veri data/ ve kafka-data volume'unda kalır)
 ```
 
-Seed'deki `admin@nova.local` kullanıcısının parolası dokümante değildir; local'de daima `admin:create:local` kullanın.
-`.env.local` local çalışma için gerekli sırları zaten içerir (`SESSION_SECRET`, `SECRETS_MASTER_KEY`, `CRON_SECRET`); local R2 için ek kurulum yoktur.
+**B) Docker'sız (hızlı geliştirme, hot reload)**
+```bash
+nvm use 25                       # Node ≥ 22.16 zorunlu (node:sqlite; v18 / v22.9 → tsc/next/servis testleri bozulur)
+npm install
+npm run db:setup                 # data/nova.db: şema + (yeni dosyaysa) seed + migration'lar — tekrar çalıştırılabilir
+npm run admin:create -- siz@ornek.com "Ad Soyad"
+npm run dev                      # http://localhost:3000 · panel: /admin (giriş: /admin/giris)
+npm run scheduler                # (isteğe bağlı, ayrı terminal) /api/cron/* işlerini aralıklarıyla çağırır
+```
+Docker'sız modda entegrasyon kuyruğu varsayılan olarak SQLite tablolarıdır (`INTEGRATION_BUS=database`). Kafka'yı denemek için
+`docker compose up -d kafka kafka-rest` + `.env.local`'de `INTEGRATION_BUS=kafka`, `KAFKA_REST_URL=http://localhost:8082`.
+
+Seed'deki `admin@nova.local` kullanıcısının parolası dokümante değildir; daima `admin:create` kullanın.
+Eski Cloudflare local verisi (`.wrangler/state`) bir kez `npm run db:from-wrangler` ile `data/`'ya taşınır (yapıldı).
 
 ### Komutlar
 | Komut | İş |
 |---|---|
-| `npm run dev` / `dev:remote` | Local D1 (varsayılan) / Cloudflare D1'e bağlı geliştirme |
+| `npm run dev` | `next dev` — `data/nova.db` + `data/uploads` (`.env.local`) |
+| `npm run build` / `npm start` | Production build (`output: "standalone"`) / `next start` |
 | `npm run typecheck` · `npm run lint` | `tsc --noEmit` · ESLint |
-| `npm test` | `db:test` (49 şema, python3) + `test:core` (14) + `test:catalog` (18) + `test:identity` (9) + `test:storefront` (23: fiyat motoru aşamaları, kademe, çapraz indirim, kilit, strateji, kupon hariç tutma, ilk sipariş, taban fiyat, üst sınır, rozetler) + `test:orders` (8) + `test:integrations` (6: kart ödemesi, outbox, kargo webhook) + `test:reporting` (8: dönem sınırları, KPI, gösterge paneli) + `test:content` (12: site ayarları, içerik sayfaları, yasal metinler) + `test:accounts` (11: davet, parola bağlantıları, roller, üyelik, müşteriler) + `test:campaigns` (10) + `test:showcase` (5) + `test:audit` (14: etiketler, alanlar, filtreler, maskeleme, append-only) + `test:ai` (11: şifreli anahtar, sağlayıcı değişimi, ürün içeriği, HTTP istemcileri — gerçek sağlayıcı çağrılmaz) + `test:providers` (18: telefon/şablon kuralları, Netgsm ve Yurtiçi adaptörleri, katalog ↔ adaptör, SMS bildirimi, kargo kaydı ve takip — firma çağrılmaz) + `test:payments` (12: IBAN, şifreli iyzico anahtarları, tek aktif ortam, havale/hesap korumaları, vitrin seçenekleri — iyzico çağrılmaz) + `test:bulk` (16: güvenli XML, .xlsx okuma/yazma, para biçimleri, akış analizi, Excel içe aktarma ve XML/REST senkronu gerçek katalog use case'leriyle, SSRF) + `test:services` (23 uçtan uca senaryo) — Node ≥ 22.13 |
-| `npm run test:e2e` | Playwright tarayıcı testleri (15): ayrı bir local veritabanı kurar, `next dev`'i 3210 portunda açar, Chromium'da çalıştırır |
-| `npm run db:{schema,seed,reset}:{local,remote}` | Şema / seed / sil-kur-seed |
-| `npm run db:query[:local] -- "SQL"` | Tek SQL (remote varsayılan, `:local` ile local) |
-| `npm run admin:create[:local] -- email "Ad"` | Admin oluştur / parolasını sıfırla (remote / local) |
-| `npm run r2:create` | Canlı R2 bucket'ı (`nova-assets`) bir kez oluştur |
-| `npm run preview` / `deploy` / `upload` | OpenNext build + Cloudflare (remote modu zorlar) |
+| `npm test` | `db:test` (49 şema, python3) + `test:core` (14) + `test:runtime` (5: SQLite sürücüsü, disk medya deposu) + `test:catalog` (20) + `test:identity` (9) + `test:storefront` (26) + `test:orders` (8) + `test:integrations` (6) + `test:reporting` (8) + `test:content` (12) + `test:accounts` (11) + `test:campaigns` (10) + `test:showcase` (5) + `test:audit` (14) + `test:ai` (17) + `test:mail` (14) + `test:payments` (12) + `test:providers` (18) + `test:bulk` (16: … SSRF + DNS) + `test:marketplaces` (18) + `test:reviews` (10) + `test:services` (23) — Node ≥ 22.16 |
+| `npm run test:e2e` | Playwright tarayıcı testleri (15): ayrı veritabanı (`data/e2e`), `next dev` 3210 portunda, Chromium |
+| `npm run db:setup` | Şema + (yeni veritabanıysa) seed + bekleyen migration'lar — container her açılışta bunu çalıştırır |
+| `npm run db:{schema,seed,migrate,reset}` | Tek adım; `reset` = sil-kur-seed (`APP_ENV=production` iken `-- --yes` ister) |
+| `npm run db:query -- "SQL"` | Tek SQL; SELECT tablo olarak basılır |
+| `npm run db:import -- dump.sql` | SQL dökümünü (ör. `wrangler d1 export`) **yeni** veritabanına yükler, ardından şema + migration |
+| `npm run db:backup` | Çevrimiçi yedek → `data/backups/nova-<zaman>.db` (son 14'ü tutar, `BACKUP_KEEP`) |
+| `npm run admin:create -- email "Ad"` | Admin oluştur / parolasını sıfırla |
+| `npm run scheduler` | Zamanlanmış işleri çağıran süreç (Docker'da `scheduler` container'ı) |
+| `npm run docker:{up,down,logs,admin}` | Local Docker kısayolları |
+| `npm run deploy` | Sunucuya gönder + build + yeniden başlat (`DEPLOY_HOST`, bkz. §2) |
 | `npm run deps:latest` | Bağımlılıkları en güncele yükselt (dikkatli) |
 
-## 2. Ortamlar ve yapılandırma
+## 2. Ortamlar, Docker ve canlıya alma
 
 | Dosya | Amaç |
 |---|---|
-| `.env` | **Remote** (Cloudflare hesap/token, remote D1 adı/ID). Git'e girmez. |
-| `.env.local` | **Local** (local D1 adı/ID, `APP_ENV`, local sırlar). Git'e girmez. |
-| `.dev.vars.example` | `wrangler dev` sırlarının şablonu |
-| `wrangler.jsonc` | Worker, `DB` (D1) ve `ASSETS_BUCKET` (R2) binding'leri. D1 `database_name/id/remote` alanları **elle düzenlenmez**: `scripts/sync-wrangler.mjs` her `dev/preview/deploy` öncesi `.env*`'den yazar. |
-| `cloudflare-env.d.ts` | Kullanılan D1/R2/Fetcher yüzeyinin elle yazılmış tipleri (`@cloudflare/workers-types` DOM ile çakıştığı için global eklenmedi) |
+| `.env.local` | **Local** (`npm run dev`, scriptler, local `docker compose`). Git'e girmez. Şablon: `.env.example` |
+| `.env.production` | **Sunucu** (`docker-compose.prod.yml` → `env_file`). `npm run deploy` sunucuya kopyalar. Git'e girmez. Şablon: `.env.production.example` |
+| `runtime-env.d.ts` | `RuntimeEnv` (DB, medya deposu, sırlar) + kullanılan SQL yüzeyinin tipleri (`SqlDriver`, `SqlStatement`, `SqlResult`) |
+| `Dockerfile` | Çok aşamalı imaj: `npm ci` → `next build` (standalone) → `node:24-bookworm-slim` üzerinde `server.js` + `scripts/` + `db/` |
+| `docker/entrypoint.sh` | Sunucu başlamadan `node scripts/db.mjs init` (şema + ilk açılışta seed + migration); `SKIP_DB_INIT=true` atlar |
+| `docker-compose.yml` | Ortak servisler: `app`, `scheduler`, `kafka` (KRaft, tek düğüm), `kafka-rest` (Confluent REST Proxy v2) |
+| `docker-compose.override.yml` | Local ekleri (otomatik yüklenir): 3000 portu, `.env.local`, `./data:/data`, Kafka REST `127.0.0.1:8082` |
+| `docker-compose.prod.yml` | Sunucu ekleri: `caddy` (80/443, otomatik HTTPS), `backup` (günlük SQLite yedeği), log rotasyonu, `.env.production` |
+| `docker/Caddyfile` | Ters vekil: `{$DOMAIN}` → `app:3000`, `X-Real-IP` = gerçek istemci IP'si |
+| `deploy/server-setup.sh` · `deploy/deploy.sh` | Sunucuyu bir kez hazırla · her sürümde gönder/derle/başlat |
 
-Local'de `next dev`, `initOpenNextCloudflareForDev()` ile wrangler binding'lerini kullanır: D1 → `.wrangler/state/v3/d1/…sqlite`, R2 → `.wrangler/state/v3/r2`. **Binding değişince dev sunucusu yeniden başlatılmalı.**
+**Çalışma zamanı:** Next.js standalone sunucusu tek Node süreci olarak çalışır. Veritabanı `DATABASE_PATH` (Docker'da `/data/nova.db`) — `node:sqlite`, WAL, foreign keys açık; `src/server/sqlite-driver.ts` D1 tarzı `prepare/bind/all/first/run/batch` yüzeyini sağlar (batch = tek transaction, eşzamanlı istekler araya giremez). Yüklenen görseller `MEDIA_DIR` (Docker'da `/data/uploads`) altında, `<anahtar>` + `<anahtar>.meta.json` (`FsObjectStorage`); `/assets/...` route'u sunar. Veri tek volume'da: `nova-data` (`/data`: veritabanı, görseller, yedekler).
 
-**Canlıya alma:**
+**İstemci IP'si:** `X-Real-IP` başlığından okunur (`clientIp`). Canlıda bu başlığı Caddy yazar ve `app` dışarıya port açmaz; app'i doğrudan internete açarsanız başlık taklit edilebilir. Local Docker'da Caddy olmadığından tüm istekler aynı IP sayılır (oran sınırları ortak).
+
+**Zamanlanmış işler** (`scheduler` container'ı, `scripts/scheduler.mjs`; başlık `Authorization: Bearer $CRON_SECRET`, bir iş bitmeden aynısı tekrar başlamaz):
+`/api/cron/outbox` ve `/api/cron/integrations` her **1 dk**, `/api/cron/expire` her **5 dk**, `/api/cron/feeds-sync` her **15 dk**, `/api/cron/shipping-sync` her **20 dk**.
+
+**Entegrasyon kuyruğu (Kafka):** Docker'da `INTEGRATION_BUS=kafka`: app, compose ağındaki Confluent REST Proxy v2'ye (`http://kafka-rest:8082`) yazar/okur; Kafka ve REST proxy dışarıya açılmaz, topic'ler otomatik oluşur. Topic'ler: `<prefix>.catalog.product-info`, `.catalog.stock`, `.catalog.price`, `.catalog.images`, `<prefix>.marketplace.orders` (`KAFKA_TOPIC_PREFIX`, varsayılan `nova`). Harici bir Kafka REST servisi için `KAFKA_REST_URL` + isteğe bağlı `KAFKA_REST_USERNAME` / `KAFKA_REST_PASSWORD` (Basic). `INTEGRATION_BUS=database` = aynı topic'ler SQLite tablolarında (Docker'sız local, testler). Durum: Entegrasyonlar › Pazaryerleri › bağlantı › Genel › Kuyruk.
+
+**Canlıya alma (VDS, Ubuntu/Debian):**
 ```bash
-npx wrangler secret put SESSION_SECRET      # 32+ bayt rastgele, base64
-npx wrangler secret put SECRETS_MASTER_KEY  # 32 bayt, base64 (AES-256-GCM, integration_secrets)
-npx wrangler secret put CRON_SECRET
-npm run db:create && npm run db:schema:remote && npm run db:seed:remote   # ilk kurulum
-npm run r2:create
-# wrangler.jsonc → vars.PUBLIC_SITE_URL gerçek alan adı · demo kullanıcıları sil/parolasını değiştir
+# 0) DNS: alan adının A kaydı → sunucu IP'si (Caddy sertifikayı bu adla alır)
+# 1) Sunucuyu bir kez hazırla: Docker + Compose, güvenlik duvarı (22/80/443), swap, /opt/nova
+scp deploy/server-setup.sh root@SUNUCU_IP:/root/ && ssh root@SUNUCU_IP sh /root/server-setup.sh
+# 2) .env.production: DOMAIN, ACME_EMAIL, PUBLIC_SITE_URL=https://DOMAIN (sırlar dolu; şablon .env.production.example)
+# 3) Gönder + derle + başlat (her sürümde aynı komut; veritabanı/görseller sunucu volume'unda kalır)
+echo 'DEPLOY_HOST=root@SUNUCU_IP' > deploy/.deploy.env
 npm run deploy
+# 4) İlk admin
+ssh root@SUNUCU_IP "cd /opt/nova && docker compose exec app node scripts/create-admin.mjs siz@ornek.com 'Ad Soyad'"
 ```
-Zamanlanmış işler (OpenNext worker'ı `scheduled` olayını dışa aktarmaz → ayrı Cron Trigger worker'ı veya dış zamanlayıcı):
-`POST /api/cron/outbox` her **1 dk**, `POST /api/cron/expire` her **5 dk**, `POST /api/cron/shipping-sync` her **15–30 dk** (kargo takibi), başlık `Authorization: Bearer $CRON_SECRET`.
-`POST /api/cron/integrations` her **1 dk** (katalog değişikliklerini kuyruğa aktarır, pazaryeri görevlerini kendi aralıklarında çalıştırır, çekilen siparişleri içe alır; 25 sn bütçe).
+Sunucuda `/opt/nova/.env` içindeki `COMPOSE_FILE` sayesinde düz `docker compose ps | logs -f app | restart app` prod dosyalarıyla çalışır.
+İlk açılışta veritabanı boşsa `db/seed.sql` (roller/izinler + demo katalog) yüklenir — demo kullanıcıları silin/parolalarını değiştirin; mevcut veri taşınacaksa `SEED_ON_INIT=false`.
 
-**Entegrasyon kuyruğu (Kafka):** varsayılan `INTEGRATION_BUS=database` (D1 tabloları, ek kurulum yok). Kafka için Workers TCP konuşamadığından **Kafka REST Proxy v2** gerekir (Confluent REST Proxy, Redpanda HTTP Proxy `:8082`, Aiven Karapace): `INTEGRATION_BUS=kafka`, `KAFKA_REST_URL` (canlıda herkese açık **HTTPS**), `KAFKA_REST_USERNAME` / `KAFKA_REST_PASSWORD` (Basic, opsiyonel), `KAFKA_TOPIC_PREFIX` (varsayılan `nova`). Topic'ler: `<prefix>.catalog.product-info`, `.catalog.stock`, `.catalog.price`, `.catalog.images`, `<prefix>.marketplace.orders` (auto-create kapalıysa elle açın). Durum: Entegrasyonlar › Pazaryerleri › bağlantı › Genel › Kuyruk.
+**Eski Cloudflare D1 verisini taşıma (bir kez):**
+```bash
+npx wrangler@4 d1 export nova-db --remote --output=d1-dump.sql   # .env.production'daki eski CLOUDFLARE_* ile
+npm run db:import -- d1-dump.sql                                  # local data/nova.db'yi denemek için (--force ile üzerine yazar)
+# sunucuya: ilk deploy'dan önce SEED_ON_INIT=false; sonra
+scp d1-dump.sql root@SUNUCU_IP:/opt/nova/ && ssh root@SUNUCU_IP "cd /opt/nova && docker compose stop app scheduler backup \
+  && docker compose run --rm -v /opt/nova/d1-dump.sql:/tmp/dump.sql -e SKIP_DB_INIT=true app node scripts/db.mjs import /tmp/dump.sql --force \
+  && docker compose up -d"
+```
+R2'deki canlı görseller ayrıca indirilip sunucuda `nova-data` volume'undaki `/data/uploads/<anahtar>` altına konmalı (+ `.meta.json`, biçim: `scripts/import-wrangler-state.mjs`). `SECRETS_MASTER_KEY` canlıdakiyle aynı kalmalı; yoksa saklı SMTP/AI/pazaryeri anahtarları çözülemez.
+
+**Yedek:** `backup` container'ı günde bir `/data/backups/nova-<zaman>.db` üretir (son 14). Sunucudan almak: `docker compose cp app:/data/backups ./backups`. Elle: `docker compose exec app node scripts/db.mjs backup`.
 
 ## 3. Klasör yapısı
 
 ```
 db/                       Şema, seed, drop, şema testleri — ayrıntı: db/README.md
 docs/                     Kaynak şartname (PDF)
-scripts/                  env okuma, wrangler senkronu, d1/r2 sarmalayıcıları, admin oluşturma
+scripts/                  env okuma, db.mjs (şema/seed/migration/import/yedek), admin oluşturma, zamanlayıcı, e2e kurulumu
+docker/ · deploy/         Container giriş noktası, Caddyfile · sunucu hazırlama ve deploy scriptleri
 public/demo/              Seed görselleri (SVG)
 tests/unit/               Çekirdek (src/core) birim testleri
-tests/integration/        Servis testleri: gerçek servis kodu + schema/seed, node:sqlite üzerinde D1 taklidi
+tests/integration/        Servis testleri: gerçek servis kodu + schema/seed, bellek içi SQLite (üretimdeki sürücüyle)
 src/
   app/
     (storefront)/         Vitrin sayfaları — ince route dosyaları, içerik `features/shop`'tan (header/footer/ana sayfa SSR)
@@ -82,7 +126,7 @@ src/
     (admin-auth)/admin/giris   Panel giriş sayfası (kabuk dışında)
     (admin-print)/admin/yazdir Yazdırılabilir belgeler (kabuk dışında)
     api/                  Route handler'lar ({data, meta, requestId} sözleşmesi)
-    assets/[...path]/     R2'deki yüklenmiş görselleri sunar
+    assets/[...path]/     MEDIA_DIR'deki yüklenmiş görselleri sunar
   components/             Paylaşılan UI (iş bilgisi yok)
     ui/                   DataGrid, Toaster, Popover, Collapsible, Portal, ErrorState, ErrorBoundary, RouteError, ClientErrorReporter
     admin/                Panel tasarım sistemi: ui (kart, rozet, tablo), AdminDrawer, AdminConfirmDialog, AdminFormDialog, Skeleton
@@ -106,13 +150,13 @@ src/
                           campaigns (kampanya kuralları, kapsam, kuponlar), mail (SMTP hesabı, şifreli parola, MailSender portu → parola sıfırlama e-postası), ai (tek AI sağlayıcısı: OpenAI / Gemini / Claude, “AI ile ürün ekle”; sistem promptları `ai/prompts/system-prompts.ts`), showcase (ana sayfa bölümleri, slider, hikayeler), payments (iyzico gateway), shipping (kargo adaptörleri + webhook), outbox (worker + işleyici kaydı), notifications + panel bildirimleri (zil, Bildirimler, kurallar, NotificationPublisher portu), reviews (ürün yorumları ve puanlar: moderasyon, mağaza yanıtı, müşteriyle iletişim)
   lib/                    İstemci+sunucu ortak: api-client, use-field-errors, error-reporting, toast, motion, money, slug, safe-redirect, ids, types, order-rules, product-rules
   proxy.ts                Sayfa CSP'si (istek başına script nonce)
-  server/                 Yalnız sunucu ("server-only"): app.ts = composition root (DI kayıtları, `route`, `resolveService`, `currentPrincipal`, `requireAdminPage`); env.ts = Worker binding + local .env
+  server/                 Yalnız sunucu ("server-only"): app.ts = composition root (DI kayıtları, `route`, `resolveService`, `currentPrincipal`, `requireAdminPage`); env.ts = süreç başına SQLite bağlantısı + medya deposu + process.env sırları; sqlite-driver.ts = node:sqlite sürücüsü
 ```
 
 ## 4. Mimari kurallar (tüm yeni kod bunlara uyar)
 
-1. **Veri erişimi yalnız sunucuda** (`src/server`, `import "server-only"`). Parametreli sorgu (`?`); sıralama/kolon adları allowlist'ten. D1 sınırı: ifade başına ≤ 100 parametre → `IN` listeleri 80'lik parçalara bölünür (`placeholders()`).
-2. **Atomiklik:** çok adımlı yazma = tek `UnitOfWork` (D1 batch). Durum geçişleri `WHERE status = <beklenen>` + `uow.expectChanges(1, () => new ConflictError(…))`: koşul tutmazsa **batch'in tamamı veritabanında geri alınır** (`batch_guards` trigger'ı). Bir batch'te birden çok guard olabilir; hangisi tetiklenirse onun hatası atılır. Batch bittikten sonra `changes` kontrol etmek yetersizdir (diğer ifadeler yazılmış olur). Sınır kontrolleri de (iade toplamı ≤ tahsilat, gönderilen ≤ sipariş adedi, stoğa alınan ≤ satılan) `INSERT … SELECT … WHERE <koşul>` + guard ile batch içinde yapılır. Dış ağ çağrıları (iyzico, kargo) **batch dışında**, mümkünse outbox üzerinden.
+1. **Veri erişimi yalnız sunucuda** (`src/server`, `import "server-only"`). Parametreli sorgu (`?`); sıralama/kolon adları allowlist'ten. Sınır: ifade başına ≤ 100 parametre (D1 döneminden kalan kural, korunuyor) → `IN` listeleri 80'lik parçalara bölünür (`placeholders()`).
+2. **Atomiklik:** çok adımlı yazma = tek `UnitOfWork` (tek batch = tek transaction). Durum geçişleri `WHERE status = <beklenen>` + `uow.expectChanges(1, () => new ConflictError(…))`: koşul tutmazsa **batch'in tamamı veritabanında geri alınır** (`batch_guards` trigger'ı). Bir batch'te birden çok guard olabilir; hangisi tetiklenirse onun hatası atılır. Batch bittikten sonra `changes` kontrol etmek yetersizdir (diğer ifadeler yazılmış olur). Sınır kontrolleri de (iade toplamı ≤ tahsilat, gönderilen ≤ sipariş adedi, stoğa alınan ≤ satılan) `INSERT … SELECT … WHERE <koşul>` + guard ile batch içinde yapılır. Dış ağ çağrıları (iyzico, kargo) **batch dışında**, mümkünse outbox üzerinden.
 3. **API sözleşmesi:** başarı `{data, meta, requestId}`, hata `{error:{code,message,fieldErrors}, requestId}`. Bütün JSON route'lar `route({...})` ile yazılır (§4.1); yalnız yönlendirme dönen iyzico callback'i, sağlayıcıya özel yanıt dönen iyzico webhook'u ve görsel akışı yapan `/assets` düz route'tur (aynı modülleri kullanır). Hatalar `AppError` alt sınıflarıyla atılır; Zod ve DB trigger/constraint hataları `toAppError` ile tek yerde eşlenir (`src/core/errors/translate.ts`). 5xx'te istemci genel mesaj alır, ayrıntı `requestId` ile JSON log'a gider.
 4. **Kimlik:** yalnız oturum çerezinden (`modules/identity`). Mağaza `__Host-nova_store_session` (`SameSite=Lax`, 7 gün), panel `__Host-nova_admin_session` (ayrı; `SameSite=Strict`, 8 saat). Token'ın kendisi değil HMAC'i saklanır; çıkış oturumu sunucuda iptal eder. Body'deki userId asla yetki değildir. Giriş sonrası işler (misafir sepeti birleştirme) `addLoginListener` ile bağlanır (Observer).
 5. **Yetki:** API route'ları `route({ auth: { audience: "admin", permission: "<kod>" } })` (401/403), admin sayfaları `await requireAdminPage("<kod>")` (oturum yok → `/admin/giris`, yetki yok → `/admin/yetkisiz`). UI gizlemek yetki değildir. Nesne/durum kuralları use case'te ayrıca kontrol edilir (ör. sipariş işlemleri: her işlemin kendi izni, `assertActionAllowed`).
@@ -123,7 +167,7 @@ src/
 10. **Audit:** admin yazma işlemleri `audit_logs`'a yazılır (sözlük: db/README.md §5). Modüllerde audit satırı, değişikliğin **aynı UnitOfWork'üne** `AuditLog.recordStatement()` ile eklenir (ya ikisi ya hiçbiri).
 11. **Rate limit / kaba kuvvet:** login için IP başına dakikada 5 hata; ayrıca (hesap, IP) başına 15 dakikada 10 hata yalnız **o IP'yi o hesap için** kapatır — hesap global kilitlenmez (saldırgan admini dışarıda bırakamaz). Kupon: IP başına dakikada 5 hata. `?next=` yönlendirmeleri `safeInternalPath` (`lib/safe-redirect.ts`) ile süzülür.
 12. **HTML:** admin'in yazdığı açıklamalar vitrinde `sanitizeRichHtml` (tokenizer tabanlı allowlist; yalnız `https://` veya site içi `/yol` bağlantıları) üzerinden geçer; kullanıcı içeriği asla HTML olarak basılmaz. Temizleyici `src/core/security/sanitize-html.ts`; yeni XSS bulgusu = `tests/integration/services.test.ts` içindeki payload listesine bir satır.
-13. **Sırlar** `integration_secrets`'ta AES-256-GCM; ana anahtar Worker secret. Panel sırları geri göstermez. AI API anahtarı aynı zarfla `ai_integration` satırında (panel yalnız son 4 karakteri görür).
+13. **Sırlar** `integration_secrets`'ta AES-256-GCM; ana anahtar `SECRETS_MASTER_KEY` ortam sırrı. Panel sırları geri göstermez. AI API anahtarı aynı zarfla `ai_integration` satırında (panel yalnız son 4 karakteri görür).
 14. **CSP:** sayfa CSP'si `src/proxy.ts`'te her istekte üretilen **script nonce** ile kurulur (`'unsafe-inline'` script yok, `'strict-dynamic'`). Bu yüzden root layout `connection()` ile tüm sayfaları dinamik render eder. Inline `<script>` yazılmaz; gerekiyorsa `headers().get("x-nonce")` ile `nonce` verilir. API ve `public/demo` yanıtları `next.config.ts`'te `default-src 'none'` alır. Harici script/iframe eklemek = `src/proxy.ts`'te ilgili direktife kaynak eklemek.
 
 ### 4.1 Çekirdek (`src/core`) ve route yazımı
@@ -196,7 +240,7 @@ Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf b
 | **Toplu işlemler** `/admin/toplu-islemler` | Excel sekmeleri (ürün ekle, güncelle, görseller, fiyat, stok): örnek .xlsx koddan üretilir (`modules/bulk/domain/bulk.ts` `BULK_OPS`); anahtar barkod / SKU / muhasebe / üretici kodu. **Varyantlı ürün** (Trendyol gibi): "Ürün ekle"de her satır bir varyant; aynı **Model kodu** = tek ürün, `Varyant: Renk` / `Varyant: Beden` sütunları (örnek dosyaya seçilerek eklenir; başlık özelliğin adı veya kodu) değeri söyler. Model hep birlikte yazılır (bir satırı hatalıysa hiçbiri), istekler modeli bölmez (`chunkRows`); var olan model koduna yazılan satırlar o ürüne yeni varyant olur (eksenler aynı olmalı). Satır görselleri o varyanta (renge) gider, tüm satırlarda aynıysa ortak galeriye. Görseller sekmesi barkod/SKU ile varyantlı ürünü eşlerse o varyantın görsellerini yazar; anahtar listesine model kodu eklendi. Dosya **tarayıcıda** okunur (`domain/xlsx.ts`, zip-bomb sınırları), sunucuya yalnız sınırlı hücre metinleri gider; seçilince otomatik doğrulama (kuru çalıştırma, `CheckProductSave`) → "Yükle" → parçalı yazma + ilerleme. XML ve REST/JSON kaynakları: URL → yapı analizi (ürün listesi + alan yolları + otomatik eşleştirme) → anahtar ve alan eşleştirme → kurallar (güncellenecek alanlar, yeni ürün, fiyat ±%, kaynakta olmayan → stok 0, zamanlama) → önizleme. Senkron dilimlidir, değişmeyen ürünler hash ile atlanır. Geçmiş sekmesi `bulk_jobs` |
 | **Kampanyalar** `/admin/kampanyalar` | Kampanya kuralları paneli: çakışma stratejisi (öncelik / en yüksek indirim) + sepette azami indirim oranı. Türler (aşamaya göre): ürün — yüzde, sabit fiyat, adet bazlı kademeli, X al Y öde, çapraz indirim (koşul kategorisi/markası/ürünü + en az adet); sepet — sepette %, sepette ₺; kargo — ücretsiz kargo. Vitrin rozeti: emoji ve/veya görsel (`campaigns` klasörü) + metin. "Yalnız ilk alışveriş" seçeneği. Kuponlarda "kampanyalı sepette de kullanılabilsin" seçeneği. Kapsam: tüm ürünler veya seçili kategori (alt kategoriler dahil) / marka / ürün, hariç tutma her zaman öncelikli. Koşullar: minimum sepet, en fazla indirim, adet kapasitesi, öncelik, birleşme kuralı; başlangıç/bitiş (İstanbul saati). Kural değişince `rule_version` artar (siparişler kendi sürümünü saklar). Kuponlar: tek kod veya 200'e kadar üretilmiş benzersiz kod, kullanım/limit, CSV; kullanılmış kupon ve siparişte kullanılmış kampanya silinmez. Liste: durum sekmeleri, sipariş sayısı ve verilen indirim |
 | **Vitrin** `/admin/vitrin` | Ana sayfa düzeni (bölüm ekle/düzenle/sırala/aç-kapa/zamanla): büyük slider, hikaye şeridi, ürün şeridi/ızgarası (elle veya en yeni / en çok satan / indirimli), kategori kutuları, marka şeridi, banner. Slider sekmesi: slaytlar (masaüstü + mobil görsel, metin, buton, bağlantı, tarih, sıra). Hikayeler sekmesi: marka, kapak, çok kareli hikayeler. Eksik bölüm taslak olarak kaydedilebilir ama yayına alınamaz |
-| **Kategoriler** `/admin/kategoriler` | Ağaç + sağ drawer'da güncelle/sil, `/yeni` sayfasında ekle; tüm kolonlar, görseller R2'ye yükleme |
+| **Kategoriler** `/admin/kategoriler` | Ağaç + sağ drawer'da güncelle/sil, `/yeni` sayfasında ekle; tüm kolonlar, görseller medya deposuna yükleme |
 | **Markalar** `/admin/markalar` | DataGrid + sağ drawer'da güncelle/sil, `/yeni` sayfasında ekle; logo/banner yükleme |
 | **Ürünler** `/admin/urunler` | DataGrid; `/yeni` ve `/[id]` **adım adım sekmeli sayfa**: Genel (model kodu dahil) · Marka&Kategori · Görseller · Varyant&Stok · Özellikler · SEO. Zorunlu alanlar dolmadan ileri geçilmez. Tüm ürün tek batch'te kaydedilir. **Varyant&Stok**: önce “tek seçenekli / seçenekli ürün”; seçenekli üründe 1) özellik + değer seçimi → eksik kombinasyonlar tek tıkla (SKU önerilir, fiyat ilk varyanttan), 2) görseli değiştiren eksenin (Renk) her değerine görsel, 3) gruplu tablo: SKU, barkod, fiyat, eski fiyat, stok, satışta; satır seçip toplu fiyat/stok, boş SKU/barkod üretimi, satır detayında taban fiyat, ölçüler, varsayılan, (görsel ekseni yoksa) varyant görseli |
 | **Özellikler & varyantlar** `/admin/ozellikler` | Her özellik önce rolüyle tanımlanır: **Varyant (seçenek)** — müşteri seçer, her değerin fiyatı/stoğu/barkodu/görseli ayrı (gösterim: kutucuk / renk dairesi / açılır liste; “görseller bu seçeneğe göre değişsin”) — veya **Ürün bilgisi** (seçenekli tek/çoklu, metin, sayı, evet/hayır; disk kapasitesi gibi farklar ayrı ürün). Gruplu liste, hazır şablonlar (Renk, Beden, Numara, Halı ölçüsü, m², Hacim, Yaş · Kapasite, Materyal), sekmeli detay: Genel · Değerler (çip girişi, renk kodu, sayısal değer, sıralama, pasif) · Kategoriler (zorunlu) ; barkod öneki |
@@ -226,7 +270,7 @@ Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf b
 | `AdminFormDialog` | Küçük formlu işlem penceresi (havale onayı, iptal sebebi, iade, toplu işlem) |
 | `Popover` | Bağlı menüler (kullanıcı, "Yeni", "İşlemler", "Yazdır") |
 | `Collapsible` | Yükseklik animasyonlu aç/kapa (sidebar grubu, ağaç dalı, filtre paneli) |
-| `features/media/ImageUpload` / `MediaGallery` | Bilgisayardan tek / çoklu görsel yükleme (R2), ilerleme, sürükle-bırak |
+| `features/media/ImageUpload` / `MediaGallery` | Bilgisayardan tek / çoklu görsel yükleme (medya deposu), ilerleme, sürükle-bırak |
 | `Skeleton`, `LoadingShell`, `GridSkeleton`, `TreeSkeleton`, `FormSkeleton`, `StepEditorSkeleton`, `TopProgress` | Her admin rotasında `loading.tsx` gerçek düzeni taklit eden iskelet + üstte ilerleme çubuğu |
 | `features/admin-shell/CommandPalette` | ⌘K / Ctrl+K; sidebar + hızlı işlemlerden beslenir (`AdminShell`) |
 | `ErrorState` / `ErrorBoundary` | Hata ve "bulunamadı" ekranları / tek widget'ı izole eden sınır (§4.3) |
@@ -252,7 +296,7 @@ Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf b
 
 **Kargo** (`modules/shipping`): aktif `integrations(kind='shipping')` satırının adaptörü `modules/integrations` (`IntegrationRuntime.carrier()`, Strategy; yoksa `manual`). Yeni firma = `infrastructure/connectors/` altında bir sınıf + `defaultConnectors()` kaydı + `integration_providers` satırını `ready` ve alan tanımlarıyla güncellemek (tutarlılık `test:providers`'ta). Webhook `POST /api/webhooks/shipping/:provider`: başlıklar `x-nova-timestamp` (unix sn, ±5 dk) ve `x-nova-signature = hex(HMAC-SHA256(webhook_secret, "<ts>.<rawBody>"))`; gövde `{events:[{eventId, trackingNumber, status: in_transit|delivered|returned|lost, occurredAt}]}`. Her olay tek batch'te işlenir (olay kaydı + gönderi durumu + gerekirse sipariş `delivered` + olay notu + outbox); tekrarlar tekilleştirilir, terminal gönderi durumları yeniden açılmaz.
 
-**Medya:** `POST /api/admin/media` (multipart, `file` + `folder` ∈ categories|brands|products, ≤ 5 MB, JPG/PNG/WebP/AVIF; tür ilk baytlardan doğrulanır, **SVG kabul edilmez**) → R2 `ASSETS_BUCKET` + `media_assets` satırı → `/assets/<folder>/<uuid>.<ext>` uzun önbellekle sunulur. Kullanılmayan yüklemeler kayıt güncellenince/silinince temizlenir.
+**Medya:** `POST /api/admin/media` (multipart, `file` + `folder` ∈ categories|brands|products, ≤ 5 MB, JPG/PNG/WebP/AVIF; tür ilk baytlardan doğrulanır, **SVG kabul edilmez**) → medya deposu (`MEDIA_DIR`, `FsObjectStorage`) + `media_assets` satırı → `/assets/<folder>/<uuid>.<ext>` uzun önbellekle sunulur. Kullanılmayan yüklemeler kayıt güncellenince/silinince temizlenir.
 
 ## 8. API referansı
 
@@ -300,10 +344,10 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 
 ## 9. Testler
 
-- `npm test` → **49/49** şema + **14/14** çekirdek + **18/18** katalog + **9/9** identity + **23/23** storefront + **8/8** orders + **6/6** integrations + **8/8** reporting + **12/12** content + **11/11** accounts + **10/10** campaigns + **5/5** showcase + **14/14** audit + **11/11** ai + **23/23** senaryo testi (Node ≥ 22.13; `--experimental-transform-types`).
-- Servis testleri gerçek servis kodunu çalıştırır; `tests/integration/hooks.mjs` şunları taklit eder: `server-only`, `@opennextjs/cloudflare` (env = `globalThis.__ENV`), `next/headers` (çerez kavanozu), `next/server`, `bcryptjs` (`$2b$12$<parola>`). Zod gerçek paketle çalışır. D1 taklidi: `tests/integration/d1-sqlite.mjs` (node:sqlite, `batch` = transaction).
+- `npm test` → **49/49** şema + **14/14** çekirdek + **18/18** katalog + **9/9** identity + **23/23** storefront + **8/8** orders + **6/6** integrations + **8/8** reporting + **12/12** content + **11/11** accounts + **10/10** campaigns + **5/5** showcase + **14/14** audit + **11/11** ai + **23/23** senaryo testi (Node ≥ 22.16; `--experimental-transform-types`).
+- Servis testleri gerçek servis kodunu çalıştırır; `tests/integration/hooks.mjs` şunları taklit eder: `server-only`, `next/headers` (çerez kavanozu), `next/server`, `bcryptjs` (`$2b$12$<parola>`). Zod gerçek paketle çalışır. Veritabanı: `tests/integration/d1-sqlite.mjs` → bellek içi SQLite, üretimdeki `SqliteDriver` ile; uygulamayı import eden testler bağlantıyı `globalThis.__novaRuntime`'a koyar.
 - `npm run test:e2e` → **15/15** Playwright testi (`tests/e2e/`): misafir sepet → havale ile checkout → sipariş numarası; personel girişi → siparişe not → havaleyi onayla → "Ödendi"; yanlış parola tek genel hata; Türkçe slug ile kategori oluşturma; panel içi "Kayıt bulunamadı"; işlem sırasında oturum düşerse `?next=` ile girişe dönüş; gösterge panelinde dönem değiştirme ve bekleyen işten filtreli sipariş listesine geçiş; firma unvanı değişince yasal metnin güncellenmesi, hatalı ayar alanı, yayınlanan yardım sayfasının footer'a otomatik gelmesi, yayındaki yasal metnin silinememesi; mağazadan üye olup admin müşteri listesinde görünme; personel daveti → kişinin kendi parolasını belirlemesi → panel girişi (bağlantı tek kullanımlık, personel hesabı mağazaya giremez); kategori oluşturunca denetim kaydında görünmesi → çekmece → “Kayda git”; Claude entegrasyonu ekleyince ürün editöründe “AI ile ürün ekle” çekmecesinin açılması (sağlayıcı çağrılmaz).
-  - **Ayrı veritabanı:** `scripts/e2e-setup.mjs` her koşuda `.wrangler/e2e`'yi silip `db/schema.sql` + `db/seed.sql` kurar, havaleyi aktif eder ve test admini ekler (`e2e-admin@nova.test`, yalnız bu klasörde). Dev sunucusu `NOVA_PERSIST_DIR=.wrangler/e2e` ile başlar (`next.config.ts` → `initOpenNextCloudflareForDev({ persist })`); geliştiricinin local D1'ine dokunulmaz.
+  - **Ayrı veritabanı:** `scripts/e2e-setup.mjs` her koşuda `data/e2e`'yi silip `db/schema.sql` + `db/seed.sql` kurar, havaleyi aktif eder ve test admini ekler (`e2e-admin@nova.test`, yalnız bu klasörde). Dev sunucusu `DATABASE_PATH=data/e2e/nova.db MEDIA_DIR=data/e2e/uploads` ile başlar; geliştiricinin veritabanına dokunulmaz.
   - **Isınma:** `tests/e2e/global-setup.ts` test edilen sayfaları önceden bir kez ister; aksi hâlde `next dev` ilk derlemede tam sayfa yenileme gönderip testleri bozar.
   - İlk kurulumda tarayıcı: `npx playwright install chromium`. Hata olursa iz/ekran görüntüsü `test-results/` altında (`npx playwright show-trace …`).
   - Seçici kuralı: önce erişilebilir rol/etiket (`getByRole`, `getByLabel`); etiket birden çok alana uyuyorsa alan `id`'si (`#s_province`). Metinler arayüzle birebir aynı olmalı — buton metni değişirse test de değişir.
@@ -311,30 +355,32 @@ Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)
 
 ## 10. Bilinen tuzaklar
 
-- **APP_ENV / PUBLIC_SITE_URL:** `wrangler.jsonc` bu `vars`'ları canlı değerleriyle local `next dev`'e de verir; bu yüzden `.env.local`'deki değerler önceliklidir (`buildConfig`, `src/server/env.ts`). Canlıda (`APP_ENV=production`) `SESSION_SECRET` (≥ 32 karakter), `SECRETS_MASTER_KEY`, `CRON_SECRET` yoksa istekler başlangıçta `ConfigError` ile durur — deploy öncesi `wrangler secret list` ile kontrol edin.
+- **Canlı sırlar:** `APP_ENV=production` iken `SESSION_SECRET` (≥ 32 karakter), `SECRETS_MASTER_KEY`, `CRON_SECRET` yoksa istekler `ConfigError` ile durur — `npm run deploy` boş anahtarı göndermeden önce reddeder.
+- **Standalone izleme:** `src/server/env.ts` ve `FsObjectStorage`'daki çalışma zamanı yollarında `/* turbopackIgnore: true */` var; kaldırılırsa Next tüm proje klasörünü (hatta `data/`) `.next/standalone`'a kopyalar. Scriptlerin container'da import ettiği paketler (`bcryptjs`) `serverExternalPackages`'ta olmalı, yoksa standalone `node_modules`'a girmez.
+- **SSRF:** `SafeFetcher` her istekte (ve yönlendirmede) alan adını DNS ile çözer, özel/yerel IP'ye çıkanı reddeder — app, Kafka REST ile aynı Docker ağında; bu kontrolü gevşetmeyin.
 
 - **iCloud:** proje iCloud ile eşitlenen Masaüstü'ndeyse iCloud `.next/` ve `.git/` içinde `… 2`, `… 3` kopyaları üretir (tsc'yi bozar, git'i riske atar). `tsconfig` `.next/**/* ?.ts` kopyalarını yok sayar; kalıcı çözüm projeyi iCloud dışına taşımaktır.
 
-- **Node sürümü:** makinede varsayılan Node 18 olabilir; Node ≥ 22.13 olmadan `tsc`, `next dev` ve servis testleri çalışmaz.
-- **İstemci bileşenleri modül `index`'inden değer import etmez:** `"use client"` dosyaları `@/modules/<modül>` index'inden yalnız **tip** (`import type`) alır; sabit/fonksiyon gerekiyorsa saf `domain/*` dosyasından import edin. Index, sunucu kodunu (`next/headers`, D1) da yükler; istemciye girince sayfa 500 verir (“You're importing a module that depends on next/headers”).
-- **E-posta (SMTP):** panelde “Parolamı unuttum” sıfırlama bağlantısını Entegrasyonlar › E-posta (SMTP) hesabıyla gönderir (`modules/mail`, bağımlılıksız SMTP istemcisi `node:net`/`node:tls` — Workers'ta `nodejs_compat`; port 25 Workers'ta kapalı). Ham token veritabanına/outbox'a yazılmaz, bu yüzden e-posta istek sırasında (`after()`) gönderilir; SMTP hatası loglanır, kullanıcı tekrar isteyebilir. SMTP ayarı yoksa bağlantı yalnız **geliştirmede** loga yazılır (`resetLink`), canlıda yazılmaz. **Gmail:** normal parola çalışmaz — 2 adımlı doğrulama + 16 haneli *uygulama şifresi* gerekir, gönderen adresi hesapla aynı olmalı. Gerçek Gmail'e SSL (465) ve STARTTLS (587) el sıkışması Node'da doğrulandı; Workers üzerinde STARTTLS yükseltmesi henüz canlıda denenmedi (sorun olursa 465/SSL kullanın). Davet bağlantıları hâlâ admin'e gösterilir; mağaza müşterisi için “Şifremi unuttum” ekranı henüz yok (use case `RequestPasswordReset` `customer` kitlesini destekliyor).
-- **Local D1'e dev sunucusu açıkken yazmayın:** `npm run dev` çalışırken `db:*:local` / `db:query:local` / `wrangler d1 execute --local` ile şema veya veri değiştirmek, aynı SQLite dosyasına iki ayrı süreç yazdığı için dosyayı bozabilir (belirti: her istekte `internal error; reference = …`, `sqlite3`'te `database disk image is malformed`). Önce dev sunucusunu durdurun, komutu çalıştırın, sonra yeniden başlatın. Bozulduysa `.wrangler/state` yedeğinden dönün ya da `npm run db:reset:local`.
+- **Node sürümü:** makinede varsayılan Node 18 olabilir; Node ≥ 22.16 olmadan `tsc`, `next dev` ve servis testleri çalışmaz.
+- **İstemci bileşenleri modül `index`'inden değer import etmez:** `"use client"` dosyaları `@/modules/<modül>` index'inden yalnız **tip** (`import type`) alır; sabit/fonksiyon gerekiyorsa saf `domain/*` dosyasından import edin. Index, sunucu kodunu (`next/headers`, veritabanı) da yükler; istemciye girince sayfa 500 verir (“You're importing a module that depends on next/headers”).
+- **E-posta (SMTP):** panelde “Parolamı unuttum” sıfırlama bağlantısını Entegrasyonlar › E-posta (SMTP) hesabıyla gönderir (`modules/mail`, bağımlılıksız SMTP istemcisi `node:net`/`node:tls`; çoğu VPS sağlayıcısı dışa 25 portunu kapatır → 465/587). Ham token veritabanına/outbox'a yazılmaz, bu yüzden e-posta istek sırasında (`after()`) gönderilir; SMTP hatası loglanır, kullanıcı tekrar isteyebilir. SMTP ayarı yoksa bağlantı yalnız **geliştirmede** loga yazılır (`resetLink`), canlıda yazılmaz. **Gmail:** normal parola çalışmaz — 2 adımlı doğrulama + 16 haneli *uygulama şifresi* gerekir, gönderen adresi hesapla aynı olmalı. Gerçek Gmail'e SSL (465) ve STARTTLS (587) el sıkışması Node'da doğrulandı. Davet bağlantıları hâlâ admin'e gösterilir; mağaza müşterisi için “Şifremi unuttum” ekranı henüz yok (use case `RequestPasswordReset` `customer` kitlesini destekliyor).
+- **Aynı veritabanına iki sunucu:** `npm run dev` ile local `docker compose` aynı `data/nova.db`'yi kullanır; ikisini aynı anda çalıştırmayın (Docker Desktop'ın dosya paylaşımı üzerinden SQLite kilitleri güvenilir değildir). `db:*` scriptleri WAL + `busy_timeout` ile sunucu açıkken de çalışır; ama şema değiştiren komutlardan (`db:reset`, `db:schema`) sonra dev sunucusunu yeniden başlatın. Bozulursa `data/backups`'tan dönün ya da `npm run db:reset`.
 - **Dev'de sonsuz yeniden yükleme:** Next 16 her istekte `.next/dev/logs/next-development.log`'a yazar; Tailwind 4 varsayılan olarak proje kökünü tarayıp izlediği için her yazım CSS'i yeniden derletip sayfayı yeniletiyordu (e2e'de "navigation to finish" ile takılma). `globals.css` bu yüzden `@import "tailwindcss" source("..")` ile yalnız `src/`'yi tarar — kaldırmayın; sınıf içeren dosyalar `src/` dışına konmaz. (İlk derleme sırasında, prefetch edilen yeni route'lar derlenirken birkaç yeniden yükleme normaldir.)
 - **Dev sunucusu bayat modül:** `src/modules/*/http/schemas.ts` veya `src/server/app.ts` gibi paylaşılan sunucu modülleri değiştiğinde çalışan `next dev` eski kopyayı tutabiliyor (belirti: `Cannot read properties of undefined (reading 'parse')`, "Beklenmeyen bir hata"). Çözüm: dev sunucusunu yeniden başlat.
 - **SQLite ≥ 3.51:** ilişkili alt sorgunun `ORDER BY`'ında dış kolon kullanılamaz (`no such column: v.id`). Dış referansı `WHERE`'de tut.
-- **AI modelleri:** liste `ai_models` tablosunda (DDL + `db/schema.sql` sonundaki upsert DML). Model ekleme/kaldırma = DML satırı + `db:schema:*`; silinmez, `status` `deprecated` (uyarı + `retires_at`) veya `retired` (gizli) yapılır. Panel yalnız listedeki modelleri kabul eder (kayıtlı model listeden çıksa bile anahtar değişikliğinde korunur). Listeyi gerçek anahtarlarla doğrulamak: `npm run ai:health` (`OPENAI_API_KEY` / `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`; `--generate` kısa üretim de dener, `--provider=` / `--model=` filtre). Sağlayıcı hataları `ai-clients.ts` `classifyFailure` ile ayrışır: `ai_key_rejected`, `ai_access_denied`, `ai_quota_exceeded` (kredi/kota/harcama limiti — tekrar denemek işe yaramaz), `ai_rate_limited`, `ai_model_not_found`, `ai_model_unusable`, `ai_request_rejected`, `ai_request_too_large`, `ai_provider_busy` (500/502/503/504/529 yeniden denendikten sonra), `ai_timeout`, `ai_content_blocked`, `ai_output_truncated`, `ai_bad_output`. Yeni sağlayıcı = `providers.ts` + `infrastructure/ai-clients.ts`'te bir sınıf (`generate` + `checkModel`) + `prompts/system-prompts.ts` + `ai_integration`/`ai_models` provider CHECK'leri + `ai_models` satırları.
+- **AI modelleri:** liste `ai_models` tablosunda (DDL + `db/schema.sql` sonundaki upsert DML). Model ekleme/kaldırma = DML satırı + `npm run db:schema` (container'da her açılışta otomatik); silinmez, `status` `deprecated` (uyarı + `retires_at`) veya `retired` (gizli) yapılır. Panel yalnız listedeki modelleri kabul eder (kayıtlı model listeden çıksa bile anahtar değişikliğinde korunur). Listeyi gerçek anahtarlarla doğrulamak: `npm run ai:health` (`OPENAI_API_KEY` / `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`; `--generate` kısa üretim de dener, `--provider=` / `--model=` filtre). Sağlayıcı hataları `ai-clients.ts` `classifyFailure` ile ayrışır: `ai_key_rejected`, `ai_access_denied`, `ai_quota_exceeded` (kredi/kota/harcama limiti — tekrar denemek işe yaramaz), `ai_rate_limited`, `ai_model_not_found`, `ai_model_unusable`, `ai_request_rejected`, `ai_request_too_large`, `ai_provider_busy` (500/502/503/504/529 yeniden denendikten sonra), `ai_timeout`, `ai_content_blocked`, `ai_output_truncated`, `ai_bad_output`. Yeni sağlayıcı = `providers.ts` + `infrastructure/ai-clients.ts`'te bir sınıf (`generate` + `checkModel`) + `prompts/system-prompts.ts` + `ai_integration`/`ai_models` provider CHECK'leri + `ai_models` satırları.
 - **Migration yok:** `schema.sql` mevcut tabloya kolon eklemez → `ALTER TABLE` veya local reset (db/README.md §7).
 - **ESLint / build:** `npm run lint` ve `next build` hatasız ve uyarısız olmalı; yeni kod bu durumu bozmamalı. `tests/**` için yalnız `no-explicit-any` kapalı (dinamik import).
 - iyzico: iade ucu `/v2/payment/refund` ve webhook V3 imza doğrulaması **sandbox'ta denenmedi**; canlı öncesi güncel dokümanla doğrulanmalı. iyzico `identityNumber` sabit yer tutucu (TCKN toplama işletme kararı).
 - Fiyat motoru: "X al Y öde" ve ücretsiz kargo uygulanır; "X al Y hediye" (buy_x_get_y) şemada var ama hediye satırı sepete eklenemediği için panelde sunulmaz. Kargo KDV'si %20 varsayılır.
 - Saat dilimi: tarih filtreleri UTC gün sınırlarıyla çalışır (gösterim Europe/Istanbul).
 - **Yasal metinler örnektir:** seed'deki şablonlar genel taslaktır; yayın öncesi hukuk danışmanına kontrol ettirilmeli ve Site ayarları → Firma bilgileri gerçek bilgilerle doldurulmalı.
-- **Canlı veritabanı (içerik/ayarlar):** `content_pages` ve `site_settings` tablolarının yapısı değişti, `content_page_revisions` eklendi. `schema.sql` mevcut tabloyu değiştirmez (`CREATE TABLE IF NOT EXISTS`) — canlıda bu tablolar eski hâliyle duruyorsa önce yedek alıp bu iki tabloyu (ve `seo_documents`'taki `page_id` satırlarını) yeniden oluşturmak, sonra `db:schema:remote` + ilgili seed satırlarını çalıştırmak gerekir.
+- **Canlı veritabanı (içerik/ayarlar):** `content_pages` ve `site_settings` tablolarının yapısı değişti, `content_page_revisions` eklendi. `schema.sql` mevcut tabloyu değiştirmez (`CREATE TABLE IF NOT EXISTS`) — canlıda bu tablolar eski hâliyle duruyorsa önce yedek alıp bu iki tabloyu (ve `seo_documents`'taki `page_id` satırlarını) yeniden oluşturmak, sonra `db:schema` + ilgili seed satırlarını çalıştırmak gerekir.
 
 ## 11. Yol haritası
 
 1. Entegrasyon adaptörleri: katalogda “planlanan” SMS/kargo firmaları (Aras, MNG, PTT, İleti Merkezi …), sipariş ekranında kargo kaydı durumu / hata gösterimi, e-posta bildirim şablonları.
-2. Bildirim adaptörleri (e-posta/SMS) ve gerçek kargo firması adaptörü; Cron Trigger worker'ı.
+2. Bildirim adaptörleri (e-posta/SMS) ve gerçek kargo firması adaptörü.
 3. Ürün editörüne: ilişkili ürünler, tedarikçi kodu/maliyet. XML/REST kaynaklarında varyant grubu (model kodu + varyant alanları eşleştirme; dilimli senkron bir modeli bölmemeli).
 4. Müşteri tarafı: üye kaydı, parola sıfırlama, hesabım sipariş geçmişi/takip, favoriler, karşılaştırma, yorumlar; havale bildirimi formu.
 5. Admin MFA (`ADMIN_MFA_ENFORCED`, `sessions.mfa_verified_at` hazır), e-Fatura/e-İrsaliye entegratörü, yasal metinler (KVKK, mesafeli satış, ön bilgilendirme sayfaları — checkout bunlara link veriyor, sayfalar yok).

@@ -63,7 +63,7 @@ function toInput(f: Form): CampaignInput {
 export function BadgePreview({ emoji, imageUrl, label }: { emoji: string | null; imageUrl: string | null; label: string }) {
   return (
     <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-[#f21c99] px-2 py-0.5 text-[12px] font-bold text-white shadow-sm">
-      {/* eslint-disable-next-line @next/next/no-img-element -- R2 asset */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- uploaded asset */}
       {imageUrl ? <img src={imageUrl} alt="" className="size-4 rounded-sm object-contain" /> : emoji ? <span aria-hidden>{emoji}</span> : null}
       <span className="truncate">{label}</span>
     </span>

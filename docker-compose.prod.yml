@@ -1,0 +1,64 @@
+# Production server: HTTPS reverse proxy (Caddy), secrets from .env.production, daily database backups.
+# The app publishes no port — only Caddy (80/443) is reachable from outside.
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  app:
+    env_file: .env.production
+    <<: *logging
+
+  scheduler:
+    env_file: .env.production
+    <<: *logging
+
+  kafka:
+    <<: *logging
+
+  kafka-rest:
+    <<: *logging
+
+  caddy:
+    image: caddy:2.8.4-alpine
+    env_file: .env.production
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    <<: *logging
+
+  # Online SQLite backup once a day into /data/backups (keeps BACKUP_KEEP, default 14).
+  # Copy one off the server:  docker compose cp app:/data/backups ./backups
+  backup:
+    build: .
+    image: nova-app:latest
+    command: ["sh", "-c", "while true; do node scripts/db.mjs backup; sleep 86400; done"]
+    env_file: .env.production
+    environment:
+      DATABASE_PATH: /data/nova.db
+      SKIP_DB_INIT: "true"
+    volumes:
+      - nova-data:/data
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+    <<: *logging
+
+volumes:
+  caddy-data:
+  caddy-config:

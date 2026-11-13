@@ -5,7 +5,7 @@ import {
   ConfigToken,
   Container,
   CryptoIdGenerator,
-  D1DatabaseAdapter,
+  SqlDatabaseAdapter,
   DatabaseToken,
   EnvToken,
   IdGeneratorToken,
@@ -63,7 +63,7 @@ container.singleton(LoggerToken, () => new JsonLogger({ level: isDev() ? "debug"
 container.singleton(ClockToken, () => new SystemClock());
 container.singleton(IdGeneratorToken, () => new CryptoIdGenerator());
 container.scoped(ConfigToken, (c) => buildConfig(c.resolve(EnvToken), process.env));
-container.scoped(DatabaseToken, (c) => new D1DatabaseAdapter(c.resolve(EnvToken).DB));
+container.scoped(DatabaseToken, (c) => new SqlDatabaseAdapter(c.resolve(EnvToken).DB));
 
 // --- modules -------------------------------------------------------------------------------------
 registerPlatform(container);

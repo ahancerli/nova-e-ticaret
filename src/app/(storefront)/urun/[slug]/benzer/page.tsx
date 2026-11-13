@@ -41,7 +41,7 @@ export default async function SimilarProductsPage({ params, searchParams }: Prop
       <header className="card mb-6 flex flex-col gap-4 p-4 sm:flex-row sm:items-center md:p-5">
         <Link href={`/urun/${p.slug}`} className="flex min-w-0 flex-1 items-center gap-4">
           {p.media[0] && (
-            // eslint-disable-next-line @next/next/no-img-element -- R2 asset, same as product cards
+            // eslint-disable-next-line @next/next/no-img-element -- uploaded asset, same as product cards
             <img src={p.media[0].url} alt={p.media[0].alt} className="size-20 flex-none rounded-xl border border-line bg-white object-contain" />
           )}
           <div className="min-w-0">

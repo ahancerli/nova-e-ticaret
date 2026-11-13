@@ -4,7 +4,7 @@ import { ConfigToken, DatabaseToken, decryptSecret, token, type Container, type 
 export type SecretOwner = { paymentConfigId: string } | { integrationId: string };
 
 /**
- * Read-only access to integration_secrets (AES-256-GCM, master key = SECRETS_MASTER_KEY Worker secret).
+ * Read-only access to integration_secrets (AES-256-GCM, master key = SECRETS_MASTER_KEY env secret).
  * Plaintext never leaves the server and is never logged; a missing or undecryptable secret is `null`.
  */
 export interface SecretVault {

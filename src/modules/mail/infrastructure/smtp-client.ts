@@ -101,9 +101,9 @@ function factsOf(err: unknown, stage: SmtpStage): SmtpFailure {
 }
 
 /**
- * Dependency-free SMTP client over node:net / node:tls — available in Node (next dev, tests) and in Cloudflare
- * Workers with `nodejs_compat`. `ssl` = TLS from the first byte (port 465), `starttls` = plain then upgrade
- * (port 587). AUTH PLAIN when offered, otherwise AUTH LOGIN. Port 25 is blocked on Workers.
+ * Dependency-free SMTP client over node:net / node:tls. `ssl` = TLS from the first byte (port 465), `starttls` =
+ * plain then upgrade (port 587). AUTH PLAIN when offered, otherwise AUTH LOGIN. Many VPS providers block outgoing
+ * port 25, so use 465 / 587.
  * Failures are classified by stage + server reply (`classifySmtpFailure`); success returns the server's accept line
  * (e.g. Gmail "250 2.0.0 OK … gsmtp") as proof the message was handed to that server.
  */

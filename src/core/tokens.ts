@@ -5,7 +5,7 @@ import type { Clock } from "./runtime/clock";
 import type { IdGenerator } from "./runtime/ids";
 
 /** Infrastructure tokens shared by every module. Module-specific tokens live next to their module. */
-export const EnvToken = token<CloudflareEnv>("Env");
+export const EnvToken = token<RuntimeEnv>("Env");
 export const ConfigToken = token<AppConfig>("Config");
 export const DatabaseToken = token<Database>("Database");
 export const ClockToken = token<Clock>("Clock");

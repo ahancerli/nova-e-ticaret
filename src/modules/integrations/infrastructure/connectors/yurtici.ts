@@ -20,7 +20,7 @@ const esc = (v: string | number) => String(v).replace(/[<>&'"]/g, (c) => ({ "<":
 const unesc = (v: string) => v.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
 const el = (name: string, v: string | number) => `<${name}>${esc(v)}</${name}>`;
 
-/** First text of <tag> (any namespace prefix) inside `xml`. Workers have no DOMParser; the answers are flat. */
+/** First text of <tag> (any namespace prefix) inside `xml`. Node has no DOMParser; the answers are flat. */
 export function pick(xml: string, tag: string): string | null {
   const m = new RegExp(`<(?:[\\w-]+:)?${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[\\w-]+:)?${tag}>`).exec(xml);
   return m ? unesc(m[1]!.trim()) : null;

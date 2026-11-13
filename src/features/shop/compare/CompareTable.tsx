@@ -94,7 +94,7 @@ export function CompareTable({ products }: { products: ComparedProduct[] }) {
                   <button type="button" onClick={() => removeProduct(p.card.id)} aria-label={`${p.card.name} karşılaştırmadan çıkar`}
                     className="absolute right-2 top-2 grid size-8 place-items-center rounded-full text-muted transition hover:bg-ground hover:text-ink"><CloseIcon className="size-4" /></button>
                   <Link href={`/urun/${p.card.slug}`} className="block">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset */}
+                    {/* eslint-disable-next-line @next/next/no-img-element -- uploaded / demo asset */}
                     <img src={p.card.imageUrl ?? "/demo/placeholder.svg"} alt={p.card.imageAlt} className="mx-auto aspect-square w-full max-w-40 object-contain" />
                     <span className="mt-3 line-clamp-2 font-semibold hover:text-brand">{p.card.name}</span>
                   </Link>

@@ -1,12 +1,10 @@
-// Minimal .env loader (no dependency). Real environment variables win over the file.
+// Minimal .env loader (no dependency). Real environment variables win over the file, so inside Docker
+// (env_file / environment) nothing is read from disk. Default file: .env.local, override with ENV_FILE.
 import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 
 export function resolveEnvFile(file) {
-	if (file) return file
-	if (process.env.ENV_FILE) return process.env.ENV_FILE
-	const mode = (process.env.D1_MODE || "local").toLowerCase()
-	return mode === "remote" ? ".env" : ".env.local"
+	return file || process.env.ENV_FILE || ".env.local"
 }
 
 export function loadEnv(file) {
@@ -40,4 +38,14 @@ export function requireEnv(...keys) {
 		console.error(`\n✖ Missing in ${file}: ${missing.join(", ")}\n`)
 		process.exit(1)
 	}
+}
+
+/** Absolute path of the SQLite file (DATABASE_PATH, default data/nova.db). */
+export function databasePath() {
+	return resolve(process.cwd(), process.env.DATABASE_PATH || "data/nova.db")
+}
+
+/** Absolute path of the uploaded media directory (MEDIA_DIR, default data/uploads). */
+export function mediaDir() {
+	return resolve(process.cwd(), process.env.MEDIA_DIR || "data/uploads")
 }

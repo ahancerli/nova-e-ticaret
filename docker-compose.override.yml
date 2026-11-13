@@ -1,0 +1,19 @@
+# Local development additions (loaded automatically by `docker compose up`).
+# Same .env.local and the same data/ folder as `npm run dev` — do not run both against data/ at the same time.
+services:
+  app:
+    env_file: .env.local
+    environment:
+      PUBLIC_SITE_URL: http://localhost:3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/data
+
+  scheduler:
+    env_file: .env.local
+
+  # lets `npm run dev` use the dockerized Kafka: INTEGRATION_BUS=kafka KAFKA_REST_URL=http://localhost:8082
+  kafka-rest:
+    ports:
+      - "127.0.0.1:8082:8082"

@@ -14,7 +14,7 @@ type Pending = { key: string; preview: string; progress: number };
 
 /**
  * Ordered multi-image gallery: upload from the computer (multi-select or drag & drop),
- * reorder, choose the primary (storefront cover) image, remove. Files go to R2 via /api/admin/media.
+ * reorder, choose the primary (storefront cover) image, remove. Files go to media storage via /api/admin/media.
  * `compact`: small tiles without a cover star (a variant's / colour's own photos, where order alone decides).
  */
 export function MediaGallery({

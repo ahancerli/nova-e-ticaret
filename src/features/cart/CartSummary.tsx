@@ -43,7 +43,7 @@ export function PromotionRows({ cart }: { cart: Quote }) {
   return cart.promotions.map((p) => (
     <div key={p.campaignId} className="flex justify-between gap-3 font-medium text-success">
       <dt className="flex min-w-0 items-center gap-1.5">
-        {/* eslint-disable-next-line @next/next/no-img-element -- R2 asset */}
+        {/* eslint-disable-next-line @next/next/no-img-element -- uploaded asset */}
         {p.badge.imageUrl ? <img src={p.badge.imageUrl} alt="" className="size-4 flex-none rounded-sm object-contain" /> : p.badge.emoji ? <span aria-hidden>{p.badge.emoji}</span> : null}
         <span className="truncate">{p.name}{p.couponCode ? ` (${p.couponCode})` : ""}</span>
       </dt>

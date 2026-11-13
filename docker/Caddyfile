@@ -1,0 +1,13 @@
+# Reverse proxy in front of the app (production only, docker-compose.prod.yml).
+# Automatic HTTPS for {$DOMAIN} (Let's Encrypt). X-Real-IP = the TCP peer, overwriting anything the client sent;
+# the app reads the client IP from it (rate limits, payment provider).
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000 {
+		header_up X-Real-IP {remote_host}
+	}
+}

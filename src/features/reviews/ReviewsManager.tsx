@@ -82,7 +82,7 @@ export function ReviewsManager() {
       colId: "product_name", field: "productName", headerName: "Ürün", minWidth: 240, flex: 1, sortable: true, pinned: "left",
       cellRenderer: (p: { data?: ReviewSummaryRow }) => p.data ? (
         <span className="flex h-full items-center gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- uploaded / demo asset */}
           <img src={p.data.productImageUrl ?? "/demo/placeholder.svg"} alt="" className="size-9 flex-none rounded-lg border border-slate-200 bg-white object-contain p-0.5" />
           <span className="truncate font-medium text-slate-800">{p.data.productName}</span>
         </span>

@@ -30,7 +30,7 @@ export interface StoredObject {
   writeHttpMetadata(headers: Headers): void;
 }
 
-/** Object storage port (R2 in production, local R2 in dev, in-memory in tests). */
+/** Object storage port (a directory on disk — MEDIA_DIR — on the server, in-memory in tests). */
 export interface ObjectStorage {
   readonly available: boolean;
   put(key: string, bytes: Uint8Array, contentType: string, metadata: Record<string, string>): Promise<void>;

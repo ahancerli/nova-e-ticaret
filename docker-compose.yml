@@ -1,0 +1,94 @@
+# Nova — all services in one project: Next.js app (SQLite inside), scheduler, Kafka + Kafka REST proxy.
+#   local:       docker compose up -d --build                  (+ docker-compose.override.yml, loaded automatically)
+#   production:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#                (the server's .env sets COMPOSE_FILE, so plain `docker compose …` works there — see deploy/deploy.sh)
+name: nova
+
+x-app-image: &app-image
+  build: .
+  image: nova-app:latest
+
+services:
+  app:
+    <<: *app-image
+    environment:
+      DATABASE_PATH: /data/nova.db
+      MEDIA_DIR: /data/uploads
+      INTEGRATION_BUS: kafka
+      KAFKA_REST_URL: http://kafka-rest:8082
+    volumes:
+      - nova-data:/data
+    depends_on:
+      kafka-rest:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 20s
+
+  # Calls /api/cron/* on their intervals (outbox, integrations, expire, feeds, shipping) — replaces Cron Triggers.
+  scheduler:
+    <<: *app-image
+    command: ["node", "scripts/scheduler.mjs"]
+    environment:
+      APP_URL: http://app:3000
+      SKIP_DB_INIT: "true"
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  # Single-node Kafka (KRaft, no ZooKeeper). Only reachable inside the compose network.
+  kafka:
+    image: confluentinc/cp-kafka:7.9.0
+    environment:
+      CLUSTER_ID: bm92YS1rYWZrYS1jbHVzdGVy
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_NUM_PARTITIONS: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  # Kafka REST Proxy v2 — the app's KafkaRestBus produces / consumes through it.
+  kafka-rest:
+    image: confluentinc/cp-kafka-rest:7.9.0
+    environment:
+      KAFKA_REST_HOST_NAME: kafka-rest
+      KAFKA_REST_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:9092
+      KAFKA_REST_LISTENERS: http://0.0.0.0:8082
+      KAFKAREST_HEAP_OPTS: -Xms128m -Xmx256m
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/topics > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  nova-data:
+  kafka-data:

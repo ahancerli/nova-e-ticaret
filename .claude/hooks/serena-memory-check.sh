@@ -20,7 +20,7 @@ changed=$(
 
 printf '%s\n' "$changed" | grep -q '^\.serena/memories/' && exit 0
 
-arch=$(printf '%s\n' "$changed" | grep -E '^(src/core/|src/server/|src/proxy\.ts$|src/modules/[^/]+/(module|index)\.ts$|src/lib/(order|product)-rules\.ts$|db/schema\.sql$|package\.json$|wrangler\.jsonc$|next\.config\.ts$|tsconfig\.json$|eslint\.config\.mjs$|scripts/|tests/integration/(register|hooks|d1-sqlite)\.mjs$)' || true)
+arch=$(printf '%s\n' "$changed" | grep -E '^(src/core/|src/server/|src/proxy\.ts$|src/modules/[^/]+/(module|index)\.ts$|src/lib/(order|product)-rules\.ts$|db/schema\.sql$|package\.json$|Dockerfile$|docker-compose[^/]*\.yml$|docker/|deploy/|runtime-env\.d\.ts$|next\.config\.ts$|tsconfig\.json$|eslint\.config\.mjs$|scripts/|tests/integration/(register|hooks|d1-sqlite)\.mjs$)' || true)
 [ -z "$arch" ] && exit 0
 
 # Remind once per distinct set of changed architecture files.

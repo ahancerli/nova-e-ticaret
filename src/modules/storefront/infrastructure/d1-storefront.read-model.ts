@@ -5,7 +5,7 @@ import type { ListParams, NavItem, ShellData, StorefrontReadModel } from "../app
 import { HOME_SECTION_LOADERS, type HomeSectionRow } from "./home-sections";
 import { CARD_SELECT, PAGE_SIZE, SORTS, toCard, type CardRow } from "./product-cards";
 
-const rows = <T>(r: D1Result | undefined) => (r?.results ?? []) as T[];
+const rows = <T>(r: SqlResult | undefined) => (r?.results ?? []) as T[];
 type NavRow = { id: string; parent_id: string | null; label: string; href: string | null; category_slug: string | null; brand_slug: string | null; menu: string };
 type CategoryRow = { id: string; parent_id: string | null; slug: string; name: string; image_url: string | null; menu_image_url: string | null };
 const likeOf = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;

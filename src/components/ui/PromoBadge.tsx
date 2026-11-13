@@ -9,7 +9,7 @@ export function PromoBadge({ badge, size = "sm", className = "" }: { badge: Pick
   const icon = size === "md" ? "size-4" : "size-3.5";
   return (
     <span className={`inline-flex max-w-full items-center gap-1 rounded-md bg-brand font-bold leading-tight text-white ${text} ${className}`}>
-      {/* eslint-disable-next-line @next/next/no-img-element -- R2 asset */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- uploaded asset */}
       {badge.imageUrl ? <img src={badge.imageUrl} alt="" className={`${icon} flex-none rounded-sm object-contain`} /> : badge.emoji ? <span aria-hidden>{badge.emoji}</span> : null}
       <span className="truncate">{badge.label}</span>
     </span>

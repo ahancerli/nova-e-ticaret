@@ -1,5 +1,4 @@
 import type { NextConfig } from "next"
-import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare"
 
 type Header = { key: string; value: string }
 
@@ -23,9 +22,15 @@ function buildSecurityHeaders(isDev: boolean): Header[] {
 }
 
 const nextConfig: NextConfig = {
+	// Docker image ships .next/standalone (server.js + only the traced node_modules), see Dockerfile.
+	output: "standalone",
+	// kept as a real package in .next/standalone/node_modules: scripts/create-admin.mjs imports it inside the container
+	serverExternalPackages: ["bcryptjs"],
+	// runtime data and local env files never belong in the image (the Docker build context excludes them too)
+	outputFileTracingExcludes: { "/*": ["data/**/*", ".env*"] },
 	poweredByHeader: false,
 	images: {
-		// Cloudflare Images binding can be wired later (see wrangler.jsonc "images").
+		// Uploaded images are served as-is from /assets (MEDIA_DIR); no image optimiser is configured.
 		unoptimized: true,
 	},
 	async headers() {
@@ -43,8 +48,3 @@ const nextConfig: NextConfig = {
 
 export default nextConfig
 
-// Gives `next dev` access to the bindings in wrangler.jsonc (local or remote D1, see scripts/sync-wrangler.mjs).
-// NOVA_PERSIST_DIR points local D1 / R2 at a separate state folder — the browser tests (npm run test:e2e) use
-// .wrangler/e2e so they never touch the developer's local database. Same meaning as `wrangler --persist-to`;
-// getPlatformProxy wants the versioned sub-folder itself (its default is ".wrangler/state/v3").
-initOpenNextCloudflareForDev(process.env.NOVA_PERSIST_DIR ? { persist: { path: `${process.env.NOVA_PERSIST_DIR}/v3` } } : undefined)

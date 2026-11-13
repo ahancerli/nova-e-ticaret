@@ -65,7 +65,7 @@ function CategoryColumns({ node }: { node: CategoryNode }) {
       <div className="w-56 flex-none">
         {node.menuImageUrl ? (
           <Link href={node.href} className="block overflow-hidden rounded-2xl">
-            {/* eslint-disable-next-line @next/next/no-img-element -- R2 asset */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- uploaded asset */}
             <img src={node.menuImageUrl} alt={node.name} loading="lazy" className="aspect-[4/3] w-full object-cover" />
           </Link>
         ) : (

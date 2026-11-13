@@ -121,7 +121,7 @@ export function ReviewDrawer({ id, onClose, onChanged }: { id: string | null; on
       ) : (
         <div className="space-y-6">
           <section className="flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- uploaded / demo asset */}
             <img src={review.productImageUrl ?? "/demo/placeholder.svg"} alt="" className="size-14 flex-none rounded-xl border border-slate-200 bg-white object-contain p-1" />
             <div className="min-w-0 flex-1">
               <a href={`/urun/${review.productSlug}#degerlendirmeler`} target="_blank" rel="noopener" className="flex items-center gap-1 truncate font-semibold text-slate-800 hover:text-[#5b4fe0]">

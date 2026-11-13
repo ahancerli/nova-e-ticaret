@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 /**
  * Releases expired reservations, campaign allocations and coupons; cancels unpaid orders.
  * Call every few minutes with: Authorization: Bearer <CRON_SECRET>
- * (e.g. a small Cron Trigger worker or an external scheduler — see README).
+ * (the scheduler container, scripts/scheduler.mjs — see README).
  */
 export const POST = route({
   csrf: "none",

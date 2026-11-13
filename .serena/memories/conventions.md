@@ -1,8 +1,8 @@
 # Conventions
 ## Backend
-- Module layout: `domain/` pure (no I/O) · `application/` one class per use case with `execute()`, deps via constructor (`ports.ts` interfaces) · `infrastructure/` D1/R2 impls, SQL only here · `http/schemas.ts` Zod · `module.ts` `XToken = token<T>()` + `registerX(c)` (`c.scoped(...)`) · `index.ts` exports. New module → also call `registerX(container)` in `src/server/app.ts`.
+- Module layout: `domain/` pure (no I/O) · `application/` one class per use case with `execute()`, deps via constructor (`ports.ts` interfaces) · `infrastructure/` SQL / storage impls, SQL only here · `http/schemas.ts` Zod · `module.ts` `XToken = token<T>()` + `registerX(c)` (`c.scoped(...)`) · `index.ts` exports. New module → also call `registerX(container)` in `src/server/app.ts`.
 - Cross-module dependency only through interfaces/`index.ts` (e.g. catalog → `MediaLibrary`).
-- Writes: `new UnitOfWork(db).add(stmt)...commit()` (one D1 batch). State/existence conditions: `WHERE status = ?` / `AND NOT EXISTS` + `uow.expectChanges(1, () => new ConflictError(...))` inside the batch; never check `changes` after commit. External calls (iyzico, shipping, R2 delete) after commit or via outbox (`addOutboxHandler`, handlers idempotent).
+- Writes: `new UnitOfWork(db).add(stmt)...commit()` (one batch = one transaction). State/existence conditions: `WHERE status = ?` / `AND NOT EXISTS` + `uow.expectChanges(1, () => new ConflictError(...))` inside the batch; never check `changes` after commit. External calls (iyzico, shipping, media file delete) after commit or via outbox (`addOutboxHandler`, handlers idempotent).
 - Admin writes add `audit.recordStatement({ actor, action: "<area>.<verb>", entityType, entityId, diff })` to the same UoW. Action labels: `src/modules/audit/domain/audit.ts`.
 - Queries return `null` for missing; route throws `NotFoundError("x_not_found", "<Türkçe mesaj>")`.
 - Errors: throw `AppError` subclasses from `@/core` (`code` stable snake_case, `message` Turkish). DB trigger codes mapped in `src/core/errors/translate.ts`.

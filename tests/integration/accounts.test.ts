@@ -10,7 +10,7 @@ const [identity, identityModule, staff, customers, content, settings, platform, 
   mod("identity/index"), mod("identity/module"), mod("staff/index"), mod("customers/index"), mod("content/index"), mod("settings/index"), mod("platform/module"), mod("audit/audit-log"),
 ]);
 const {
-  Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger, buildConfig, AuthenticatorToken,
+  Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger, buildConfig, AuthenticatorToken,
 } = core;
 
 let pass = 0, fail = 0;
@@ -33,7 +33,7 @@ const root = new Container()
   .singleton(ClockToken, () => clock)
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
   .scoped(ConfigToken, (r: any) => buildConfig(r.resolve(EnvToken)))
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 platform.registerPlatform(root);
 identity.registerIdentity(root);
 audit.registerAudit(root);
@@ -44,7 +44,7 @@ customers.registerCustomers(root);
 root.singleton(identityModule.SessionCookiesToken, () => cookies);
 const scope = () => root.createScope().provide(EnvToken, { DB: d1, SESSION_SECRET: "test-secret", PUBLIC_SITE_URL: "https://nova.test" });
 const resolve = (tok: any): any => scope().resolve(tok);
-const req = (ip: string) => new Request("https://nova.test/api/x", { headers: { "cf-connecting-ip": ip } });
+const req = (ip: string) => new Request("https://nova.test/api/x", { headers: { "x-real-ip": ip } });
 const login = (email: string, password: string, audience: "admin" | "storefront", ip = "10.9.0.1") =>
   resolve(identity.LoginToken).execute({ email, password, audience, req: req(ip) });
 const tokenOf = (path: string) => path.split("/").pop()!;

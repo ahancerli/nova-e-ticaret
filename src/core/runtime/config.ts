@@ -1,5 +1,5 @@
 /**
- * Typed runtime configuration, built once from the Worker env (bindings + secrets + vars).
+ * Typed runtime configuration, built once from the runtime env (bindings + secrets + vars).
  * Fails fast in production when a required secret is missing instead of failing on first use.
  */
 export interface AppConfig {
@@ -13,7 +13,7 @@ export interface AppConfig {
   logLevel: "debug" | "info" | "warn" | "error";
   /**
    * Message bus of the integrations (marketplaces): "kafka" = a Kafka cluster through its REST proxy (Confluent REST
-   * Proxy, Redpanda HTTP Proxy, Aiven Karapace — API v2); "database" = the same topics stored in D1 (local, tests).
+   * Proxy, Redpanda HTTP Proxy, Aiven Karapace — API v2); "database" = the same topics stored in SQLite (local `npm run dev`, tests).
    */
   integrationBus: "kafka" | "database";
   kafka: { restUrl: string; username: string; password: string; topicPrefix: string };
@@ -26,13 +26,13 @@ export class ConfigError extends Error {
   }
 }
 
-export function buildConfig(env: Partial<CloudflareEnv>, processEnv: Record<string, string | undefined> = {}): AppConfig {
+export function buildConfig(env: Partial<RuntimeEnv>, processEnv: Record<string, string | undefined> = {}): AppConfig {
   const pick = (key: string): string => {
     const fromEnv = (env as Record<string, unknown>)[key];
     return (typeof fromEnv === "string" && fromEnv) || processEnv[key] || "";
   };
-  // wrangler.jsonc `vars` (APP_ENV, PUBLIC_SITE_URL) ship production values that local `next dev` also sees,
-  // so for these the process env (.env.local) wins. In production both sources carry the same value.
+  // Plain vars (APP_ENV, PUBLIC_SITE_URL, Kafka) come from the process env first; secrets from the request env first
+  // (tests inject them there). On the server both are filled from the same environment.
   const pickVar = (key: string): string => processEnv[key] || pick(key);
   const appEnvRaw = pickVar("APP_ENV") || "development";
   const appEnv = (["development", "preview", "production"].includes(appEnvRaw) ? appEnvRaw : "development") as AppConfig["appEnv"];

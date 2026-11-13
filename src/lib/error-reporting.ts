@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Browser error reporting → POST /api/client-errors → server JSON log (Workers observability).
+ * Browser error reporting → POST /api/client-errors → server JSON log (docker logs).
  * Used by error boundaries (render errors) and the global listener (uncaught errors / rejections).
  * Fire-and-forget, never throws, bounded per page so a crash loop cannot flood the endpoint.
  */

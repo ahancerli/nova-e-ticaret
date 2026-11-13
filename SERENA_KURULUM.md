@@ -117,7 +117,7 @@ Claude projeyi bir kez tarar ve notları yazar. Bu projede onboarding **2026-11-
 | Not | İçerik |
 |---|---|
 | `.serena/memories/core.md` | Giriş noktası: proje özeti, klasör haritası, README/db README'de hangi bölümde ne var, diğer notlara bağlantılar |
-| `tech_stack.md` | Sürümler, Cloudflare binding'leri, test altyapısı, Node şartı |
+| `tech_stack.md` | Sürümler, çalışma zamanı (Docker, SQLite, medya, Kafka), test altyapısı, Node şartı |
 | `conventions.md` | Modül yapısı, use case + `UnitOfWork` + guard + audit kalıbı, `route({...})`, istemci/sunucu import ayrımı, panel UI kuralları |
 | `suggested_commands.md` | dev / db / test / deploy komutları, macOS farkları |
 | `task_completion.md` | İş bitince çalıştırılacak kontroller (typecheck → lint → ilgili test) |
@@ -131,7 +131,7 @@ Claude projeyi bir kez tarar ve notları yazar. Bu projede onboarding **2026-11-
 - Yeni oturumda Claude önce `core` notunu okur, gerekirse ilgili nota iner; kodda sembol araçlarıyla yalnız gereken gövdeleri açar.
 - **Notlar kendiliğinden güncel tutulur:** `CLAUDE.md` Claude'a, mimariyi etkileyen bir işin sonunda ilgili notu aynı işte
   güncellemesini söyler. Unutursa `.claude/settings.json`'daki **Stop hook'u** (`.claude/hooks/serena-memory-check.sh`) devreye girer:
-  `src/core/`, `src/server/`, `src/modules/*/module.ts|index.ts`, `db/schema.sql`, `package.json`, `wrangler.jsonc` gibi dosyalar
+  `src/core/`, `src/server/`, `src/modules/*/module.ts|index.ts`, `db/schema.sql`, `package.json`, `Dockerfile`, `docker-compose*.yml` gibi dosyalar
   değiştiyse (commit edilmemiş veya push edilmemiş) ve `.serena/memories/` değişmediyse Claude'u bir kez durdurup notları kontrol ettirir.
   Aynı değişiklik için tekrar uyarmaz. Hook'u görmek/kapatmak için Claude Code'da `/hooks`.
 - Elle de isteyebilirsiniz: *"Serena notlarını şu değişikliğe göre güncelle: …"*. Not bağlantılarını kontrol: proje kökünde `serena memories check`.

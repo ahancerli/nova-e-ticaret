@@ -1,5 +1,6 @@
+import { lookup } from "node:dns/promises";
 import { BulkErrors } from "../domain/errors";
-import { assertPublicUrl } from "../domain/url";
+import { assertPublicUrl, isPrivateIp } from "../domain/url";
 import type { RemoteFetcher } from "../application/ports";
 
 async function readCapped(res: Response, maxBytes: number): Promise<Uint8Array> {
@@ -29,18 +30,38 @@ function decode(bytes: Uint8Array, contentType: string): string {
   try { return new TextDecoder(label.toLowerCase()).decode(bytes); } catch { return new TextDecoder().decode(bytes); }
 }
 
+/** Every address a host name resolves to. */
+export type HostResolver = (host: string) => Promise<string[]>;
+
+const dnsResolver: HostResolver = async (host) => (await lookup(host, { all: true, verbatim: true })).map((a) => a.address);
+
 /**
- * Outgoing HTTP for feeds and images with SSRF guards. On Workers `global_fetch_strictly_public` (wrangler.jsonc)
- * already refuses private addresses after DNS; every URL — and every redirect hop (≤ 3, followed by hand) — is also
- * checked by `assertPublicUrl` (covers local dev on Node). Bodies are read as a stream and cut at `maxBytes`; every
- * request has a timeout; an API key header is not carried to another host on redirect.
+ * Outgoing HTTP for feeds and images with SSRF guards. Every URL — and every redirect hop (≤ 3, followed by hand) —
+ * is checked by `assertPublicUrl`, and its host name must not resolve to a private / loopback / link-local address
+ * (the app shares a Docker network with Kafka REST and the other containers). Bodies are read as a stream and cut at
+ * `maxBytes`; every request has a timeout; an API key header is not carried to another host on redirect.
  */
 export class SafeFetcher implements RemoteFetcher {
-  constructor(private readonly doFetch: typeof fetch = (...a) => fetch(...a)) {}
+  constructor(
+    private readonly doFetch: typeof fetch = (...a) => fetch(...a),
+    private readonly resolveHost: HostResolver = dnsResolver,
+  ) {}
+
+  private async assertPublicHost(url: URL): Promise<void> {
+    const host = url.hostname.replace(/^\[|\]$/g, "");
+    let addresses: string[];
+    try {
+      addresses = await this.resolveHost(host);
+    } catch {
+      throw BulkErrors.fetchFailed("alan adı çözümlenemedi.");
+    }
+    if (!addresses.length || addresses.some((a) => isPrivateIp(a.toLowerCase()))) throw BulkErrors.urlNotAllowed("özel / yerel IP adresi.");
+  }
 
   private async request(url: string, headers: Record<string, string>, timeoutMs: number): Promise<Response> {
     let current = assertPublicUrl(url);
     for (let hop = 0; hop <= 3; hop++) {
+      await this.assertPublicHost(current);
       let res: Response;
       try {
         res = await this.doFetch(current.href, { headers: { "user-agent": "nova-commerce-feed/1.0", ...headers }, redirect: "manual", signal: AbortSignal.timeout(timeoutMs) });

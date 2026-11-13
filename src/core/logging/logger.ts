@@ -1,5 +1,5 @@
 /**
- * Structured JSON logger (one line per event → Workers observability / any log collector).
+ * Structured JSON logger (one line per event → docker logs / any log collector).
  * `child()` adds bindings such as requestId and route so every line of a request can be correlated.
  * Values under sensitive keys are redacted before they are written.
  */

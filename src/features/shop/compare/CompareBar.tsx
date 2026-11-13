@@ -30,7 +30,7 @@ export function CompareBar() {
                 {it ? (
                   <>
                     <Link href={`/urun/${it.slug}`} className="block aspect-square overflow-hidden rounded-xl border border-line bg-white" title={it.name}>
-                      {/* eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset */}
+                      {/* eslint-disable-next-line @next/next/no-img-element -- uploaded / demo asset */}
                       <img src={it.imageUrl ?? "/demo/placeholder.svg"} alt={it.name} className="h-full w-full object-contain p-1.5" />
                     </Link>
                     <button type="button" onClick={() => remove(it.id)} aria-label={`${it.name} listeden çıkar`}
@@ -49,7 +49,7 @@ export function CompareBar() {
           className="mx-auto flex animate-pop-in items-center gap-3 rounded-full border border-line bg-white py-2 pl-2 pr-4 shadow-[0_12px_40px_-12px_rgb(27_36_64/0.45)] transition hover:shadow-[0_16px_44px_-10px_rgb(27_36_64/0.5)] [transform-origin:bottom]">
           <span className="flex -space-x-2">
             {items.map((it) => (
-              // eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset
+              // eslint-disable-next-line @next/next/no-img-element -- uploaded / demo asset
               <img key={it.id} src={it.imageUrl ?? "/demo/placeholder.svg"} alt="" className="size-9 rounded-full border-2 border-white bg-white object-contain" />
             ))}
           </span>

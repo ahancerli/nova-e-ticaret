@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { adminLogin } from "./helpers";
+import { adminLogin, guestCheckout } from "./helpers";
 
 /**
  * The main money path, end to end in a real browser:
@@ -10,31 +10,7 @@ test.describe.serial("shop → admin", () => {
   let orderNumber = "";
 
   test("guest checkout with bank transfer", async ({ page }) => {
-    await page.goto("/urun/cocuklar-icin-dunya-atlasi");
-    await page.getByRole("button", { name: "Sepete ekle" }).click();
-
-    const drawer = page.getByRole("dialog");
-    await expect(drawer).toBeVisible();
-    await expect(drawer.getByText("Çocuklar İçin Dünya Atlası")).toBeVisible();
-    await drawer.getByRole("link", { name: "Sepete git" }).click();
-
-    await expect(page).toHaveURL(/\/sepet$/);
-    await expect(page.getByRole("region", { name: "Sepetteki ürünler" }).getByText("Çocuklar İçin Dünya Atlası")).toBeVisible();
-    await page.getByRole("link", { name: "Alışverişi tamamla" }).click();
-
-    await expect(page).toHaveURL(/\/odeme$/);
-    await page.locator("#email").fill("e2e.musteri@example.com");
-    await page.locator("#phone").fill("+905551112233");
-    await page.locator("#s_name").fill("Deniz Test");
-    await page.locator("#s_province").fill("İstanbul");
-    await page.locator("#s_district").fill("Kadıköy");
-    await page.locator("#s_line1").fill("Moda Caddesi No: 1");
-    await page.getByRole("radio", { name: /Havale \/ EFT/ }).check();
-    await page.getByRole("checkbox", { name: /mesafeli satış sözleşmesini/ }).check();
-    await page.getByRole("button", { name: "Siparişi onayla" }).click();
-
-    await expect(page.getByRole("heading", { name: "Siparişiniz oluşturuldu" })).toBeVisible();
-    orderNumber = (await page.locator("strong").filter({ hasText: /^NV/ }).first().textContent())?.trim() ?? "";
+    orderNumber = await guestCheckout(page);
     expect(orderNumber).toMatch(/^NV\d{6}[A-Z2-9]{6}$/);
   });
 

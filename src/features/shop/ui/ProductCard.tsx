@@ -15,7 +15,7 @@ export function ProductCard({ p, priority = false }: { p: Card; priority?: boole
   return (
     <article className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-line bg-white transition hover:border-transparent hover:shadow-[0_6px_24px_rgb(27_36_64/0.12)]">
       <Link href={`/urun/${p.slug}`} className="relative block aspect-square overflow-hidden bg-white" tabIndex={-1} aria-hidden>
-        {/* eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset; next/image optimisation is not configured */}
+        {/* eslint-disable-next-line @next/next/no-img-element -- uploaded / demo asset; next/image optimisation is not configured */}
         <img src={p.imageUrl ?? "/demo/placeholder.svg"} alt="" loading={priority ? "eager" : "lazy"}
           className="h-full w-full object-contain p-3 transition duration-300 group-hover:scale-[1.03]" />
         {(pct > 0 || p.promotions.length > 0) && (

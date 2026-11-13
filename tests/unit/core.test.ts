@@ -8,7 +8,7 @@ const ROOT = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 const core = await import(`${ROOT}/src/core/index.ts`);
 const {
   Container, ContainerError, token, toAppError, AppError, ConflictError, NotFoundError, ValidationError, InternalError,
-  D1DatabaseAdapter, UnitOfWork, JsonLogger, redact, createRouter, reply,
+  SqlDatabaseAdapter, UnitOfWork, JsonLogger, redact, createRouter, reply,
   AuthenticatorToken, OriginGuardToken, RateLimiterToken, IdempotencyStoreToken, LoggerToken, ForbiddenError, RateLimitError,
 } = core;
 
@@ -65,7 +65,7 @@ await t("errors: zod, trigger, constraint and unknown errors are normalized", ()
 
 // --- UnitOfWork ----------------------------------------------------------------------------------
 const d1 = makeD1([`${ROOT}/db/schema.sql`, `${ROOT}/db/seed.sql`]);
-const db = new D1DatabaseAdapter(d1 as any);
+const db = new SqlDatabaseAdapter(d1 as any);
 
 await t("unit of work: guard passes → everything commits, guard rows are invisible", async () => {
   const uow = new UnitOfWork(db);

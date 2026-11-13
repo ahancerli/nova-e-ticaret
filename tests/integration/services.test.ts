@@ -1,4 +1,4 @@
-// Service-level integration tests: real services + schema.sql/seed.sql on node:sqlite (D1 stand-in).
+// Service-level integration tests: real services + schema.sql/seed.sql on in-memory SQLite (production driver).
 // Run: npm run test:services   (Node >= 22.13, no npm install needed for this suite)
 import { readFileSync } from "node:fs";
 import { makeD1 } from "./d1-sqlite.mjs";
@@ -19,7 +19,8 @@ d1.raw.exec(`
   DELETE FROM user_roles; DELETE FROM staff_profiles; DELETE FROM customer_profiles; DELETE FROM auth_credentials; DELETE FROM users;
 `);
 d1.raw.exec(readFileSync(`${ROOT}/db/schema.sql`, "utf8"));
-(globalThis as any).__ENV = { DB: d1, SESSION_SECRET: "s3cret", PUBLIC_SITE_URL: "https://nova.test", SECRETS_MASTER_KEY: btoa(String.fromCharCode(...new Uint8Array(32))), CRON_SECRET: "c" };
+(globalThis as any).__novaRuntime = { DB: d1 };
+Object.assign(process.env, { SESSION_SECRET: "s3cret", PUBLIC_SITE_URL: "https://nova.test", SECRETS_MASTER_KEY: btoa(String.fromCharCode(...new Uint8Array(32))), CRON_SECRET: "c" });
 const jar: Map<string, string> = (globalThis as any).__JAR ??= new Map();
 const S = (m: string) => import(`${ROOT}/src/${m}.ts`);
 let pass = 0, fail = 0;
@@ -171,7 +172,7 @@ await t("login + RBAC + admin order grid", async () => {
                INSERT INTO staff_profiles (user_id) VALUES ('u_admin'); INSERT INTO user_roles (user_id,role_id) VALUES ('u_admin','role_order');`);
   const identity = await S("modules/identity/index");
   const login = async (email: string, password: string, audience: string) =>
-    (await app.resolveService(identity.LoginToken)).execute({ email, password, audience, req: new Request("https://nova.test/api/x", { headers: { "cf-connecting-ip": "10.0.0.1" } }) });
+    (await app.resolveService(identity.LoginToken)).execute({ email, password, audience, req: new Request("https://nova.test/api/x", { headers: { "x-real-ip": "10.0.0.1" } }) });
   let bad = false; try { await login("admin@nova.test", "wrong", "storefront"); } catch (e: any) { bad = e.code === "invalid_credentials"; } assert(bad, "bad pw");
   await login("ADMIN@nova.test ", "correct-horse", "admin");
   const u = await auth.requirePermission("orders.read"); assert(u.isStaff, "staff");
@@ -217,6 +218,6 @@ await t("sanitizer: XSS payload corpus", async () => {
 });
 await t("money allocate sums exactly", async () => { const a = money.allocate(100, [1, 1, 1]); assert(a.reduce((x: number, y: number) => x + y, 0) === 100, String(a)); });
 const crypto2 = coreModule;
-await t("AES-GCM secret roundtrip", async () => { const k = (globalThis as any).__ENV.SECRETS_MASTER_KEY; const e = await crypto2.encryptSecret(k, "api-secret"); assert((await crypto2.decryptSecret(k, e)) === "api-secret", "roundtrip"); });
+await t("AES-GCM secret roundtrip", async () => { const k = process.env.SECRETS_MASTER_KEY!; const e = await crypto2.encryptSecret(k, "api-secret"); assert((await crypto2.decryptSecret(k, e)) === "api-secret", "roundtrip"); });
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

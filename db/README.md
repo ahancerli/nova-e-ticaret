@@ -1,6 +1,6 @@
 # db/ — veri modeli, kurallar ve sözlükler
 
-Bu klasör, uygulamanın tek veri kaynağı olan **Cloudflare D1 (SQLite)** veritabanını tanımlar.
+Bu klasör, uygulamanın tek veri kaynağı olan **SQLite** veritabanını (`data/nova.db`, Docker'da `/data/nova.db`, `node:sqlite`) tanımlar.
 Ana proje dokümanı: [`../README.md`](../README.md). Bu dosya veri katmanının "neden ve nasıl"ını anlatır;
 tablo/kolon ayrıntıları için doğrudan [`schema.sql`](schema.sql) okunmalıdır (yorumlu, tek dosya).
 
@@ -9,19 +9,18 @@ tablo/kolon ayrıntıları için doğrudan [`schema.sql`](schema.sql) okunmalıd
 | `schema.sql` | Tek DDL scripti: **126 STRICT tablo · 81 indeks · 37 trigger**. Tekrar çalıştırılabilir (tablolar/indeksler `IF NOT EXISTS`, trigger'lar drop + create). Her tablonun başında Türkçe `-- TABLO:` açıklaması, her kolonun sonunda Türkçe yorum var (yeni kolon eklerken yorumunu da yaz). |
 | `nova-veritabani-rehberi.pdf` | Tüm tabloların kolon kolon açıklaması + iş akışları (sipariş, ödeme, kampanya, pazaryeri) ve durum makineleri. |
 | `seed.sql` | Roller/izinler, demo katalog, demo kullanıcılar ve **demo bir sipariş zinciri** (sepet → checkout → sipariş → havale → kargo). `INSERT OR IGNORE`, tekrar çalıştırılabilir. Gerçek kişi verisi, sır veya gerçek IBAN yok. |
-| `drop_all.sql` | Tüm tabloları FK sırasıyla siler (`db:reset:*`). |
+| `drop_all.sql` | Tüm tabloları FK sırasıyla siler (`db:reset`). |
 | `tests/test_schema.py` | 44 bağımlılıksız şema testi (`npm run db:test`, python3). |
 
 ```bash
-npm run db:schema:local && npm run db:seed:local      # local SQLite-D1 kur
-npm run db:reset:local                                # sil + kur + seed
-npm run db:query:local -- "SELECT id, name FROM categories"
-npm run db:schema:remote / db:seed:remote / db:reset:remote / db:query -- "…"   # Cloudflare D1
+npm run db:setup                                      # şema + (yeni dosyaysa) seed + migration'lar — tekrar çalıştırılabilir
+npm run db:reset                                      # sil + kur + seed
+npm run db:query -- "SELECT id, name FROM categories"
+docker compose exec app node scripts/db.mjs exec --command "SELECT …"   # container içindeki veritabanı
 ```
 
-**Local D1 dosyası** (wrangler/miniflare yönetir, ad sabit hash'tir):
-`.wrangler/state/v3/d1/miniflare-D1DatabaseObject/c917712ba74c5102d69ecf1555a42fe4d03ba423fee62c633ac82b645ae953eb.sqlite`
-DataGrip/TablePlus ile bu dosyaya bağlanılabilir (WAL modunda; açık araçta yenilemek gerekir). Uygulama başka bir `.db` dosyasını okuyamaz.
+**Veritabanı dosyası:** `DATABASE_PATH` (local varsayılan `data/nova.db`; Docker'da `nova-data` volume'unda `/data/nova.db`).
+WAL modunda ve foreign keys açık (`src/server/sqlite-driver.ts` → `openSqlite`). DataGrip/TablePlus ile local dosyaya bağlanılabilir (açık araçta yenilemek gerekir).
 
 ---
 
@@ -31,7 +30,7 @@ DataGrip/TablePlus ile bu dosyaya bağlanılabilir (WAL modunda; açık araçta 
 - **Para:** `*_minor` INTEGER, **kuruş**, **KDV dahil**. `tax_minor` toplamın *içindeki* KDV'dir, toplama tekrar eklenmez.
 - **Zaman:** UTC ISO-8601 milisaniyeli metin (`strftime('%Y-%m-%dT%H:%M:%fZ','now')` / `new Date().toISOString()`). Gösterim `Europe/Istanbul`.
 - **Boolean:** `0/1` INTEGER. **JSON:** yalnız snapshot/ayar/olay yükü (`json_valid` CHECK).
-- **Atomiklik:** D1'de `BEGIN/COMMIT` yok. Çok adımlı yazmalar tek `db.batch([...])` içindedir; bir trigger `RAISE(ABORT, 'kod')` attığında batch'in tamamı geri alınır. Durum geçişleri `UPDATE … WHERE status = <beklenen>` ile korunur ve hemen ardından `batch_guards` koruma satırı eklenir (`core/db/unit-of-work.ts`): koşul tutmazsa batch'in tamamı geri alınır (yarış → 409, yarım yazma yok).
+- **Atomiklik:** uygulama kodu `BEGIN/COMMIT` yazmaz. Çok adımlı yazmalar tek `db.batch([...])` içindedir (sürücü bunu tek `BEGIN IMMEDIATE … COMMIT` olarak, araya başka istek girmeden çalıştırır); bir trigger `RAISE(ABORT, 'kod')` attığında batch'in tamamı geri alınır. Durum geçişleri `UPDATE … WHERE status = <beklenen>` ile korunur ve hemen ardından `batch_guards` koruma satırı eklenir (`core/db/unit-of-work.ts`): koşul tutmazsa batch'in tamamı geri alınır (yarış → 409, yarım yazma yok).
 - **Silme yerine durum:** sipariş/ödeme/defter kayıtları silinmez. Ürün → `archived`, varyant → `is_active = 0`, kullanıcı → `anonymized`. Append-only tablolar trigger ile korunur.
 - **updated_at** uygulama tarafından yazılır (trigger yok).
 
@@ -79,7 +78,7 @@ DataGrip/TablePlus ile bu dosyaya bağlanılabilir (WAL modunda; açık araçta 
 - İade: toplam iade (requested + processing + succeeded) ≤ tahsil edilen; stoğa geri alma ≤ sipariş adedi − önceden geri alınan.
 - Havale onayı: gelen ≠ beklenen → `mismatch`, sipariş ödendi **yapılmaz**; rezervasyon süresi dolmuşsa onay reddedilir.
 - Kategori/marka silme: alt kategorisi/ürünü olan kategori, ürünü veya hikayesi olan marka silinmez (`stories.brand_id` CASCADE olduğu için servis engeller).
-- Yüklenen medya, artık hiçbir `categories / brands / product_media` satırı göstermiyorsa DB'den ve R2'den silinir (varyant görselleri dahil: kaydetmede çıkan veya silinen ürünün tüm görselleri); seed/demo medyaya dokunulmaz.
+- Yüklenen medya, artık hiçbir `categories / brands / product_media` satırı göstermiyorsa DB'den ve medya deposundan (`MEDIA_DIR`) silinir (varyant görselleri dahil: kaydetmede çıkan veya silinen ürünün tüm görselleri); seed/demo medyaya dokunulmaz.
 
 ## 4. Durumlar ve geçişler
 
@@ -117,7 +116,7 @@ cron expire: süresi dolan rezervasyonlu ödenmemiş sipariş ──► cancelle
 | `idempotency_keys.scope` | `checkout.confirm`, `order.action:<orderId>`, `order.bulk` (24 saat) |
 | `rate_limit_buckets.bucket_key` | `login-fail:<ipHash>`, `storefront-login-fail:…`, `admin-login-fail:…`, `coupon-fail:…` (dakikada 5 hata), `login-account-fail:<userId>:<ipHash>` (15 dakikada 10 hata, yalnız o IP), `iyzico-callback:…` (dakikada 30 istek), `iyzico-webhook:…` (dakikada 300 istek) |
 | `audit_logs.action` → `entity_type` | `category.*` → category, `brand.*` → brand, `product.*` → product (create/update/delete), `media.upload` → media, `order.<action>` / `order.bulk.<action>` → order, `campaign.create/update/delete` → campaign, `coupon.create` → campaign, `coupon.<işlem>` → coupon, `content.create/update/delete` → content_page, `showcase.{section,slider,slide,stories,story}.<işlem>` → showcase, `staff.invite/update/<işlem>` · `customer.signup/update/<işlem>` · `account.invite_accepted/password_reset` → user, `role.create/update/delete` → role, `settings.update` → site_settings (entity_id = grup), `ai_integration.create/update/delete` · `ai.product_generate` → ai_integration (entity_id = sağlayıcı; anahtar asla yazılmaz), `mail_integration.create/update/delete` → mail_integration (entity_id = `smtp`; parola asla yazılmaz), `integration.create/update/delete` → integration (entity_id = `sms` \| `shipping`; şifreler asla yazılmaz), `payment.*` → payment_config, `bank_account.*` → bank_account. Türkçe adlar ve alanlar (sekme) `src/modules/audit/domain/audit.ts`'te; **yeni action = oraya etiket** (yoksa kod olduğu gibi gösterilir). Görüntüleyici `ix_audit_created`, `ix_audit_actor`, `ix_audit_request`, `ix_audit_entity` indekslerini kullanır |
-| `media_assets` (yüklenen) | `storage_key = "<klasör>/<uuid>.<png|jpg|webp|avif>"`, klasör ∈ `categories · brands · products · branding` (branding = logo/favicon/paylaşım görseli, `settings.write` ister); `public_url = "/assets/<storage_key>"` (R2'den sunulur); `alt_text` = orijinal dosya adı; `sha256`, `width/height` dolu |
+| `media_assets` (yüklenen) | `storage_key = "<klasör>/<uuid>.<png|jpg|webp|avif>"`, klasör ∈ `categories · brands · products · branding` (branding = logo/favicon/paylaşım görseli, `settings.write` ister); `public_url = "/assets/<storage_key>"` (medya deposundan sunulur); `alt_text` = orijinal dosya adı; `sha256`, `width/height` dolu |
 | `ai_integration` | Tek satır (`id = 'default'` CHECK) → sistemde en fazla bir AI sağlayıcısı; `provider` ∈ openai · gemini · anthropic, `model` (2–100) panelde `ai_models` kataloğundan seçilir (FK yok: model katalogdan emekliye ayrılsa da satır geçerli kalır). API anahtarı `api_key_ciphertext/nonce/auth_tag` (AES-256-GCM, `SECRETS_MASTER_KEY`, `key_version = v1`), `api_key_hint` = `…son4`. `updated_at` eşzamanlılık kontrolü. `integrations.kind` CHECK'ine `'ai'` eklemek, başka tabloların (`integration_secrets` CASCADE, iki tablo SET NULL) işaret ettiği tabloyu yeniden kurmayı gerektirdiği için ayrı tablo. Mevcut veritabanına `db:schema:*` yeterli (yeni tablo) |
 | `ai_models` | AI model kataloğu (referans veri; `schema.sql` sonunda upsert). PK `(provider, model_id)`; `status` ∈ active · deprecated · retired, `retires_at` `YYYY-MM-DD`. Sağlayıcının varsayılanı = ilk `active` satır (`sort_order`). Satır silinmez; kapanış duyurulunca `deprecated`, kapanınca `retired` (panelde gizli). Doğrulama `npm run ai:health` |
 | `mail_deliveries` | Her giden e-posta denemesi (`SmtpMailSender`): `purpose` ∈ password_reset · test · other, `status` ∈ sent · failed · not_configured · throttled; `failed` ⇔ `error_code` dolu (CHECK). `stage` / `error_*` SMTP sınıflandırıcısından, `server_reply` SMTP sunucusunun kendi yanıtı. İçerik, bağlantı, parola tutulmaz; 30 günden eski satırlar yazarken silinir (`ix_mail_deliveries_created`) |
@@ -139,7 +138,7 @@ cron expire: süresi dolan rezervasyonlu ödenmemiş sipariş ──► cancelle
 - **Roller → izinler:** `admin` (16 iznin tamamı) · `catalog_manager` (catalog.read, catalog.write, storefront.write — **catalog.publish yok**) · `order_manager` (orders.read, orders.write, payments.reconcile, customers.read, customers.write) · `marketing_manager` (catalog.read, storefront.write, campaigns.write, content.write) · `customer` (yok).
 - **İzinler:** catalog.read/write/publish, orders.read/write, payments.reconcile, payments.secrets, storefront.write, campaigns.write, integrations.write, users.manage, audit.read, settings.write, customers.read, customers.write, content.write. Etiketler ve gruplar `src/modules/staff/domain/permissions.ts` (rol editörü yalnız oradaki kodları kabul eder).
 - **Demo müşteriler:** `u_cust_2..4` (Zeynep Kaya, Mehmet Yılmaz, Elif Şahin) — KVKK ve ticari ileti onaylarıyla; müşteri listesi/segment ekranları için.
-- **Demo kullanıcılar:** `admin@nova.local` (u_admin, admin) ve `musteri@nova.local` (u_customer). Parola hash'leri demo amaçlıdır ve parola **dokümante edilmemiştir** → local'de kendi admininizi oluşturun: `npm run admin:create:local -- siz@ornek.com "Ad Soyad"` (var olan e-postada parolayı sıfırlar). **Canlı D1'de bu demo kullanıcıları silin veya parolalarını değiştirin.**
+- **Demo kullanıcılar:** `admin@nova.local` (u_admin, admin) ve `musteri@nova.local` (u_customer). Parola hash'leri demo amaçlıdır ve parola **dokümante edilmemiştir** → local'de kendi admininizi oluşturun: `npm run admin:create -- siz@ornek.com "Ad Soyad"` (var olan e-postada parolayı sıfırlar). **Canlı veritabanında bu demo kullanıcıları silin veya parolalarını değiştirin.**
 - **Katalog:** 5 marka, 9 kategori (Moda › Erkek › Kazak; Moda zorunlu özellik: renk + beden), 5 ürün (triko 3 varyant renk×beden, diğerleri tek varyant), fiyatlar, `wh_main` stokları, demo SVG görseller (`/public/demo`).
 - **Demo sipariş:** `NOVA-2026-0001` (havale bekliyor, banka hesabı `ba_demo_1`, bir kargo kaydı); `pc_bank` ve `pc_iyzico_sbx` **pasif**, iyzico sırları yok. Kampanya `cmp_3al2` (Mutfak kategorisinde 3 al 2 öde, 🔥 rozetli) **aktif**, kupon `NOVA3AL2ODE`.
 - **Site ayarları ve içerik:** kurgusal firma bilgileri (Nova Elektronik Ticaret A.Ş., örnek VKN/MERSİS/KEP), iletişim, vurgu rengi, SEO, sosyal hesaplar, footer rozetleri; 8 yasal metin şablonu (6 zorunlu yayında; kullanım koşulları ve üyelik sözleşmesi taslak) + Hakkımızda, İletişim, SSS, Kargo ve Teslimat — her biri sürüm 1 ve ilk revizyonuyla. Footer menüsünde yalnız “Keşfet” sütunu var; diğer sütunlar yayındaki sayfalardan otomatik gelir. Hepsi panelden değiştirilecek örnek veridir.
@@ -152,12 +151,12 @@ cron expire: süresi dolan rezervasyonlu ödenmemiş sipariş ──► cancelle
 - `product_feed_items`: öğe başına son yazılan içerik / görsel hash'i ve `last_seen_at` (değişmeyen atlanır, kaynakta olmayan → stok 0).
 - Anahtar aramaları için `ix_products_accounting_code` / `ix_products_manufacturer_code` (bu kolonlar benzersiz değildir; birden çok ürüne çıkan anahtar satır hatası olur).
 
-## 7. Şema değişikliği prosedürü (migration sistemi yok!)
+## 7. Şema değişikliği prosedürü
 
 1. `schema.sql` içinde ilgili tabloyu/indeksi/trigger'ı değiştir (bölüm başlıklarına uy, STRICT + CHECK ekle).
-2. **Var olan veritabanı için:** `CREATE TABLE IF NOT EXISTS` mevcut tabloya kolon **eklemez**. Ya `ALTER TABLE … ADD COLUMN …` komutunu ayrıca çalıştır (`db:query[:local]`), ya da local'de `npm run db:reset:local`. Remote'ta reset veri siler.
-   Hazır migration: `db/migrations/2026-11-06-campaign-engine.sql` (kampanya motoru kolonları + demo kampanyasını açar) → önce `db:schema:<local|remote>`, sonra **bir kez** `npm run db:migrate:<local|remote>`. `db/tests/test_schema.py` #48 bunu önceki commit'in şemasıyla doğrular. `2026-11-09-variant-media.sql`: `products.model_code`, `attribute_definitions.varies_media`, `trg_ccl_products` yeniden (model kodu değişince pazaryerine içerik gider); #55 doğrular.
+2. **Var olan veritabanı için:** `CREATE TABLE IF NOT EXISTS` mevcut tabloya kolon **eklemez**. Kolon eklemeleri `db/migrations/<tarih>-<ad>.sql` dosyasına yazılır (ilk satır `-- probe: SELECT yeni_kolon FROM tablo LIMIT 0`); `npm run db:setup` (container her açılışta) önce `schema.sql`'i, sonra probe'u başarısız olan migration'ları **bir kez** uygular. Local'de veri önemsizse `npm run db:reset` de olur; canlıda reset veri siler.
+   Örnek: `db/migrations/2026-11-06-campaign-engine.sql` (kampanya motoru kolonları + demo kampanyasını açar). `db/tests/test_schema.py` #48 bunu önceki commit'in şemasıyla doğrular. `2026-11-09-variant-media.sql`: `products.model_code`, `attribute_definitions.varies_media`, `trg_ccl_products` yeniden (model kodu değişince pazaryerine içerik gider); #55 doğrular.
 3. Yeni tablo eklediysen `drop_all.sql` (FK sırası: önce çocuklar) ve `tests/test_schema.py` içindeki tablo sayısını güncelle.
-4. Trigger'lar her çalıştırmada drop + create edildiğinden değişiklikleri yeniden `db:schema:*` ile uygulanır.
+4. Trigger'lar her çalıştırmada drop + create edildiğinden değişiklikleri `npm run db:schema` (ya da container'ın yeniden başlaması) ile uygulanır.
 5. `npm test` (tüm şema ve modül testleri, bkz. kök README §9) yeşil olmalı. Seed'e eklenen veri `INSERT OR IGNORE` olmalı.
 6. SQLite sürüm farkı: SQLite ≥ 3.51, ilişkili alt sorgunun **ORDER BY**'ında dış tablo kolonuna izin vermez (`no such column`). Dış referansı yalnız `WHERE`'de kullan (örnek: `pricing.ts` `image_url` için `COALESCE(alt sorgu1, alt sorgu2)`).

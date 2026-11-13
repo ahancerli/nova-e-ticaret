@@ -9,7 +9,7 @@ const mod = (p: string) => import(`${ROOT}/src/modules/${p}.ts`);
 const [payments, platform, secrets, audit, auditDomain, gatewayModule] = await Promise.all([
   mod("payments/index"), mod("platform/module"), mod("platform/secrets"), mod("audit/audit-log"), mod("audit/domain/audit"), mod("payments/infrastructure/iyzico-gateway"),
 ]);
-const { Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger, buildConfig } = core;
+const { Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger, buildConfig } = core;
 
 let pass = 0, fail = 0;
 async function t(name: string, fn: () => Promise<void> | void) {
@@ -59,7 +59,7 @@ const root = new Container()
   .singleton(ClockToken, () => clock)
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
   .scoped(ConfigToken, (r: any) => buildConfig(r.resolve(EnvToken)))
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 platform.registerPlatform(root);
 secrets.registerSecrets(root);
 audit.registerAudit(root);

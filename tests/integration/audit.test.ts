@@ -7,7 +7,7 @@ import { makeD1 } from "./d1-sqlite.mjs";
 const ROOT = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
 const core = await import(`${ROOT}/src/core/index.ts`);
 const audit = await import(`${ROOT}/src/modules/audit/index.ts`);
-const { Container, D1DatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, FixedClock, CryptoIdGenerator, JsonLogger, UnitOfWork } = core;
+const { Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, FixedClock, CryptoIdGenerator, JsonLogger, UnitOfWork } = core;
 
 let pass = 0, fail = 0;
 async function t(name: string, fn: () => Promise<void> | void) {
@@ -21,7 +21,7 @@ const root = new Container()
   .singleton(LoggerToken, () => new JsonLogger({ level: "error", sink: () => {} }))
   .singleton(ClockToken, () => new FixedClock(new Date("2026-11-03T10:00:00.000Z")))
   .singleton(IdGeneratorToken, () => new CryptoIdGenerator())
-  .scoped(DatabaseToken, (r: any) => new D1DatabaseAdapter(r.resolve(EnvToken).DB));
+  .scoped(DatabaseToken, (r: any) => new SqlDatabaseAdapter(r.resolve(EnvToken).DB));
 audit.registerAuditModule(root);
 const resolve = (tok: any): any => root.createScope().provide(EnvToken, { DB: d1 }).resolve(tok);
 const list = (q: Record<string, unknown> = {}) => resolve(audit.ListAuditLogsToken).execute(audit.auditQuerySchema.parse(q));

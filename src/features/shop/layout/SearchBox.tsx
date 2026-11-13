@@ -77,7 +77,7 @@ export function SearchBox() {
               {hits.products.map((p) => (
                 <li key={p.id}>
                   <Link href={`/urun/${p.slug}`} onClick={close} className="flex items-center gap-3 rounded-xl p-2 hover:bg-ground">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- R2 / demo asset */}
+                    {/* eslint-disable-next-line @next/next/no-img-element -- uploaded / demo asset */}
                     <img src={p.imageUrl ?? "/demo/placeholder.svg"} alt="" className="size-12 flex-none rounded-lg border border-line object-contain" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">{p.brandName && <b>{p.brandName} </b>}{p.name}</span>
