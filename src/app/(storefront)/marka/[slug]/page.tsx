@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Listing, loadListing, type PageSearchParams } from "@/features/shop";
+import { INK_TONE, Listing, loadListing, type PageSearchParams } from "@/features/shop";
 import { GetBrandPageToken } from "@/modules/storefront";
 import { resolveService } from "@/server/app";
 
@@ -20,5 +20,5 @@ export default async function BrandPage({ params, searchParams }: Props) {
   if (!b) notFound();
   const scope = { brand: slug };
   const initial = await loadListing(await searchParams, scope);
-  return <Listing key={slug} title={b.name} scope={scope} initial={initial} breadcrumb={[{ name: "Markalar", href: "/markalar" }]} />;
+  return <Listing key={slug} title={b.name} subtitle={b.description ?? undefined} tone={INK_TONE} scope={scope} initial={initial} breadcrumb={[{ name: "Markalar", href: "/markalar" }]} />;
 }

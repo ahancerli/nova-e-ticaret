@@ -343,5 +343,23 @@ await t("comparison: published products by slug in URL order (max 4), unknown / 
   assert(detail.rating === 4.5 && detail.ratingCount === 2, JSON.stringify({ r: detail.rating, c: detail.ratingCount }));
 });
 
+await t("30-day lowest price rule: no struck-through price without an earlier price; a drop is capped by the 30-day lowest", async () => {
+  const slugOf = d1.raw.prepare("SELECT slug FROM products WHERE id = 'p_atlas'").get().slug;
+  const shown = async () => {
+    const d = await resolve(storefront.GetProductDetailToken).execute(slugOf);
+    const card = (await resolve(storefront.GetComparisonToken).execute([slugOf]))[0].card;
+    return { variant: d.variants[0].compareAtMinor, card: card.compareAtMinor, price: card.priceMinor };
+  };
+  let s = await shown();
+  assert(s.variant === null && s.card === null, "seed old price has no history: " + JSON.stringify(s));
+  d1.raw.exec("UPDATE variant_prices SET unit_price_minor = 27990 WHERE variant_id = 'v_atlas'");
+  d1.raw.exec("UPDATE variant_prices SET unit_price_minor = 22990, compare_at_minor = 29990 WHERE variant_id = 'v_atlas'");
+  s = await shown();
+  assert(s.price === 22990 && s.variant === 24990 && s.card === 24990, "capped at the lowest of the last 30 days: " + JSON.stringify(s));
+  d1.raw.exec("UPDATE variant_prices SET unit_price_minor = 24990, compare_at_minor = 29990 WHERE variant_id = 'v_atlas'");
+  s = await shown();
+  assert(s.variant === null && s.card === null, "back to the earlier lowest price is no discount: " + JSON.stringify(s));
+});
+
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

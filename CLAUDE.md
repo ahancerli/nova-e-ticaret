@@ -15,3 +15,8 @@ When a task is done, if the change affects anything the memories describe — fo
 (via Serena `mem.edit_memory` / `mem.write_memory`, following `memory_maintenance`) and tell the user which memory
 changed. Skip it for local changes (a bug fix, a UI text, one component). A Stop hook (`.claude/hooks/serena-memory-check.sh`)
 reminds you if architecture files changed without a memory update.
+
+## UI / design work
+
+- Whenever the user asks for design work — a new page, component, screen, layout, restyle or any visual change — invoke
+  the `frontend-design:frontend-design` skill before writing UI code, without waiting to be asked.

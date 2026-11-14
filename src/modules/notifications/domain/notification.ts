@@ -24,9 +24,17 @@ export const NOTIFICATION_TYPES = {
     label: "Düşük puanlı yorum", description: "1 veya 2 yıldızlı yorum geldi — müşteriyle iletişime geçmek için iyi bir an.",
     permission: "reviews.moderate", severity: "warning", defaults: { inApp: true, email: false },
   },
+  "support.waiting": {
+    label: "Yeni canlı destek konuşması", description: "Bir üye canlı destekten yazdı; ilk yanıt verilince bildirim kalkar.",
+    permission: "support.chat", severity: "info", defaults: { inApp: true, email: false },
+  },
   "order.placed": {
     label: "Yeni sipariş", description: "Mağazadan veya pazaryerinden yeni bir sipariş oluşturuldu.",
     permission: "orders.read", severity: "success", defaults: { inApp: true, email: false },
+  },
+  "return.requested": {
+    label: "Yeni iade talebi", description: "Müşteri cayma hakkıyla iade talebi açtı; onaylanması veya reddedilmesi gerekiyor.",
+    permission: "orders.write", severity: "warning", defaults: { inApp: true, email: false },
   },
   "payment.late": {
     label: "İptal edilen siparişe ödeme", description: "İptal edilmiş / süresi dolmuş bir siparişe kart ödemesi geldi; iade edilmesi gerekiyor.",

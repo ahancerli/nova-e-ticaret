@@ -22,6 +22,9 @@
 ## Storefront (features/shop)
 - SSR by default (header, mega menu = CSS group-hover/focus-within, footer, home sections); client islands only for interaction. One `ui/ProductCard` everywhere. Inside shop, client files import relative paths, never the shop `index.ts` (it pulls server code).
 - Hybrid data: server components call query services via `resolveService`; browser reads go through `/api/graphql` (read-only, one request per screen). Writes stay REST. New graph field = SDL + `rootValue` in `src/server/graphql/schema.ts` + document in `features/shop/data/graph.ts`; filters reuse `parseListQuery`.
+- Brand look: tokens in `globals.css` `@theme` (ink `#191640`, `--color-dept-1..6` department spectrum, `.spectrum` strip, `font-display` Bricolage Grotesque + body Onest via next/font on the storefront layout wrapper only; admin keeps system fonts). Storefront ground is white. Inner pages open with `ui/PageHero` (coloured band + breadcrumb + h1); colour = `deptTone(menuIndexOf(shell.header, shell.categories, { categorySlug | href }))` so a page matches its header-menu dot, else `BRAND_TONE` / `INK_TONE` (brand, search, cart, compare). Auth pages use `ui/AuthShell`. No all-caps eyebrows or `→` in link text.
 - Listing: first page SSR (`loadListing`), URL changes via `window.history.pushState` (no server round trip) → one GraphQL refetch; pages pass `key` per scope (slug / search term).
+## Tracking
+- Screens report shop actions only via `track()` from `features/consent/track` (or `TrackEvent` / `TrackPurchase` from `features/consent/commerce` on SSR pages); never load vendor scripts or check consent in a screen. New vendor = catalog + adapter (`mem:consent`).
 ## Style
 - Dense code, few comments (comments explain why). Comments/identifiers English.

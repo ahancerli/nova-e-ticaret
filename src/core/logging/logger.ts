@@ -36,11 +36,29 @@ export function serializeError(err: unknown, withStack: boolean): LogFields {
   return out;
 }
 
+/**
+ * Field key for the original error of an `error` line: handed to the error reporter (stack and all) but never written
+ * to the log line (JSON.stringify and `redact` skip symbol keys).
+ */
+export const RAW_ERROR = Symbol.for("nova.rawError");
+
+/** What an error reporter (Sentry-compatible, src/server/error-reporter.ts) receives for each `error` line. */
+export interface ErrorReport {
+  message: string;
+  /** Redacted caller fields. */
+  fields: LogFields;
+  /** requestId, route, … */
+  bindings: LogFields;
+  error?: unknown;
+}
+
 export interface JsonLoggerOptions {
   level?: LogLevel;
   bindings?: LogFields;
   /** Defaults to console; injectable for tests. */
   sink?: (level: LogLevel, line: string) => void;
+  /** Called for every `error` line; must not throw or block (fire-and-forget). */
+  report?: (r: ErrorReport) => void;
 }
 
 const consoleSink = (level: LogLevel, line: string) => {
@@ -73,7 +91,11 @@ export class JsonLogger implements Logger {
     if (LEVELS[level] < this.min) return;
     // Bindings (requestId, route) and reserved keys come last: caller fields — possibly client-supplied —
     // can never overwrite them, so log correlation cannot be spoofed.
-    const entry = { ...(fields ? (redact(fields) as LogFields) : {}), ...this.bindings, level, time: new Date().toISOString(), message };
+    const safe = fields ? (redact(fields) as LogFields) : {};
+    const entry = { ...safe, ...this.bindings, level, time: new Date().toISOString(), message };
+    if (level === "error" && this.options.report) {
+      try { this.options.report({ message, fields: safe, bindings: this.bindings, error: (fields as Record<symbol, unknown> | undefined)?.[RAW_ERROR] }); } catch { /* reporting never breaks logging */ }
+    }
     try {
       this.sink(level, JSON.stringify(entry));
     } catch {

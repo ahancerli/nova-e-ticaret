@@ -65,10 +65,9 @@ export class IyzicoGateway implements PaymentGateway {
         ...req.buyer,
         // TCKN: collecting it is a legal/business decision. Placeholder accepted by iyzico for non-invoice flows.
         identityNumber: "11111111111",
-        country: "Turkey",
       },
-      shippingAddress: { ...req.shippingAddress, country: "Turkey" },
-      billingAddress: { ...req.billingAddress, country: "Turkey" },
+      shippingAddress: req.shippingAddress,
+      billingAddress: req.billingAddress,
       basketItems: req.basketItems.map(({ priceMinor, ...i }) => ({ ...i, price: toProviderPrice(priceMinor) })),
     });
     if (resp.status !== "success" || !resp.token) return { ok: false as const, error: resp.errorMessage ?? "init_failed" };

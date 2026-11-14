@@ -1,8 +1,8 @@
 import { Repository } from "@/core";
 import type { Address, CardPaymentByToken, CardPaymentToStart, PaymentRepository } from "../application/ports";
 
-type AddrRow = { recipient_name: string; province: string; district: string; line1: string; line2: string | null; postal_code: string | null };
-const toAddress = (a: AddrRow): Address => ({ recipientName: a.recipient_name, province: a.province, district: a.district, line1: a.line1, line2: a.line2, postalCode: a.postal_code });
+type AddrRow = { recipient_name: string; country_code: string; province: string; district: string; line1: string; line2: string | null; postal_code: string | null };
+const toAddress = (a: AddrRow): Address => ({ recipientName: a.recipient_name, countryCode: a.country_code, province: a.province, district: a.district, line1: a.line1, line2: a.line2, postalCode: a.postal_code });
 
 export class D1PaymentRepository extends Repository implements PaymentRepository {
   async cardPaymentToStart(paymentId: string): Promise<CardPaymentToStart | null> {
@@ -14,7 +14,7 @@ export class D1PaymentRepository extends Repository implements PaymentRepository
     if (!p) return null;
     const [items, addresses] = await Promise.all([
       this.db.all<{ id: string; product_name_snapshot: string; total_minor: number }>("SELECT id, product_name_snapshot, total_minor FROM order_items WHERE order_id = ?", p.order_id),
-      this.db.all<AddrRow & { kind: string }>("SELECT kind, recipient_name, province, district, line1, line2, postal_code FROM order_addresses WHERE order_id = ?", p.order_id),
+      this.db.all<AddrRow & { kind: string }>("SELECT kind, recipient_name, country_code, province, district, line1, line2, postal_code FROM order_addresses WHERE order_id = ?", p.order_id),
     ]);
     const shipping = addresses.find((a) => a.kind === "shipping");
     if (!shipping) return null;

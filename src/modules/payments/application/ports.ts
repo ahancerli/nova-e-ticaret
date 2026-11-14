@@ -2,6 +2,7 @@ import type { CheckoutFormDetail } from "../domain/payment";
 
 export interface Address {
   recipientName: string;
+  countryCode: string;
   province: string;
   district: string;
   line1: string;
@@ -30,9 +31,9 @@ export interface CheckoutFormRequest {
   amountMinor: number;
   basketId: string;
   callbackUrl: string;
-  buyer: { id: string; name: string; surname: string; gsmNumber?: string; email: string; ip: string; city: string; registrationAddress: string };
-  shippingAddress: { contactName: string; city: string; address: string; zipCode?: string };
-  billingAddress: { contactName: string; city: string; address: string; zipCode?: string };
+  buyer: { id: string; name: string; surname: string; gsmNumber?: string; email: string; ip: string; city: string; country: string; registrationAddress: string };
+  shippingAddress: { contactName: string; city: string; country: string; address: string; zipCode?: string };
+  billingAddress: { contactName: string; city: string; country: string; address: string; zipCode?: string };
   basketItems: { id: string; name: string; category1: string; itemType: "PHYSICAL" | "VIRTUAL"; priceMinor: number }[];
 }
 

@@ -128,6 +128,15 @@ export class ListActiveBrands {
   }
 }
 
+/** Query: URLs for sitemap.xml (the route adds the static pages and the site's origin). */
+export class GetSitemap {
+  constructor(private readonly read: StorefrontReadModel) {}
+
+  execute() {
+    return this.read.sitemap();
+  }
+}
+
 /** Query: category directory (flat, ordered; the page builds the tree). */
 export class ListActiveCategories {
   constructor(private readonly read: StorefrontReadModel) {}

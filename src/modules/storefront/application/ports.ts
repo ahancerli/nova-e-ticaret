@@ -47,11 +47,19 @@ export interface CategoryPageData {
   noindex: boolean;
 }
 
+export interface SitemapEntry {
+  path: string;
+  updatedAt: string | null;
+  kind: "product" | "category" | "brand" | "page";
+}
+
 /** Read side of the storefront (CQRS): only published / active data, already shaped for the UI. */
 export interface StorefrontReadModel {
   brandPage(slug: string): Promise<{ name: string; description: string | null } | null>;
   categoryPage(slug: string): Promise<CategoryPageData | null>;
   activeBrands(): Promise<{ slug: string; name: string }[]>;
+  /** Indexable public URLs (published products, active categories / brands, published pages), noindex excluded. */
+  sitemap(): Promise<SitemapEntry[]>;
   activeCategories(): Promise<{ id: string; parentId: string | null; slug: string; name: string }[]>;
   shell(): Promise<ShellData>;
   suggest(q: string): Promise<SearchSuggestions>;

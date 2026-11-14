@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BankAccounts } from "@/features/checkout/BankAccounts";
+import { TrackPurchase } from "@/features/consent/commerce";
 import { GetPaymentOptionsToken } from "@/modules/payments";
 import { resolveService } from "@/server/app";
 
@@ -28,6 +29,7 @@ export default async function OrderResultPage({ searchParams }: { searchParams: 
             : "Kartınızdan çekim yapılmadıysa sepetinizden tekrar deneyebilirsiniz. Sorun devam ederse bizimle iletişime geçin."}
       </p>
       {accounts.length > 0 && <div className="mt-6"><BankAccounts accounts={accounts} orderNo={safeNo} /></div>}
+      {(success || transfer) && safeNo && <TrackPurchase orderNumber={safeNo} />}
       <Link href="/" className="btn btn-primary mt-8">Alışverişe devam et</Link>
     </div>
   );

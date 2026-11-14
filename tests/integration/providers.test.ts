@@ -12,6 +12,7 @@ const [integrations, connectors, netgsmMod, yurticiMod, platform, secrets, audit
   mod("integrations/infrastructure/connectors/yurtici"), mod("platform/module"), mod("platform/secrets"), mod("audit/audit-log"), mod("outbox/index"),
   mod("shipping/index"), mod("notifications/notifications"), mod("settings/index"),
 ]);
+const [content, mail] = await Promise.all([mod("content/index"), mod("mail/index")]);
 const { Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger, buildConfig } = core;
 
 let pass = 0, fail = 0;
@@ -160,7 +161,9 @@ outbox.registerOutbox(root);
 settings.registerSettings(root);
 integrations.registerIntegrations(root);
 shipping.registerShipping(root);
+content.registerContent(root);
 notifications.registerNotifications();
+root.singleton(mail.MailSenderToken, () => ({ send: async () => "sent" }));
 root.singleton(integrations.ConnectorRegistryToken, () => new Map<string, any>([["netgsm", fakeSms], ["yurtici", carrier]]));
 const scope = () => root.createScope().provide(EnvToken, { DB: d1, SESSION_SECRET: "s3cret", SECRETS_MASTER_KEY: MASTER, PUBLIC_SITE_URL: "https://nova.test" });
 const resolve = (tok: any): any => scope().resolve(tok);
@@ -233,9 +236,9 @@ await t("outbox order.shipped: parcel booked at the carrier once, customer SMS w
   d1.raw.exec("INSERT INTO shipments (id, order_id, shipping_method_id, status) VALUES ('sh_new', 'ord_demo_1', 'sm_std', 'shipped')");
   const before = smsSent.length;
   addEvent("order.shipped", { shipmentId: "sh_new", trackingNumber: null }, "t:shipped");
-  addEvent("order.delivered", {}, "t:delivered"); // off by default
+  addEvent("order.delivered", {}, "t:delivered"); // SMS off by default; the customer e-mail is still queued
   const s = await process_();
-  assert(s.done === 1 && s.skipped === 1 && s.dead === 0, JSON.stringify(s));
+  assert(s.done === 2 && s.dead === 0 && count("SELECT count(*) AS n FROM outbox_events WHERE event_type = 'customer_mail'") === 2, JSON.stringify(s));
   const b = carrier.booked.at(-1);
   assert(b.cargoKey === shipping.cargoKeyOf("sh_new") && b.orderNumber === "NOVA-2026-0001" && b.receiver.district === "Kadikoy" && b.pieces === 0, JSON.stringify(b));
   assert(one<any>("SELECT status FROM carrier_shipments WHERE shipment_id = 'sh_new'").status === "booked", "booking row");
@@ -281,7 +284,8 @@ await t("failures: refused booking recorded and retried by the outbox; remove â†
   addEvent("order.cancelled", {}, "t:cancel");
   const before = smsSent.length;
   const s = await process_();
-  assert(s.skipped >= 1 && smsSent.length === before, JSON.stringify(s));
+  // no SMS integration â†’ no SMS (the event still queues the customer e-mail, so it counts as done)
+  assert(s.dead === 0 && smsSent.length === before, JSON.stringify(s));
   assert(count("SELECT count(*) AS n FROM audit_logs WHERE action = 'integration.delete'") === 2, "removal audited");
 });
 

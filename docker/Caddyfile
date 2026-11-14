@@ -6,7 +6,9 @@
 }
 
 {$DOMAIN} {
-	encode zstd gzip
+	# Live support streams (text/event-stream) stay uncompressed so every event is flushed at once.
+	@compressible not path /api/storefront/support/stream /api/admin/support/stream
+	encode @compressible zstd gzip
 	reverse_proxy app:3000 {
 		header_up X-Real-IP {remote_host}
 	}

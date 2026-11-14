@@ -10,6 +10,7 @@ export {
   attributeUpdateSchema, barcodeGenerateSchema, barcodePrefixSchema, brandCreateSchema, brandUpdateSchema, categoryCreateSchema, categoryUpdateSchema, productSaveSchema,
 } from "./http/schemas";
 export * from "./domain/attribute";
+export { shownCompareAtSql } from "./infrastructure/price-history-sql";
 export {
   AddAttributeOptionsToken, ApplyAttributeTemplateToken, CreateAttributeToken, DeleteAttributeOptionToken, DeleteAttributeToken, GenerateBarcodesToken,
   GetBarcodeSettingsToken, ListAttributesToken, ReorderAttributeOptionsToken, SetAttributeCategoriesToken, SetBarcodePrefixToken, UpdateAttributeOptionToken,

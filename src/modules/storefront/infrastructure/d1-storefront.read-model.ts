@@ -1,7 +1,8 @@
 import { Repository, placeholders } from "@/core";
 import type { CategoryNode, ComparedProduct, Facets, HomeData, ProductCard, ProductDetail, SearchSuggestions } from "@/lib/types";
+import { shownCompareAtSql } from "@/modules/catalog";
 import { DEFAULT_PRICE_LIST } from "@/modules/catalog/domain/product";
-import type { ListParams, NavItem, ShellData, StorefrontReadModel } from "../application/ports";
+import type { ListParams, NavItem, ShellData, SitemapEntry, StorefrontReadModel } from "../application/ports";
 import { HOME_SECTION_LOADERS, type HomeSectionRow } from "./home-sections";
 import { CARD_SELECT, PAGE_SIZE, SORTS, toCard, type CardRow } from "./product-cards";
 
@@ -26,6 +27,17 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
 
   activeBrands() {
     return this.db.all<{ slug: string; name: string }>("SELECT slug, name FROM brands WHERE is_active = 1 ORDER BY name COLLATE NOCASE");
+  }
+
+  sitemap() {
+    const noindex = (col: string) => `NOT EXISTS (SELECT 1 FROM seo_documents s WHERE s.${col} = x.id AND s.noindex = 1)`;
+    return this.db.all<SitemapEntry>(
+      `SELECT '/urun/' || x.slug AS path, x.updated_at AS updatedAt, 'product' AS kind FROM products x WHERE x.status = 'published' AND ${noindex("product_id")}
+       UNION ALL SELECT '/kategori/' || x.slug, x.updated_at, 'category' FROM categories x WHERE x.is_active = 1 AND ${noindex("category_id")}
+       UNION ALL SELECT '/marka/' || x.slug, x.updated_at, 'brand' FROM brands x WHERE x.is_active = 1 AND ${noindex("brand_id")}
+       UNION ALL SELECT '/sayfa/' || x.slug, x.updated_at, 'page' FROM content_pages x WHERE x.status = 'published' AND ${noindex("page_id")}
+       ORDER BY kind, path LIMIT 45000`,
+    );
   }
 
   async activeCategories() {
@@ -247,7 +259,7 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
     const [media, variants, axes, attrs, related, breadcrumb] = await this.db.batch([
       st(`SELECT pm.variant_id, m.public_url, m.alt_text FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
            WHERE pm.product_id = ? ORDER BY pm.is_primary DESC, pm.sort_order`, product.id),
-      st(`SELECT v.id, v.sku, v.is_default, vp.unit_price_minor, vp.compare_at_minor,
+      st(`SELECT v.id, v.sku, v.is_default, vp.unit_price_minor, ${shownCompareAtSql("vp")} AS compare_at_minor,
                  COALESCE((SELECT SUM(ib.on_hand - ib.reserved) FROM inventory_balances ib WHERE ib.variant_id = v.id), 0) AS available,
                  (SELECT json_group_object(d.code, ao.value_code) FROM variant_options vo
                     JOIN attribute_definitions d ON d.id = vo.attribute_id JOIN attribute_options ao ON ao.id = vo.option_id

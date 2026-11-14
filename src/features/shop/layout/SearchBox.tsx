@@ -55,8 +55,8 @@ export function SearchBox() {
       <input id="site-search" value={q} maxLength={100} autoComplete="off" placeholder="Ürün, kategori veya marka ara"
         role="combobox" aria-autocomplete="list" aria-expanded={Boolean(show)} aria-controls={panelId}
         onChange={(e) => { setQ(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
-        className="h-12 w-full rounded-xl border-2 border-brand/70 bg-white pl-11 pr-20 text-sm outline-none transition placeholder:text-muted focus:border-brand" />
-      <button className="absolute right-1.5 top-1/2 h-9 -translate-y-1/2 rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-dark">Ara</button>
+        className="h-12 w-full rounded-full border-2 border-transparent bg-ground pl-11 pr-20 text-[15px] outline-none transition placeholder:text-muted hover:border-line focus:border-ink focus:bg-white" />
+      <button className="absolute right-1.5 top-1/2 h-9 -translate-y-1/2 rounded-full bg-ink px-5 text-sm font-semibold text-white transition hover:bg-brand">Ara</button>
 
       {show && (
         <div id={panelId} className="absolute inset-x-0 top-full z-50 mt-2 max-h-[70vh] overflow-y-auto rounded-2xl border border-line bg-white p-2 shadow-xl">
@@ -66,7 +66,7 @@ export function SearchBox() {
               {[...hits.categories.map((c) => ({ ...c, kind: "Kategori" })), ...hits.brands.map((b) => ({ ...b, kind: "Marka" }))].map((l) => (
                 <li key={l.href}>
                   <Link href={l.href} onClick={close} className="flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-sm hover:border-brand hover:text-brand">
-                    <span className="text-[11px] font-semibold uppercase text-muted">{l.kind}</span>{l.name}
+                    <span className="text-xs text-muted">{l.kind}</span>{l.name}
                   </Link>
                 </li>
               ))}
@@ -86,7 +86,7 @@ export function SearchBox() {
                   </Link>
                 </li>
               ))}
-              <li><button className="w-full rounded-xl p-2 text-left text-sm font-semibold text-brand hover:bg-ground">“{term}” için tüm sonuçlar →</button></li>
+              <li><button className="w-full rounded-xl p-2 text-left text-sm font-semibold text-brand hover:bg-ground">“{term}” için tüm sonuçlar</button></li>
             </ul>
           )}
         </div>

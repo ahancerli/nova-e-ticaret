@@ -37,6 +37,14 @@ export interface RateLimiter {
   clientKey(req: Request): Promise<string>;
 }
 
+export interface CaptchaGuard {
+  /**
+   * Checks the request's CAPTCHA token for a protected form (e.g. "login"). No-op while protection is off or the form
+   * is not selected; throws a 4xx AppError for a missing / rejected token.
+   */
+  assert(req: Request, form: string): Promise<void>;
+}
+
 export interface IdempotencyStore {
   /**
    * Runs `fn` at most once per (scope, Idempotency-Key header). Same key + same body → stored response;
@@ -57,6 +65,7 @@ export interface RequestContext {
 export const AuthenticatorToken = token<Authenticator>("Authenticator");
 export const OriginGuardToken = token<OriginGuard>("OriginGuard");
 export const RateLimiterToken = token<RateLimiter>("RateLimiter");
+export const CaptchaGuardToken = token<CaptchaGuard>("CaptchaGuard");
 export const IdempotencyStoreToken = token<IdempotencyStore>("IdempotencyStore");
 export const RequestContextToken = token<RequestContext>("RequestContext");
 export const LoggerToken = token<Logger>("Logger");

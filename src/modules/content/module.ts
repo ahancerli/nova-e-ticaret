@@ -2,7 +2,7 @@ import { ClockToken, DatabaseToken, IdGeneratorToken, token, type Container, typ
 import { AuditLogToken } from "@/modules/audit/audit-log";
 import { GetTemplateVariablesToken } from "@/modules/settings";
 import {
-  CreatePage, DeletePage, GetCheckoutLegal, GetSignupLegal, GetFooterLinks, GetPage, GetPageRevision, GetPublishedPage, ListPages, UpdatePage, type ContentCommandDeps,
+  CreatePage, DeletePage, GetAcceptedContracts, GetCheckoutLegal, GetCookiePolicy, GetSignupLegal, GetFooterLinks, GetPage, GetPageRevision, GetPublishedPage, ListPages, UpdatePage, type ContentCommandDeps,
 } from "./application/content-use-cases";
 import type { ContentRepository } from "./application/ports";
 import { D1ContentRepository } from "./infrastructure/d1-content.repository";
@@ -17,7 +17,9 @@ export const DeletePageToken = token<DeletePage>("DeletePage");
 export const GetPublishedPageToken = token<GetPublishedPage>("GetPublishedPage");
 export const GetFooterLinksToken = token<GetFooterLinks>("GetFooterLinks");
 export const GetCheckoutLegalToken = token<GetCheckoutLegal>("GetCheckoutLegal");
+export const GetCookiePolicyToken = token<GetCookiePolicy>("GetCookiePolicy");
 export const GetSignupLegalToken = token<GetSignupLegal>("GetSignupLegal");
+export const GetAcceptedContractsToken = token<GetAcceptedContracts>("GetAcceptedContracts");
 
 export function registerContent(c: Container): void {
   const deps = (r: Resolver): ContentCommandDeps => ({
@@ -33,5 +35,7 @@ export function registerContent(c: Container): void {
   c.scoped(GetPublishedPageToken, (r) => new GetPublishedPage(r.resolve(ContentRepositoryToken), r.resolve(GetTemplateVariablesToken)));
   c.scoped(GetFooterLinksToken, (r) => new GetFooterLinks(r.resolve(ContentRepositoryToken)));
   c.scoped(GetCheckoutLegalToken, (r) => new GetCheckoutLegal(r.resolve(ContentRepositoryToken)));
+  c.scoped(GetCookiePolicyToken, (r) => new GetCookiePolicy(r.resolve(ContentRepositoryToken)));
   c.scoped(GetSignupLegalToken, (r) => new GetSignupLegal(r.resolve(ContentRepositoryToken)));
+  c.scoped(GetAcceptedContractsToken, (r) => new GetAcceptedContracts(r.resolve(ContentRepositoryToken), r.resolve(GetTemplateVariablesToken)));
 }

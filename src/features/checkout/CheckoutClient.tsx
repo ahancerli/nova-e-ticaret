@@ -2,17 +2,23 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useCart } from "@/features/cart/CartProvider";
 import { PromotionRows } from "@/features/cart/CartSummary";
 import { ClientApiError, errorMessage, newIdempotencyKey } from "@/lib/api-client";
 import { useFieldErrors } from "@/lib/use-field-errors";
 import { checkoutApi } from "./api";
+import { quoteItems, rememberPurchase } from "@/features/consent/commerce";
+import { track } from "@/features/consent/track";
+import { toAmount } from "@/modules/consent/domain/events";
 import { formatMinor } from "@/lib/money";
 import type { CheckoutLegal } from "@/modules/content";
 import type { PaymentOptions } from "@/modules/payments";
+import { PhoneField } from "@/features/geo/PhoneField";
+import { RegionFields } from "@/features/geo/RegionFields";
 import { BankAccounts } from "./BankAccounts";
 import { CheckoutGate } from "./CheckoutGate";
+import type { AddressView } from "@/modules/addresses";
 
 export interface CheckoutCustomer {
   email: string;
@@ -34,7 +40,10 @@ const METHODS = [
  * Checkout. A visitor first chooses: sign in, continue as a guest (no account required, spec R13) or sign up; a
  * signed-in customer gets the form prefilled. All amounts come from the server; only enabled payment methods are offered.
  */
-export function CheckoutClient({ legal, payment, customer }: { legal: CheckoutLegal; payment: PaymentOptions; customer: CheckoutCustomer | null }) {
+export function CheckoutClient({ legal, payment, customer, addresses = [] }: { legal: CheckoutLegal; payment: PaymentOptions; customer: CheckoutCustomer | null; addresses?: AddressView[] }) {
+  // Saved address (Hesabım › Adreslerim) prefilled; picking another one re-mounts the fields with its values.
+  const [pick, setPick] = useState<string | null>(addresses.find((a) => a.isDefaultShipping)?.id ?? addresses[0]?.id ?? null);
+  const picked = addresses.find((a) => a.id === pick) ?? null;
   const { cart, refresh } = useCart();
   const router = useRouter();
   const methods = METHODS.filter((m) => (m.value === "iyzico" ? payment.card : payment.bankTransfer));
@@ -47,6 +56,13 @@ export function CheckoutClient({ legal, payment, customer }: { legal: CheckoutLe
   const storedGuest = useSyncExternalStore(noSubscribe, readGuest, () => false);
   const [chosen, setGuest] = useState<boolean | null>(null);
   const guest = chosen ?? storedGuest;
+  // begin_checkout once per visit of the payment step, as soon as the cart has loaded
+  const checkoutTracked = useRef(false);
+  useEffect(() => {
+    if (checkoutTracked.current || cart.lines.length === 0) return;
+    checkoutTracked.current = true;
+    track({ name: "begin_checkout", items: quoteItems(cart), value: toAmount(cart.totalMinor), coupon: cart.couponCode });
+  }, [cart]);
 
   if (cart.lines.length === 0 && !busy) {
     return (
@@ -71,7 +87,7 @@ export function CheckoutClient({ legal, payment, customer }: { legal: CheckoutLe
     const f = new FormData(e.currentTarget);
     const s = (k: string) => String(f.get(k) ?? "").trim();
     const addr = (p: string) => ({
-      recipientName: s(`${p}name`), phone: s("phone"), province: s(`${p}province`), district: s(`${p}district`),
+      recipientName: s(`${p}name`), phone: s("phone"), countryCode: s(`${p}country`) || undefined, province: s(`${p}province`), district: s(`${p}district`),
       line1: s(`${p}line1`), postalCode: s(`${p}postal`) || undefined,
     });
     try {
@@ -82,13 +98,14 @@ export function CheckoutClient({ legal, payment, customer }: { legal: CheckoutLe
         return;
       }
       const res = await checkoutApi.confirm({
-        checkoutId: quote.data.checkoutId, paymentMethod: method, email: s("email"), phone: s("phone"),
+        checkoutId: quote.data.checkoutId, paymentMethod: method, email: s("email"), phone: s("phone"), phoneCountry: s("phoneCountry") || undefined,
         shipping: addr("s_"), billing: sameBilling ? undefined : addr("b_"), note: s("note") || undefined,
         acceptedTermsVersion: legal.termsVersion,
       }, idemKey);
       // The server converted the cart in the same transaction as the order: show the empty cart before leaving
       // (the provider lives in the layout and would otherwise keep the old lines until a full reload).
       try { sessionStorage.removeItem(GUEST_KEY); } catch { /* ignore */ }
+      rememberPurchase(res.data.orderNumber, quote.data.quote);
       await refresh().catch(() => undefined);
       if (res.data.payment?.paymentPageUrl) {
         window.location.assign(res.data.payment.paymentPageUrl);
@@ -121,12 +138,22 @@ export function CheckoutClient({ legal, payment, customer }: { legal: CheckoutLe
           )}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field name="email" label="E-posta" type="email" auto="email" err={fe("email")} defaultValue={customer?.email} readOnly={!!customer} />
-            <Field name="phone" label="Cep telefonu (+905…)" type="tel" auto="tel" err={fe("phone")} />
+            <PhoneField key={`phone-${pick ?? "new"}`} id="phone" name="phone" label="Cep telefonu" required error={fe("phone")} defaultValue={picked?.phone} defaultCountry={picked?.countryCode} />
           </div>
         </section>
         <section className="card space-y-4 p-5" aria-labelledby="c-ship">
           <h2 id="c-ship" className="font-semibold">Teslimat adresi</h2>
-          <AddressFields p="s_" kind="shipping" fe={fe} name={customer?.name} />
+          {addresses.length > 0 && (
+            <div role="radiogroup" aria-label="Kayıtlı adreslerim" className="flex flex-wrap gap-2">
+              {[...addresses.map((a) => ({ id: a.id as string | null, label: a.label, sub: `${a.district} / ${a.province}` })), { id: null, label: "Yeni adres", sub: "Elle gir" }].map((o) => (
+                <button key={o.id ?? "new"} type="button" role="radio" aria-checked={pick === o.id} onClick={() => setPick(o.id)}
+                  className={`rounded-2xl border-2 px-3.5 py-2 text-left text-sm transition ${pick === o.id ? "border-ink bg-ink text-white" : "border-line hover:border-ink"}`}>
+                  <span className="block font-semibold">{o.label}</span><span className="block text-xs opacity-75">{o.sub}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <AddressFields key={pick ?? "new"} p="s_" kind="shipping" fe={fe} name={customer?.name} saved={picked} />
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="h-4 w-4 accent-brand" checked={sameBilling} onChange={(e) => setSameBilling(e.target.checked)} /> Fatura adresim aynı</label>
         </section>
         {!sameBilling && (
@@ -204,14 +231,14 @@ function Field({ name, label, type = "text", auto, err, defaultValue, readOnly }
   );
 }
 
-function AddressFields({ p, kind, fe, name }: { p: string; kind: "shipping" | "billing"; fe: (k: string) => string | undefined; name?: string }) {
+function AddressFields({ p, kind, fe, name, saved }: { p: string; kind: "shipping" | "billing"; fe: (k: string) => string | undefined; name?: string; saved?: AddressView | null }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      <Field name={`${p}name`} label="Ad soyad" auto={`${kind} name`} err={fe(`${kind}.recipientName`)} defaultValue={name} />
-      <Field name={`${p}province`} label="İl" auto={`${kind} address-level1`} err={fe(`${kind}.province`)} />
-      <Field name={`${p}district`} label="İlçe" auto={`${kind} address-level2`} err={fe(`${kind}.district`)} />
-      <Field name={`${p}postal`} label="Posta kodu" auto={`${kind} postal-code`} err={fe(`${kind}.postalCode`)} />
-      <div className="sm:col-span-2"><Field name={`${p}line1`} label="Adres" auto={`${kind} street-address`} err={fe(`${kind}.line1`)} /></div>
+      <RegionFields id={`${p}region`} name={p} autoSection={kind} defaultValue={saved}
+        errors={{ countryCode: fe(`${kind}.countryCode`), province: fe(`${kind}.province`), district: fe(`${kind}.district`) }} />
+      <Field name={`${p}name`} label="Ad soyad" auto={`${kind} name`} err={fe(`${kind}.recipientName`)} defaultValue={saved?.recipientName ?? name} />
+      <Field name={`${p}postal`} label="Posta kodu" auto={`${kind} postal-code`} err={fe(`${kind}.postalCode`)} defaultValue={saved?.postalCode ?? undefined} />
+      <div className="sm:col-span-2"><Field name={`${p}line1`} label="Adres" auto={`${kind} street-address`} err={fe(`${kind}.line1`)} defaultValue={saved ? [saved.line1, saved.line2].filter(Boolean).join(", ") : undefined} /></div>
     </div>
   );
 }

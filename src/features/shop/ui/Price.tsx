@@ -19,7 +19,7 @@ export function Price({ priceMinor, compareAtMinor, campaignPriceMinor = null, s
           <span className="rounded bg-brand-soft px-1 font-bold text-brand-dark">%{pct}</span>
         </p>
       )}
-      <p className={`font-bold tabular-nums text-ink ${size === "lg" ? "text-2xl" : "text-base"}`}>
+      <p className={`font-display font-extrabold tabular-nums tracking-tight text-ink ${size === "lg" ? "text-3xl" : "text-lg"}`}>
         {pct > 0 && <span className="sr-only">İndirimli fiyat: </span>}{formatMinor(priceMinor)}
       </p>
       {campaignPriceMinor != null && campaignPriceMinor < priceMinor && (

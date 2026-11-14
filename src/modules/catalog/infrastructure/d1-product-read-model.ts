@@ -1,6 +1,7 @@
 import { Repository, bool } from "@/core";
 import type { ProductReadModel } from "../application/products/ports";
 import { DEFAULT_PRICE_LIST, DEFAULT_WAREHOUSE, type ProductEditorData, type ProductListRow } from "../domain/product";
+import { priceCapsSql } from "./price-history-sql";
 import { LOCKED_VARIANT_SQL } from "./product-sql";
 
 type ListRaw = {
@@ -15,7 +16,7 @@ type ProductRaw = {
 type VariantRaw = {
   id: string; sku: string; barcode: string | null; name: string | null; is_active: number; is_default: number; weight_grams: number | null;
   width_mm: number | null; height_mm: number | null; depth_mm: number | null; unit_price_minor: number | null; compare_at_minor: number | null; min_price_minor: number | null;
-  on_hand: number; reserved: number; locked: number;
+  lowest_prior_minor: number | null; lowest_30d_minor: number | null; on_hand: number; reserved: number; locked: number;
 };
 type ValueRaw = { attribute_id: string; text_value: string | null; number_value: number | null; boolean_value: number | null; option_id: string | null };
 
@@ -54,7 +55,7 @@ export class D1ProductReadModel extends Repository implements ProductReadModel {
       st(`SELECT pm.media_id, m.public_url, pm.is_primary FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
            WHERE pm.product_id = ? AND pm.variant_id IS NULL ORDER BY pm.sort_order, pm.id`, id),
       st("SELECT attribute_id FROM product_variant_axes WHERE product_id = ? ORDER BY sort_order", id),
-      st(`SELECT v.*, vp.unit_price_minor, vp.compare_at_minor, vp.min_price_minor, COALESCE(ib.on_hand, 0) AS on_hand, COALESCE(ib.reserved, 0) AS reserved,
+      st(`SELECT v.*, vp.unit_price_minor, vp.compare_at_minor, vp.min_price_minor, ${priceCapsSql("vp")}, COALESCE(ib.on_hand, 0) AS on_hand, COALESCE(ib.reserved, 0) AS reserved,
                  ${LOCKED_VARIANT_SQL} AS locked
             FROM product_variants v
             LEFT JOIN variant_prices vp ON vp.variant_id = v.id AND vp.price_list_id = ?
@@ -94,7 +95,8 @@ export class D1ProductReadModel extends Repository implements ProductReadModel {
       variants: rows<VariantRaw>(varQ).map((v) => ({
         id: v.id, sku: v.sku, barcode: v.barcode, name: v.name,
         options: Object.fromEntries(variantOptions.filter((o) => o.variant_id === v.id).map((o) => [o.attribute_id, o.option_id])),
-        priceMinor: v.unit_price_minor ?? 0, compareAtMinor: v.compare_at_minor, minPriceMinor: v.min_price_minor, stock: v.on_hand, reserved: v.reserved,
+        priceMinor: v.unit_price_minor ?? 0, compareAtMinor: v.compare_at_minor, minPriceMinor: v.min_price_minor,
+        priceCaps: { lowestPriorMinor: v.lowest_prior_minor, lowest30dMinor: v.lowest_30d_minor }, stock: v.on_hand, reserved: v.reserved,
         isActive: bool(v.is_active), isDefault: bool(v.is_default),
         weightGrams: v.weight_grams, widthMm: v.width_mm, heightMm: v.height_mm, depthMm: v.depth_mm, locked: bool(v.locked),
         media: variantMedia.get(v.id) ?? [],

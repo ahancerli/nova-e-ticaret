@@ -3,6 +3,7 @@ import { AdminShell } from "@/features/admin-shell/AdminShell";
 import type { SidebarEntry, SidebarGroup } from "@/features/admin-shell/AdminSidebar";
 import { ConfigToken } from "@/core";
 import { GetStaffRolesToken } from "@/modules/identity";
+import { GetPublicSupportConfigToken } from "@/modules/support";
 import { currentPrincipal, resolveService } from "@/server/app";
 
 export const dynamic = "force-dynamic";
@@ -32,8 +33,11 @@ const NAV: Array<{ title: string; items: NavEntry[] }> = [
     items: [
       { type: "link", href: "/admin", label: "Dashboard", perm: "orders.read", icon: "dashboard" },
       { type: "link", href: "/admin/siparisler", label: "Siparişler", perm: "orders.read", icon: "orders" },
+      { type: "link", href: "/admin/iadeler", label: "İadeler", perm: "orders.read", icon: "returns" },
+      { type: "link", href: "/admin/faturalar", label: "Faturalar", perm: "orders.read", icon: "invoices" },
       { type: "link", href: "/admin/musteriler", label: "Müşteriler", perm: "customers.read", icon: "customers" },
       { type: "link", href: "/admin/yorumlar", label: "Ürün yorumları", perm: "reviews.moderate", icon: "reviews" },
+      { type: "link", href: "/admin/canli-destek", label: "Canlı destek", perm: "support.chat", icon: "support" },
       { type: "link", href: "/admin/bildirimler", label: "Bildirimler", icon: "notifications" },
     ],
   },
@@ -60,6 +64,7 @@ const NAV: Array<{ title: string; items: NavEntry[] }> = [
     title: "YÖNETİM",
     items: [
       { type: "link", href: "/admin/odemeler", label: "Ödeme sistemleri", perm: "payments.secrets", icon: "payments" },
+      { type: "link", href: "/admin/kargo-ucretleri", label: "Kargo ücretleri", perm: "settings.write", icon: "shipping" },
       {
         type: "nest",
         label: "Entegrasyonlar",
@@ -70,6 +75,7 @@ const NAV: Array<{ title: string; items: NavEntry[] }> = [
           { type: "link", href: "/admin/entegrasyonlar/sms", label: "SMS entegrasyonları", perm: "integrations.write", icon: "integrations" },
           { type: "link", href: "/admin/entegrasyonlar/kargo", label: "Kargo entegrasyonları", perm: "integrations.write", icon: "integrations" },
           { type: "link", href: "/admin/entegrasyonlar/pazaryerleri", label: "Pazaryerleri", perm: "integrations.write", icon: "integrations" },
+          { type: "link", href: "/admin/entegrasyonlar/cerez-onayi", label: "Çerez onayı & izleme", perm: "integrations.write", icon: "integrations" },
         ],
       },
       { type: "link", href: "/admin/kullanicilar", label: "Kullanıcılar", perm: "users.manage", icon: "users" },
@@ -99,11 +105,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     return { title: group.title, items };
   }).filter((g) => g.items.length > 0);
 
-  const [roles, config] = await Promise.all([
+  const can = (p: string) => user.permissions.has(p);
+  const [roles, config, support] = await Promise.all([
     resolveService(GetStaffRolesToken).then((q) => q.execute(user.id)),
     resolveService(ConfigToken),
+    can("support.chat") ? resolveService(GetPublicSupportConfigToken).then((q) => q.execute()) : null,
   ]);
-  const can = (p: string) => user.permissions.has(p);
 
   return (
     <AdminShell
@@ -111,6 +118,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       groups={groups}
       quickCreate={{ product: can("catalog.write"), category: can("catalog.write"), brand: can("catalog.write"), page: can("content.write") }}
       env={config.isProduction ? "production" : "development"}
+      support={Boolean(support?.enabled)}
     >
       {children}
     </AdminShell>

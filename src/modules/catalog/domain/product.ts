@@ -58,6 +58,8 @@ export interface EditorVariant {
   compareAtMinor: number | null;
   /** Floor price for campaigns (null = none). */
   minPriceMinor: number | null;
+  /** 30-day lowest price rule, read only: cap of the current price and the cap a price change made now would get. */
+  priceCaps?: { lowestPriorMinor: number | null; lowest30dMinor: number | null };
   stock: number;
   reserved: number;
   isActive: boolean;

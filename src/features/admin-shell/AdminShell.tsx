@@ -15,6 +15,7 @@ import { Portal } from "@/components/ui/Portal";
 import { AdminSidebar, iconMap, type SidebarGroup } from "@/features/admin-shell/AdminSidebar";
 import { CommandPalette, type PaletteItem } from "@/features/admin-shell/CommandPalette";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
+import { SupportDock } from "@/features/support/SupportDock";
 
 export type ShellUser = { displayName: string; email: string; roles: string[] };
 export type QuickCreate = { product: boolean; category: boolean; brand: boolean; page: boolean };
@@ -26,7 +27,12 @@ function initials(name: string) {
 }
 
 /** Admin chrome: sidebar (fixed on desktop, sliding drawer on mobile), sticky top bar, command palette. */
-export function AdminShell({ user, groups, quickCreate, env, children }: { user: ShellUser; groups: SidebarGroup[]; quickCreate: QuickCreate; env: "development" | "production"; children: ReactNode }) {
+export function AdminShell({ user, groups, quickCreate, env, support = false, children }: {
+  user: ShellUser; groups: SidebarGroup[]; quickCreate: QuickCreate; env: "development" | "production";
+  /** Live support dock (module on + `support.chat`). */
+  support?: boolean;
+  children: ReactNode;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -213,6 +219,7 @@ export function AdminShell({ user, groups, quickCreate, env, children }: { user:
       </div>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />
+      {support && <SupportDock />}
     </div>
   );
 }

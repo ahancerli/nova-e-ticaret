@@ -1,8 +1,9 @@
 import { AppError, UnitOfWork, hmacHex, type Authenticator, type Clock, type Database, type IdGenerator, type Logger, type Statement } from "@/core";
 import type { Quote } from "@/lib/types";
+import type { GeoDirectory } from "@/modules/geo";
 import {
   CheckoutErrors, PAYABLE_ORDER_STATUSES, RESERVATION_MINUTES, initialOrderStatus, quoteHash, reservationMinutes,
-  type ConfirmInput, type PaymentMethod,
+  type AddressInput, type ConfirmInput, type PaymentMethod,
 } from "../domain/checkout";
 import type { CheckoutRepository } from "./ports";
 
@@ -20,6 +21,7 @@ export interface CheckoutDeps {
   auth: Authenticator;
   clock: Clock;
   ids: IdGenerator;
+  geo: GeoDirectory;
   secret: string;
 }
 
@@ -52,8 +54,9 @@ export class CreateCheckoutQuote {
 export class ConfirmCheckout {
   constructor(private readonly deps: CheckoutDeps) {}
 
-  async execute(input: ConfirmInput) {
+  async execute(raw: ConfirmInput) {
     const { cart, checkout, clock, ids, auth } = this.deps;
+    const input = await this.checked(raw);
     const ref = await cart.current();
     if (!ref) throw CheckoutErrors.cartEmpty();
     const session = await checkout.findSession(input.checkoutId, ref.id);
@@ -88,6 +91,17 @@ export class ConfirmCheckout {
       }, () => ids.newId()))
       .commit();
     return { orderId, orderNumber, paymentId, totalMinor: quote.totalMinor, paymentMethod: input.paymentMethod as PaymentMethod };
+  }
+
+  /** Country rules: phones → E.164, Turkish province / district → canonical names from the lists. */
+  private async checked(input: ConfirmInput): Promise<ConfirmInput> {
+    const { geo } = this.deps;
+    const phone = await geo.phone("phone", input.phone, input.phoneCountry);
+    const address = async (path: string, a: AddressInput): Promise<AddressInput> => ({
+      ...a, ...(await geo.region(path, a)),
+      phone: a.phone === input.phone ? phone : await geo.phone(`${path}.phone`, a.phone, input.phoneCountry ?? a.countryCode),
+    });
+    return { ...input, phone, shipping: await address("shipping", input.shipping), billing: input.billing && (await address("billing", input.billing)) };
   }
 }
 

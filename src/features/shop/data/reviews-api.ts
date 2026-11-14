@@ -8,6 +8,8 @@ const product = (slug: string) => `/api/products/${encodeURIComponent(slug)}/rev
 
 export const reviewsApi = {
   eligibility: (slug: string) => api<ReviewEligibility>(`${product(slug)}/eligibility`).then((r) => r.data),
-  submit: (slug: string, input: ReviewInput) => api<{ id: string; status: "pending" | "approved"; unchanged: boolean }>(product(slug), { method: "POST", json: input }).then((r) => r.data),
+  /** `headers` = CAPTCHA token from `useCaptcha("review")` (empty when protection is off). */
+  submit: (slug: string, input: ReviewInput, headers?: Record<string, string>) =>
+    api<{ id: string; status: "pending" | "approved"; unchanged: boolean }>(product(slug), { method: "POST", json: input, headers }).then((r) => r.data),
   vote: (id: string, helpful: boolean) => api<{ helpfulCount: number; voted: boolean }>(`/api/reviews/${encodeURIComponent(id)}/vote`, { method: "POST", json: { helpful } }).then((r) => r.data),
 };

@@ -39,6 +39,8 @@ export interface ContentRepository {
   findPublished(slug: string): Promise<PublishedRow | null>;
   footerLinks(): Promise<{ column: FooterColumn; title: string; slug: string }[]>;
   publishedLegal(types: LegalType[]): Promise<{ legalType: LegalType; slug: string; title: string; version: number }[]>;
+  /** The text of a legal page at a given version (its revision), or the current text when that version is gone. */
+  legalAtVersion(type: LegalType, version: number): Promise<{ title: string; bodyHtml: string; updatedAt: string } | null>;
 
   insertStatement(id: string, page: PageRecord, actorId: string, now: string): Statement;
   /** Guarded by the version the editor loaded: 0 rows changed = someone else saved in between. */

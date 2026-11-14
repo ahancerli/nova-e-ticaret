@@ -2,7 +2,7 @@ import { ClockToken, DatabaseToken, token, type Container } from "@/core";
 import { GetProductPromotionsToken } from "@/modules/pricing";
 import type { StorefrontReadModel } from "./application/ports";
 import {
-  GetBrandPage, GetCategoryPage, GetComparison, GetFacets, GetHome, GetProductDetail, GetShell, GetSimilarProducts, ListActiveBrands, ListActiveCategories, ListCatalogProducts, SearchSuggest,
+  GetBrandPage, GetCategoryPage, GetComparison, GetFacets, GetHome, GetProductDetail, GetShell, GetSimilarProducts, GetSitemap, ListActiveBrands, ListActiveCategories, ListCatalogProducts, SearchSuggest,
 } from "./application/storefront-queries";
 import { D1StorefrontReadModel } from "./infrastructure/d1-storefront.read-model";
 
@@ -19,6 +19,7 @@ export const GetCategoryPageToken = token<GetCategoryPage>("GetCategoryPage");
 export const ListActiveBrandsToken = token<ListActiveBrands>("ListActiveBrands");
 export const ListActiveCategoriesToken = token<ListActiveCategories>("ListActiveCategories");
 export const SearchSuggestToken = token<SearchSuggest>("SearchSuggest");
+export const GetSitemapToken = token<GetSitemap>("GetSitemap");
 
 export function registerStorefront(c: Container): void {
   c.scoped(StorefrontReadModelToken, (r) => new D1StorefrontReadModel(r.resolve(DatabaseToken)));
@@ -33,5 +34,6 @@ export function registerStorefront(c: Container): void {
   c.scoped(GetCategoryPageToken, (r) => new GetCategoryPage(r.resolve(StorefrontReadModelToken)));
   c.scoped(ListActiveBrandsToken, (r) => new ListActiveBrands(r.resolve(StorefrontReadModelToken)));
   c.scoped(ListActiveCategoriesToken, (r) => new ListActiveCategories(r.resolve(StorefrontReadModelToken)));
+  c.scoped(GetSitemapToken, (r) => new GetSitemap(r.resolve(StorefrontReadModelToken)));
   c.scoped(SearchSuggestToken, (r) => new SearchSuggest(r.resolve(StorefrontReadModelToken), r.resolve(GetProductPromotionsToken)));
 }

@@ -4,6 +4,6 @@ export { placeholdersIn, renderTemplate } from "./domain/template";
 export { LEGAL_TEMPLATES } from "./domain/legal-templates";
 export { pageCreateSchema, pageUpdateSchema, revisionParams } from "./http/schemas";
 export {
-  CreatePageToken, DeletePageToken, GetCheckoutLegalToken, GetSignupLegalToken, GetFooterLinksToken, GetPageRevisionToken, GetPageToken, GetPublishedPageToken, ListPagesToken,
+  CreatePageToken, DeletePageToken, GetAcceptedContractsToken, GetCheckoutLegalToken, GetCookiePolicyToken, GetSignupLegalToken, GetFooterLinksToken, GetPageRevisionToken, GetPageToken, GetPublishedPageToken, ListPagesToken,
   UpdatePageToken, registerContent,
 } from "./module";

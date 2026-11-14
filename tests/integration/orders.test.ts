@@ -42,6 +42,7 @@ identity.registerIdentity(root);
 audit.registerAudit(root);
 pricing.registerPricing(root);
 cart.registerCart(root);
+(await mod("geo/index")).registerGeo(root);
 checkout.registerCheckout(root);
 orders.registerOrders(root);
 root.singleton(identityModule.SessionCookiesToken, () => cookies);

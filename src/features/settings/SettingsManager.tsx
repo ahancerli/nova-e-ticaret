@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { BadgeCheck, Building2, ExternalLink, Globe2, Palette, PanelBottom, Phone, Plus, Save, Search, Share2, X, type LucideIcon } from "lucide-react";
+import { BadgeCheck, Building2, ExternalLink, Globe2, Palette, PanelBottom, Phone, Plus, Save, Search, Share2, ShieldCheck, X, type LucideIcon } from "lucide-react";
 import { notify } from "@/lib/toast";
 import { useFieldErrors } from "@/lib/use-field-errors";
 import { AdminCard, AdminPageHeader } from "@/components/admin/ui";
@@ -138,6 +139,13 @@ export function SettingsManager({ initial, initialGroup }: { initial: AdminSetti
                 </li>
               );
             })}
+            {/* own page: keys + widget check, not a key/value group */}
+            <li className="flex-none lg:mt-2 lg:border-t lg:border-slate-200 lg:pt-2">
+              <Link href="/admin/ayarlar/bot-korumasi" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-600 transition hover:bg-white/70">
+                <ShieldCheck className="size-4 flex-none text-slate-400" aria-hidden />
+                <span className="whitespace-nowrap">Bot koruması</span>
+              </Link>
+            </li>
           </ul>
         </nav>
 

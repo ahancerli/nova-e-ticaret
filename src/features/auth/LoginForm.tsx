@@ -5,6 +5,8 @@ import { useState } from "react";
 import { errorMessage } from "@/lib/api-client";
 import { authApi, type LoginAudience } from "./api";
 import { safeInternalPath } from "@/lib/safe-redirect";
+import { track } from "@/features/consent/track";
+import { useCaptcha } from "@/features/captcha/useCaptcha";
 
 interface LoginFormProps {
   audience: LoginAudience;
@@ -36,6 +38,8 @@ export function LoginForm({
   const prefillEmail = params.get("email")?.slice(0, 254) ?? undefined;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // no CaptchaProvider outside the storefront layout → inactive for other audiences
+  const captcha = useCaptcha("login");
   const target = safeInternalPath(next, fallbackTarget);
   const formBase = card ? "card space-y-4 p-6" : "space-y-4";
   const inputBase = inputClassName ?? "input";
@@ -47,16 +51,19 @@ export function LoginForm({
       setBusy(true); setError(null);
       const f = new FormData(e.currentTarget);
       try {
-        await authApi.login(audience, { email: String(f.get("email")), password: String(f.get("password")) });
+        await authApi.login(audience, { email: String(f.get("email")), password: String(f.get("password")) }, await captcha.headers());
+        if (audience === "storefront") track({ name: "login", method: "email" });
         router.replace(target);
         router.refresh();
       } catch (err) {
         setError(errorMessage(err, "Giriş yapılamadı."));
+        captcha.reset();
       } finally { setBusy(false); }
     }}>
       <div><label htmlFor="email" className="mb-1 block text-sm font-medium">E-posta</label><input id="email" name="email" type="email" required autoComplete="username" placeholder={emailPlaceholder} defaultValue={prefillEmail} className={inputBase} /></div>
       <div><label htmlFor="password" className="mb-1 block text-sm font-medium">Parola</label><input id="password" name="password" type="password" required autoComplete="current-password" placeholder={passwordPlaceholder} className={inputBase} /></div>
-      {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+      {captcha.slot}
+      {(error ?? captcha.error) && <p role="alert" className="text-sm text-danger">{error ?? captcha.error}</p>}
       <button className={buttonBase} disabled={busy}>{busy ? "Giriş yapılıyor…" : submitLabel}</button>
     </form>
   );

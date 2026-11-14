@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { GetProductDetailToken, GetSimilarProductsToken } from "@/modules/storefront";
+import { ChevronRight, House } from "lucide-react";
+import { GetProductDetailToken, GetShellToken, GetSimilarProductsToken } from "@/modules/storefront";
 import { resolveService } from "@/server/app";
-import { ProductGrid, ProductInfoTabs, SimilarProducts, VariantPicker } from "@/features/shop";
+import { ProductGrid, ProductInfoTabs, SimilarProducts, VariantPicker, deptTone, menuIndexOf } from "@/features/shop";
 import { GetProductReviewsToken } from "@/modules/reviews";
+import { TrackEvent } from "@/features/consent/commerce";
 
 const getProductBySlug = async (slug: string) => (await resolveService(GetProductDetailToken)).execute(slug);
 
@@ -23,11 +25,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ProductPage({ params, searchParams }: Props) {
   const p = await getProductBySlug((await params).slug);
   if (!p) notFound();
-  const [reviews, similar, { degerlendir }] = await Promise.all([
+  const [reviews, similar, shell, { degerlendir }] = await Promise.all([
     (await resolveService(GetProductReviewsToken)).execute(p.id, {}),
     (await resolveService(GetSimilarProductsToken)).execute(p.id, { pageSize: 12 }),
+    resolveService(GetShellToken).then((q) => q.execute()),
     searchParams,
   ]);
+  // Department colour of the product's category tints the gallery and accents the page.
+  const leaf = p.breadcrumb.at(-1)?.slug;
+  const dept = deptTone(leaf ? menuIndexOf(shell.header, shell.categories, { categorySlug: leaf }) : null).bg;
   const def = p.variants.find((v) => v.isDefault) ?? p.variants[0];
   const jsonLd = {
     "@context": "https://schema.org",
@@ -46,21 +52,25 @@ export default async function ProductPage({ params, searchParams }: Props) {
   };
 
   return (
-    <div className="container-page py-6">
-      <nav aria-label="Sayfa yolu" className="mb-4 text-xs text-muted">
-        <ol className="flex flex-wrap gap-1">
-          <li><Link href="/" className="hover:underline">Ana sayfa</Link></li>
-          {p.breadcrumb.map((b) => <li key={b.slug}>/ <Link href={`/kategori/${b.slug}`} className="hover:underline">{b.name}</Link></li>)}
+    <div className="container-page py-5 md:py-7" style={{ "--dept": dept } as React.CSSProperties}>
+      <nav aria-label="Sayfa yolu" className="mb-4 text-[13px] text-ink-soft md:mb-5">
+        <ol className="flex flex-wrap items-center gap-1.5">
+          <li><Link href="/" className="flex items-center hover:text-ink" aria-label="Ana sayfa"><House className="size-4" /></Link></li>
+          {p.breadcrumb.map((b) => <li key={b.slug} className="flex items-center gap-1.5"><ChevronRight className="size-3.5 opacity-60" aria-hidden /><Link href={`/kategori/${b.slug}`} className="font-medium hover:text-ink">{b.name}</Link></li>)}
         </ol>
       </nav>
       <VariantPicker product={p} />
+      <TrackEvent id={p.id} event={{
+        name: "view_item",
+        item: { id: def?.sku || p.id, name: p.name, brand: p.brandName, category: p.breadcrumb.at(-1)?.name ?? null, price: (def?.priceMinor ?? 0) / 100, quantity: 1 },
+      }} />
 
       <ProductInfoTabs p={p} reviews={reviews} openReviews={degerlendir === "1"} />
       <SimilarProducts slug={p.slug} products={similar.items} total={similar.total} />
 
       {p.related.length > 0 && (
         <section className="mt-12" aria-labelledby="related">
-          <h2 id="related" className="mb-4 text-xl font-bold">Bunlar da ilgini çekebilir</h2>
+          <h2 id="related" className="mb-5 font-display text-[22px] font-extrabold tracking-[-0.02em] md:text-[28px]">Bunlar da ilgini çekebilir</h2>
           <ProductGrid products={p.related} />
         </section>
       )}

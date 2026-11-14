@@ -1,3 +1,4 @@
+import { shownCompareAtSql } from "@/modules/catalog";
 import { DEFAULT_PRICE_LIST } from "@/modules/catalog/domain/product";
 import type { ProductCard } from "@/lib/types";
 import type { SortKey } from "../application/ports";
@@ -25,8 +26,8 @@ export const CARD_SELECT = `
            WHERE pm.product_id = p.id ORDER BY pm.variant_id IS NOT NULL, pm.is_primary DESC, dv.is_default DESC, pm.sort_order LIMIT 1) AS image_alt,
          (SELECT MIN(vp.unit_price_minor) FROM product_variants v JOIN variant_prices vp ON vp.variant_id = v.id AND vp.price_list_id = ${PL}
            WHERE v.product_id = p.id AND v.is_active = 1) AS min_price,
-         (SELECT vp.compare_at_minor FROM product_variants v JOIN variant_prices vp ON vp.variant_id = v.id AND vp.price_list_id = ${PL}
-           WHERE v.product_id = p.id AND v.is_active = 1 ORDER BY v.is_default DESC LIMIT 1) AS compare_at,
+         (SELECT ${shownCompareAtSql("vp")} FROM product_variants v JOIN variant_prices vp ON vp.variant_id = v.id AND vp.price_list_id = ${PL}
+           WHERE v.product_id = p.id AND v.is_active = 1 ORDER BY vp.unit_price_minor, v.is_default DESC LIMIT 1) AS compare_at,
          (SELECT v.id FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1 ORDER BY v.is_default DESC LIMIT 1) AS default_variant_id,
          (SELECT COUNT(*) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) AS variant_count,
          EXISTS (SELECT 1 FROM product_variants v JOIN inventory_balances ib ON ib.variant_id = v.id

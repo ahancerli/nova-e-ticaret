@@ -29,6 +29,7 @@ export const PERMISSION_GROUPS: { key: string; label: string; permissions: Permi
       { code: "campaigns.write", label: "Kampanya ve kupon", description: "İndirim kuralları ve kuponlar." },
       { code: "content.write", label: "İçerik yönetimi", description: "Yasal metinler, kurumsal ve yardım sayfaları." },
       { code: "reviews.moderate", label: "Ürün yorumları", description: "Yorumları yayınlama / reddetme, mağaza yanıtı, müşteriyle iletişim, yorum ayarları." },
+      { code: "support.chat", label: "Canlı destek", description: "Üyelerin canlı destek mesajlarını görme ve yanıtlama, konuşma kapatma." },
     ],
   },
   {

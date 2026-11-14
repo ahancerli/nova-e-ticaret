@@ -3,6 +3,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { errorMessage } from "@/lib/api-client";
 import { cartApi } from "./api";
+import { lineItem } from "../consent/commerce";
+import { track } from "../consent/track";
+import { toAmount } from "@/modules/consent/domain/events";
 import type { Quote } from "@/lib/types";
 
 const EMPTY: Quote = { currency: "TRY", lines: [], adjustments: [], promotions: [], couponCode: null, subtotalMinor: 0, discountMinor: 0, shippingMinor: 0, taxMinor: 0, totalMinor: 0, itemCount: 0, warnings: [] };
@@ -83,15 +86,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     () => ({
       cart, version, ready, lastAdded, open, busy, error, setOpen, refresh,
       add: async (variantId, quantity = 1) => {
-        const added = await run(() => cartApi.add(variantId, quantity));
+        let after: Quote | null = null;
+        const added = await run(async () => { const r = await cartApi.add(variantId, quantity); after = r.data; return r; });
         if (added) { setLastAdded(variantId); setOpenState(true); } // spec: no redirect, open right drawer
+        const line = (after as Quote | null)?.lines.find((l) => l.variantId === variantId);
+        if (added && line) {
+          const item = lineItem(line, quantity);
+          track({ name: "add_to_cart", items: [item], value: toAmount(Math.round(item.price * 100) * quantity) });
+        }
         return added;
       },
       update: async (itemId, quantity) => {
         await run(() => cartApi.update(itemId, quantity));
       },
       remove: async (itemId) => {
-        await run(() => cartApi.remove(itemId));
+        const line = cart.lines.find((l) => l.cartItemId === itemId);
+        if ((await run(() => cartApi.remove(itemId))) && line) track({ name: "remove_from_cart", items: [lineItem(line)], value: toAmount(line.totalMinor) });
       },
       applyCoupon: (code) => run(() => cartApi.applyCoupon(code)),
       removeCoupon: async () => {

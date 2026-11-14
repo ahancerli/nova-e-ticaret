@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { SignupForm } from "@/features/auth/SignupForm";
+import { AuthShell } from "@/features/shop";
 import { GetSignupLegalToken } from "@/modules/content";
 import { safeInternalPath } from "@/lib/safe-redirect";
 import { currentPrincipal, resolveService } from "@/server/app";
@@ -11,10 +13,10 @@ export default async function SignupPage({ searchParams }: { searchParams: Promi
   if (await currentPrincipal("storefront")) redirect(next);
   const legal = await (await resolveService(GetSignupLegalToken)).execute();
   return (
-    <div className="container-page max-w-lg py-12">
-      <h1 className="text-2xl font-bold">Üye ol</h1>
-      <p className="mb-6 mt-1 text-sm text-ink-soft">Siparişlerinizi takip edin, adreslerinizi kaydedin, ödemeyi daha hızlı tamamlayın.</p>
+    <AuthShell title="Aramıza katıl" subtitle="Ücretsiz üye ol, siparişlerini takip et, ödemeyi daha hızlı tamamla.">
+      <h2 className="mb-6 font-display text-2xl font-extrabold tracking-tight">Üye ol</h2>
       <SignupForm legal={legal} next={next} />
-    </div>
+      <p className="mt-6 text-center text-sm text-ink-soft">Zaten üye misin? <Link href="/giris" className="font-bold text-brand hover:underline">Giriş yap</Link></p>
+    </AuthShell>
   );
 }

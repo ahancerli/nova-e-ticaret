@@ -11,6 +11,7 @@ const [identity, identityModule, pricing, cart, checkout, orders, platform, secr
   mod("platform/module"), mod("platform/secrets"), mod("audit/audit-log"), mod("outbox/index"), mod("payments/index"), mod("shipping/index"), mod("notifications/notifications"),
   mod("integrations/index"), mod("settings/index"),
 ]);
+const [content, mail] = await Promise.all([mod("content/index"), mod("mail/index")]);
 const {
   Container, SqlDatabaseAdapter, DatabaseToken, ClockToken, IdGeneratorToken, LoggerToken, EnvToken, ConfigToken, FixedClock, CryptoIdGenerator, JsonLogger,
   buildConfig, encryptSecret, hmacHex,
@@ -66,13 +67,17 @@ identity.registerIdentity(root);
 audit.registerAudit(root);
 pricing.registerPricing(root);
 cart.registerCart(root);
+(await mod("geo/index")).registerGeo(root);
 checkout.registerCheckout(root);
 orders.registerOrders(root);
 payments.registerPayments(root);
 settings.registerSettings(root);
 integrations.registerIntegrations(root);
 shipping.registerShipping(root);
+content.registerContent(root);
 notifications.registerNotifications();
+const mails: any[] = [];
+root.singleton(mail.MailSenderToken, () => ({ send: async (m: any) => { mails.push(m); return "sent"; } }));
 root.singleton(identityModule.SessionCookiesToken, () => cookies);
 root.singleton(payments.PaymentGatewayToken, () => gateway);
 const scope = () => root.createScope().provide(EnvToken, { DB: d1, SESSION_SECRET: "s3cret", SECRETS_MASTER_KEY: MASTER, PUBLIC_SITE_URL: "https://nova.test" });

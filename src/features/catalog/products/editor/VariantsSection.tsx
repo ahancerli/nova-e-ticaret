@@ -6,6 +6,7 @@ import { formatMinor } from "@/lib/money";
 import { notify } from "@/lib/toast";
 import type { AttributeMeta } from "@/modules/catalog";
 import { classifyBarcode } from "@/modules/catalog/domain/attribute";
+import { shownCompareAt } from "@/lib/product-rules";
 import { attributesApi } from "@/features/catalog/attributes/api";
 import { MediaGallery, type GalleryItem } from "@/features/media/MediaGallery";
 import { Collapsible } from "@/components/ui/Collapsible";
@@ -489,9 +490,21 @@ function BarcodeHint({ code }: { code: string }) {
   return k.valid ? <span className="text-slate-500">{k.kind === "custom" ? "Mağaza kodu" : `${k.kind} · geçerli`}</span> : <span className="text-amber-700">{k.kind} kontrol hanesi hatalı; pazaryerleri reddedebilir.</span>;
 }
 
+/** What the shop will really strike through: the old price capped by the 30-day lowest price rule. */
 function Discount({ v }: { v: VariantState }) {
   const price = strToMinor(v.price), compare = strToMinor(v.compareAt);
   if (price == null || compare == null || Number.isNaN(price) || Number.isNaN(compare) || compare <= price) return null;
-  return <span className="text-emerald-600">%{Math.round(100 - (price / compare) * 100)} indirim gösterilir</span>;
+  // Unchanged price keeps its cap; a new price gets the lowest price of the last 30 days (the current one included).
+  const cap = !v.caps ? null : v.caps.priceMinor === price ? v.caps.lowestPriorMinor : v.caps.lowest30dMinor;
+  const shown = shownCompareAt(price, compare, cap);
+  const rule = "Son 30 günün en düşük fiyatı kuralı (Ticaret Bakanlığı): üstü çizili fiyat, indirimden önceki 30 günde uygulanan en düşük fiyatı geçemez.";
+  if (shown == null) {
+    const why = cap == null ? "bu varyantın önceki fiyatı yok" : `son 30 günde uygulanan en düşük fiyat ${formatMinor(cap)}`;
+    return <span className="text-amber-700" title={rule}>Vitrinde indirim gösterilmez: {why}.</span>;
+  }
+  const pct = Math.round(100 - (price / shown) * 100);
+  return shown < compare
+    ? <span className="text-amber-700" title={rule}>Vitrinde {formatMinor(shown)} üstü çizili, %{pct} indirim gösterilir (son 30 günün en düşük fiyatı).</span>
+    : <span className="text-emerald-600" title={rule}>%{pct} indirim gösterilir</span>;
 }
 

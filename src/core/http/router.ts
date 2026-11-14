@@ -5,6 +5,7 @@ import type { Logger } from "../logging/logger";
 import { errorResponse } from "./error-response";
 import {
   AuthenticatorToken,
+  CaptchaGuardToken,
   IdempotencyStoreToken,
   LoggerToken,
   OriginGuardToken,
@@ -29,7 +30,7 @@ import { Reply, jsonResponse, type SuccessBody } from "./reply";
  *
  * Every request passes the same pipeline (Chain of Responsibility), in this order:
  *   error boundary → request scope → rate limit → origin/CSRF → authentication/authorization
- *   → params/query/body validation → idempotency → handler → envelope.
+ *   → params/query/body validation → CAPTCHA → idempotency → handler → envelope.
  * Handlers contain no cross-cutting code; they receive validated input and resolve their use case from DI.
  */
 
@@ -66,11 +67,17 @@ export interface RouteDefinition<P, Q, B, R> {
   bodyLimit?: number;
   /** Counts every request: `limit` per `windowSec` per caller IP. */
   rateLimit?: { name: string; limit: number; windowSec: number };
+  /**
+   * Bot protection: the form key ("signup", "login", …) checked by the CaptchaGuard after validation, so an invalid
+   * form never spends the provider call. The guard decides from the panel settings whether the form is protected.
+   */
+  captcha?: string;
   /** Requires an Idempotency-Key header; the scope may include path params (e.g. `order.action:<id>`). */
   idempotency?: { scope: (input: { params: P; user: Principal | null }) => string };
   /** Default "no-store" for anything that is not public. */
   cacheControl?: string;
-  handle(ctx: HandlerContext<P, Q, B>): Promise<R | Reply<R>>;
+  /** A returned `Response` (e.g. an event stream) is sent as is; not combinable with `idempotency`. */
+  handle(ctx: HandlerContext<P, Q, B>): Promise<R | Reply<R> | Response>;
 }
 
 type NextContext = { params: Promise<Record<string, string | string[] | undefined>> };
@@ -117,10 +124,12 @@ export function createRouter(options: RouterOptions) {
         const params = def.params ? def.params.parse(await nextCtx.params) : ({} as P);
         const query = def.query ? def.query.parse(Object.fromEntries(url.searchParams)) : ({} as Q);
         const body = def.body ? def.body.parse(await readJsonBody(req, def.bodyLimit ?? DEFAULT_BODY_LIMIT)) : (undefined as B);
+        if (def.captcha) await scope.resolve(CaptchaGuardToken).assert(req, def.captcha);
 
         const ctx: HandlerContext<P, Q, B> = { req, params, query, body, user, requestId, logger, resolve: (t) => scope.resolve(t) };
         const run = async () => {
           const out = await def.handle(ctx);
+          if (out instanceof Response) throw new Error("idempotent routes cannot return a raw Response");
           return out instanceof Reply ? out : new Reply(out);
         };
 
@@ -134,7 +143,9 @@ export function createRouter(options: RouterOptions) {
           result = new Reply(stored.data.data, stored.status, stored.data.meta);
           replayed = stored.replayed;
         } else {
-          result = await run();
+          const out = await def.handle(ctx);
+          if (out instanceof Response) return out; // streams (SSE) bypass the JSON envelope
+          result = out instanceof Reply ? out : new Reply(out);
         }
 
         const payload: SuccessBody<R> = { data: result.data, meta: result.meta, requestId };

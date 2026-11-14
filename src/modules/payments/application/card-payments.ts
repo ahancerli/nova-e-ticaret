@@ -14,7 +14,10 @@ export interface RefundFinaliser {
 }
 
 const addressLine = (a: Address) => [a.line1, a.line2, a.district].filter(Boolean).join(", ");
-const toProviderAddress = (a: Address) => ({ contactName: a.recipientName, city: a.province, address: addressLine(a), zipCode: a.postalCode ?? undefined });
+// iyzico expects the country as an English name ("Turkey", "Germany").
+const englishCountry = new Intl.DisplayNames(["en"], { type: "region" });
+const countryName = (code: string) => (code === "TR" ? "Turkey" : englishCountry.of(code) ?? code);
+const toProviderAddress = (a: Address) => ({ contactName: a.recipientName, city: a.province, country: countryName(a.countryCode), address: addressLine(a), zipCode: a.postalCode ?? undefined });
 
 /**
  * Command: starts the hosted card form for a pending card payment (after the order transaction committed).
@@ -42,7 +45,7 @@ export class StartCardPayment {
       callbackUrl: `${this.publicSiteUrl}/api/payments/iyzico/callback`,
       buyer: {
         id: p.userId ?? `guest-${p.orderId}`, name: name ?? "Müşteri", surname: rest.join(" ") || "-", gsmNumber: p.customerPhone ?? undefined,
-        email: p.customerEmail, ip: buyerIp, city: p.billing.province, registrationAddress: addressLine(p.billing),
+        email: p.customerEmail, ip: buyerIp, city: p.billing.province, country: countryName(p.billing.countryCode), registrationAddress: addressLine(p.billing),
       },
       shippingAddress: toProviderAddress(p.shipping),
       billingAddress: toProviderAddress(p.billing),

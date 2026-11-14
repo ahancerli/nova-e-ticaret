@@ -3,6 +3,8 @@
 // A job never overlaps itself: the next run is planned only after the previous one has answered.
 //   APP_URL       base URL of the app (Docker: http://app:3000, local: http://localhost:3000)
 //   CRON_SECRET   same value as the app
+//   HEARTBEAT_URL optional uptime check (healthchecks.io, Better Stack heartbeat, Uptime Kuma push): pinged every
+//                 5 minutes while /api/health answers, <url>/fail when it does not. Missing pings = server down alarm.
 import { loadEnv, requireEnv } from "./env.mjs"
 
 loadEnv()
@@ -11,6 +13,8 @@ requireEnv("CRON_SECRET")
 const BASE = (process.env.APP_URL || "http://localhost:3000").replace(/\/$/, "")
 const SECRET = process.env.CRON_SECRET
 const TIMEOUT_MS = 120_000
+const HEARTBEAT_URL = (process.env.HEARTBEAT_URL || "").replace(/\/$/, "")
+const HEARTBEAT_EVERY_MS = 300_000
 
 /** path → interval in seconds (README §2 "Zamanlanmış işler"). */
 const JOBS = [
@@ -47,6 +51,22 @@ function schedule(job, delayMs) {
 	}, delayMs)
 }
 
+async function heartbeat() {
+	let healthy = false
+	try {
+		healthy = (await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(10_000) })).ok
+	} catch {
+		// app or database not answering → report failure
+	}
+	try {
+		await fetch(healthy ? HEARTBEAT_URL : `${HEARTBEAT_URL}/fail`, { method: "POST", signal: AbortSignal.timeout(10_000) })
+		if (!healthy) log("warn", "heartbeat reported failure", { reason: "/api/health not ok" })
+	} catch (e) {
+		log("warn", "heartbeat not delivered", { error: e instanceof Error ? e.message : String(e) })
+	}
+	setTimeout(heartbeat, HEARTBEAT_EVERY_MS)
+}
+
 async function waitForApp() {
 	for (;;) {
 		try {
@@ -64,6 +84,7 @@ await waitForApp()
 log("info", "started", { jobs: JOBS.map((j) => `${j.path} every ${j.every}s`) })
 // spread the first runs a little so they do not all hit the database in the same second
 JOBS.forEach((job, i) => schedule(job, 2000 + i * 3000))
+if (HEARTBEAT_URL) void heartbeat()
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
 	process.on(signal, () => {

@@ -25,9 +25,13 @@ import { registerBulk } from "@/modules/bulk";
 import { registerMarketplaces } from "@/modules/marketplaces";
 import { registerMessaging } from "@/modules/messaging";
 import { registerCampaigns } from "@/modules/campaigns";
+import { registerCaptcha } from "@/modules/captcha";
 import { registerCart } from "@/modules/cart";
 import { registerCatalog } from "@/modules/catalog";
 import { registerCheckout } from "@/modules/checkout";
+import { registerAddresses } from "@/modules/addresses";
+import { registerGeo } from "@/modules/geo";
+import { registerConsent } from "@/modules/consent";
 import { registerContent } from "@/modules/content";
 import { registerCustomers } from "@/modules/customers";
 import { GetCurrentPrincipalToken, registerIdentity } from "@/modules/identity";
@@ -42,13 +46,17 @@ import { registerPlatform } from "@/modules/platform/module";
 import { registerSecrets } from "@/modules/platform/secrets";
 import { registerPricing } from "@/modules/pricing";
 import { registerReporting } from "@/modules/reporting";
+import { registerInvoices } from "@/modules/invoices";
+import { registerReturns } from "@/modules/returns";
 import { registerReviews } from "@/modules/reviews";
 import { registerSettings } from "@/modules/settings";
-import { registerShipping } from "@/modules/shipping";
+import { registerShipping, registerShippingRates } from "@/modules/shipping";
 import { registerShowcase } from "@/modules/showcase";
+import { registerSupport } from "@/modules/support";
 import { registerStaff } from "@/modules/staff";
 import { registerStorefront } from "@/modules/storefront";
 import { getEnv } from "./env";
+import { errorReporter } from "./error-reporter";
 
 /**
  * Composition root: the only place that knows concrete implementations.
@@ -59,7 +67,8 @@ export const container = new Container();
 const isDev = () => process.env.NODE_ENV !== "production";
 
 // --- infrastructure (singletons are stateless; per-request things are scoped) ---------------------
-container.singleton(LoggerToken, () => new JsonLogger({ level: isDev() ? "debug" : "info" }));
+// every `error` line also goes to the error monitor when SENTRY_DSN is set (src/server/error-reporter.ts)
+container.singleton(LoggerToken, () => new JsonLogger({ level: isDev() ? "debug" : "info", report: errorReporter().fromLog }));
 container.singleton(ClockToken, () => new SystemClock());
 container.singleton(IdGeneratorToken, () => new CryptoIdGenerator());
 container.scoped(ConfigToken, (c) => buildConfig(c.resolve(EnvToken), process.env));
@@ -76,12 +85,19 @@ registerMedia(container);
 registerAi(container); // single AI provider + "AI ile ürün ekle" (images via MediaLibrary)
 registerMail(container); // SMTP settings + MailSender port (identity: password reset e-mails)
 registerSettings(container);
+registerCaptcha(container); // bot protection: CaptchaGuard behind route({ captcha }) + Ayarlar › Bot koruması
 registerPanelNotifications(container); // bell + Bildirimler; NotificationPublisher for reviews, order / payment outbox handlers
 registerContent(container); // {{placeholders}} from settings
+registerConsent(container); // cookie consent (KVKK banner + proof) and tracking tags; cookie policy version from content
 registerCustomers(container); // members + storefront sign-up (consent versions from content)
 registerCatalog(container);
 registerStorefront(container);
+registerAddresses(container); // Hesabım › Adreslerim + checkout address picker
+registerGeo(container); // countries + phone rules, provinces, districts (sign-up, addresses, checkout)
+registerInvoices(container); // e-Arşiv faturalar: panel attach (PDF in private storage), customer download + e-mail
+registerReturns(container); // iade (cayma hakkı) talepleri: customer request → panel decision → order refund
 registerReviews(container); // product reviews & ratings: moderation, store reply, reviewer contact (mail + notifications)
+registerSupport(container); // Canlı destek: member ↔ staff chat, live events via GraphQL subscription over SSE (in-process hub)
 registerPricing(container);
 registerCampaigns(container);
 registerBulk(container);
@@ -94,6 +110,7 @@ registerOrders(container);
 registerPayments(container); // + outbox handler refund.process
 registerIntegrations(container); // SMS / cargo firm catalog, settings, adapters (runtime port for shipping + notifications)
 registerShipping(container); // + outbox handler order.shipped (carrier booking), tracking sync
+registerShippingRates(container); // Kargo ücretleri (panel)
 registerReporting(container);
 registerNotifications(); // + customer / staff notification handlers
 

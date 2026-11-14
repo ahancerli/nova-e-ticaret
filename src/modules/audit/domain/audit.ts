@@ -19,20 +19,20 @@ export type AuditArea = keyof typeof AUDIT_AREAS;
 /** First action segment → area. Anything not listed (e.g. seed rows) is "other". */
 export const AREA_OF_PREFIX: Record<string, Exclude<AuditArea, "all" | "other">> = {
   category: "catalog", brand: "catalog", product: "catalog", media: "catalog", attribute: "catalog", barcode: "catalog", bulk: "catalog", product_feed: "catalog",
-  order: "orders",
+  order: "orders", return: "orders", invoice: "orders",
   campaign: "campaigns", coupon: "campaigns", pricing_policy: "campaigns",
   content: "content", showcase: "content", review: "content", review_settings: "content",
   staff: "accounts", role: "accounts", customer: "accounts", account: "accounts",
-  settings: "settings", notification_rule: "settings", ai_integration: "settings", mail_integration: "settings", payment: "settings", bank_account: "settings", integration: "settings", marketplace: "settings", ai: "catalog",
+  settings: "settings", captcha: "settings", notification_rule: "settings", ai_integration: "settings", mail_integration: "settings", payment: "settings", bank_account: "settings", shipping_method: "settings", integration: "settings", marketplace: "settings", consent: "settings", tracking_tag: "settings", ai: "catalog",
 };
 
 export const areaOf = (action: string): Exclude<AuditArea, "all"> => AREA_OF_PREFIX[action.split(".")[0] ?? ""] ?? "other";
 
 export const ENTITY_LABELS: Record<string, string> = {
   category: "Kategori", brand: "Marka", product: "Ürün", media: "Görsel", order: "Sipariş", campaign: "Kampanya", coupon: "Kupon",
-  content_page: "İçerik sayfası", showcase: "Vitrin", user: "Kullanıcı", role: "Rol", site_settings: "Site ayarları", ai_integration: "AI entegrasyonu", mail_integration: "E-posta (SMTP)",
-  review: "Ürün yorumu", review_settings: "Yorum ayarları", notification_rule: "Bildirim ayarları",
-  payment_config: "Ödeme yöntemi", bank_account: "Banka hesabı", integration: "Entegrasyon", marketplace: "Pazaryeri bağlantısı", pricing_policy: "Kampanya kuralları", bulk_job: "Toplu işlem", attribute: "Özellik", product_feed: "Ürün kaynağı (XML / REST)",
+  content_page: "İçerik sayfası", showcase: "Vitrin", user: "Kullanıcı", role: "Rol", site_settings: "Site ayarları", captcha_settings: "Bot koruması", ai_integration: "AI entegrasyonu", mail_integration: "E-posta (SMTP)",
+  review: "Ürün yorumu", review_settings: "Yorum ayarları", notification_rule: "Bildirim ayarları", support_conversation: "Canlı destek konuşması", support_settings: "Canlı destek ayarları",
+  payment_config: "Ödeme yöntemi", return_request: "İade talebi", invoice: "Fatura", bank_account: "Banka hesabı", shipping_method: "Kargo ücreti", integration: "Entegrasyon", marketplace: "Pazaryeri bağlantısı", pricing_policy: "Kampanya kuralları", bulk_job: "Toplu işlem", attribute: "Özellik", product_feed: "Ürün kaynağı (XML / REST)",
 };
 
 const VERB_LABELS: Record<string, string> = {
@@ -57,16 +57,22 @@ const ACTION_LABELS: Record<string, string> = {
   "settings.update": "Site ayarları güncellendi", "seed.insert": "Kurulum verisi",
   "review.approve": "Yorum yayınlandı", "review.reject": "Yorum reddedildi", "review.hide": "Yorum yayından kaldırıldı", "review.reply": "Yoruma mağaza yanıtı verildi",
   "review.reply_delete": "Mağaza yanıtı kaldırıldı", "review.contact": "Yorum sahibiyle iletişime geçildi", "review.contact_status": "Yorumun iletişim durumu değişti",
-  "review_settings.update": "Yorum ayarları güncellendi", "notification_rule.update": "Bildirim ayarları güncellendi",
+  "review_settings.update": "Yorum ayarları güncellendi",
+  "support.close": "Canlı destek konuşması kapatıldı", "support.reopen": "Canlı destek konuşması yeniden açıldı", "support_settings.update": "Canlı destek ayarları güncellendi", "notification_rule.update": "Bildirim ayarları güncellendi",
   "ai_integration.create": "AI entegrasyonu eklendi", "ai_integration.update": "AI entegrasyonu güncellendi", "ai_integration.delete": "AI entegrasyonu kaldırıldı",
-  "mail_integration.create": "E-posta (SMTP) ayarı eklendi", "mail_integration.update": "E-posta (SMTP) ayarı güncellendi", "mail_integration.delete": "E-posta (SMTP) ayarı kaldırıldı",
+  "captcha.update": "Bot koruması ayarı güncellendi", "mail_integration.create": "E-posta (SMTP) ayarı eklendi", "mail_integration.update": "E-posta (SMTP) ayarı güncellendi", "mail_integration.delete": "E-posta (SMTP) ayarı kaldırıldı",
   "ai.product_generate": "AI ile ürün içeriği oluşturuldu",
   "payment.iyzico_keys": "iyzico anahtarları güncellendi", "payment.card_activate": "Kartla ödeme açıldı", "payment.card_deactivate": "Kartla ödeme kapatıldı",
   "payment.bank_transfer_activate": "Havale / EFT açıldı", "payment.bank_transfer_deactivate": "Havale / EFT kapatıldı",
   "marketplace.create": "Pazaryeri bağlandı", "marketplace.update": "Pazaryeri bağlantısı güncellendi", "marketplace.delete": "Pazaryeri bağlantısı silindi",
   "marketplace.mapping": "Pazaryeri eşleştirmesi değişti", "marketplace.listings_add": "Pazaryerine ürün eklendi",
   "marketplace.listings_pause": "Pazaryerinde satış durduruldu", "marketplace.listings_resume": "Pazaryerinde satış açıldı",
+  "invoice.create": "Fatura eklendi", "invoice.cancel": "Fatura iptal edildi",
+  "return.approve": "İade talebi onaylandı", "return.reject": "İade talebi reddedildi", "return.receive": "İade ürünü teslim alındı", "return.refund": "İade talebinin parası ödendi",
+  "shipping_method.create": "Kargo ücreti eklendi", "shipping_method.update": "Kargo ücreti güncellendi", "shipping_method.delete": "Kargo ücreti silindi",
   "integration.create": "Entegrasyon bağlandı", "integration.update": "Entegrasyon güncellendi", "integration.delete": "Entegrasyon kaldırıldı",
+  "consent.update": "Çerez onayı ayarları güncellendi", "consent.renew": "Çerez onayı ziyaretçilere yeniden soruldu",
+  "tracking_tag.create": "İzleme etiketi eklendi", "tracking_tag.update": "İzleme etiketi güncellendi", "tracking_tag.delete": "İzleme etiketi kaldırıldı",
 };
 
 const SUBJECT_LABELS: Record<string, string> = {
@@ -116,11 +122,15 @@ export function entityHref(entityType: string, entityId: string | null, opts: { 
     case "user": return opts.isStaff ? `/admin/kullanicilar/${id}` : `/admin/musteriler/${id}`;
     case "role": return "/admin/kullanicilar/roller";
     case "site_settings": return "/admin/ayarlar";
+    case "captcha_settings": return "/admin/ayarlar/bot-korumasi";
+    case "support_conversation": return `/admin/canli-destek?konusma=${id}`;
+    case "support_settings": return "/admin/canli-destek";
     case "showcase": return "/admin/vitrin";
     case "ai_integration": return "/admin/entegrasyonlar/ai";
     case "mail_integration": return "/admin/entegrasyonlar/e-posta";
     case "payment_config": case "bank_account": return "/admin/odemeler";
     case "marketplace": return `/admin/entegrasyonlar/pazaryerleri/${entityId}`;
+    case "consent_settings": case "tracking_tag": return "/admin/entegrasyonlar/cerez-onayi";
     case "integration": return entityId === "sms" ? "/admin/entegrasyonlar/sms" : entityId === "shipping" ? "/admin/entegrasyonlar/kargo" : null;
     default: return null;
   }

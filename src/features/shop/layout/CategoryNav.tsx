@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { CategoryNode } from "@/lib/types";
 import type { NavItem } from "@/modules/storefront";
+import { deptColor } from "../ui/department";
 import { Thumb } from "../ui/Thumb";
 import { findCategory } from "./category-tree";
 
@@ -10,20 +11,22 @@ const MAX_LINKS = 6;
  * Desktop category bar with mega menus, fully server-rendered: hover / keyboard focus opens a panel through
  * CSS only (group-hover, group-focus-within), so it works before hydration and ships no JS. A header item
  * linked to a category shows that category's subtree (children as columns, grandchildren as links, menu
- * image on the right); a manual item shows its own children.
+ * image on the right); a manual item shows its own children. Each item carries its department colour (dot,
+ * hover underline, panel accent).
  */
 export function CategoryNav({ nav, categories }: { nav: NavItem[]; categories: CategoryNode[] }) {
   return (
     <nav aria-label="Kategoriler" className="relative hidden border-b border-line bg-white md:block">
       <ul className="container-page flex items-stretch justify-between">
-        {nav.map((item) => {
+        {nav.map((item, i) => {
           const node = item.categorySlug ? findCategory(categories, item.categorySlug) : null;
           const columns = node?.children.length ? node.children : null;
           const hasPanel = Boolean(columns || item.children.length);
           return (
-            <li key={item.id} className="group flex flex-1">
+            <li key={item.id} className="group flex flex-1" style={{ "--dept": deptColor(i) } as React.CSSProperties}>
               <Link href={item.href} aria-haspopup={hasPanel || undefined}
-                className="flex w-full items-center justify-center border-b-2 border-transparent px-2 py-3 text-center text-sm font-medium leading-tight text-ink-soft transition group-hover:border-brand group-hover:text-brand group-focus-within:border-brand group-focus-within:text-brand">
+                className="flex w-full items-center justify-center gap-2 border-b-[3px] border-transparent px-2 py-3 text-center text-sm font-semibold leading-tight text-ink-soft transition group-hover:border-[var(--dept)] group-hover:text-ink group-focus-within:border-[var(--dept)] group-focus-within:text-ink">
+                <span aria-hidden className="size-2 flex-none rounded-full bg-[var(--dept)]" />
                 {item.label}
               </Link>
               {hasPanel && (
@@ -69,12 +72,12 @@ function CategoryColumns({ node }: { node: CategoryNode }) {
             <img src={node.menuImageUrl} alt={node.name} loading="lazy" className="aspect-[4/3] w-full object-cover" />
           </Link>
         ) : (
-          <Link href={node.href} className="flex aspect-[4/3] flex-col justify-end rounded-2xl bg-gradient-to-br from-brand to-brand-dark p-5 text-white">
-            <span className="text-xs font-semibold uppercase tracking-wider text-white/80">Keşfet</span>
-            <span className="text-xl font-extrabold leading-tight">{node.name}</span>
+          <Link href={node.href} className="flex aspect-[4/3] flex-col justify-end rounded-2xl bg-[var(--dept)] p-5 text-white">
+            <span className="text-sm font-medium text-white/85">Keşfet</span>
+            <span className="font-display text-2xl font-extrabold leading-tight">{node.name}</span>
           </Link>
         )}
-        <Link href={node.href} className="mt-3 block text-sm font-semibold text-brand hover:text-brand-dark">Tüm {node.name} ürünleri →</Link>
+        <Link href={node.href} className="mt-3 block text-sm font-semibold text-ink underline decoration-[var(--dept)] decoration-2 underline-offset-4">Tüm {node.name} ürünleri</Link>
       </div>
     </>
   );

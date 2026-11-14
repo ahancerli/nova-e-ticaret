@@ -15,6 +15,7 @@ import {
   LayoutGrid,
   Megaphone,
   MessageSquareText,
+  MessagesSquare,
   MonitorCog,
   Package,
   PlugZap,
@@ -22,6 +23,9 @@ import {
   ShoppingCart,
   Tags,
   UsersRound,
+  ReceiptText,
+  Truck,
+  Undo2,
 } from "lucide-react";
 import { Collapsible } from "@/components/ui/Collapsible";
 
@@ -42,7 +46,11 @@ export type SidebarIcon =
   | "content"
   | "audit"
   | "reviews"
-  | "notifications";
+  | "notifications"
+  | "support"
+  | "shipping"
+  | "returns"
+  | "invoices";
 
 type SidebarLink = {
   type: "link";
@@ -83,6 +91,10 @@ export const iconMap: Record<SidebarIcon, ComponentType<{ className?: string }>>
   audit: FileCheck2,
   reviews: MessageSquareText,
   notifications: Bell,
+  support: MessagesSquare,
+  shipping: Truck,
+  returns: Undo2,
+  invoices: ReceiptText,
 };
 
 function ItemIcon({ icon }: { icon: SidebarIcon }) {

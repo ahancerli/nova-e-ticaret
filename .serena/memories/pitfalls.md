@@ -1,5 +1,9 @@
 # Pitfalls
 - iCloud duplicates: project lives on iCloud-synced Desktop; files like `page 2.tsx`, `api 2.ts`, `module 2.ts`, `* 2.test.ts` appear (74 identical copies removed in commit a941400, 2026-11-04; they reappear while the repo stays on iCloud). They are stale copies — never edit/import them; search results may show both. `tsconfig` only ignores `.next/**/* ?.ts`.
+- Never run `npm run build` while the user's `npm run dev` may be running (both use `.next/`; the dev server dies). Ask first.
+- CAPTCHA widget hosts (`CAPTCHA_CSP` in `modules/captcha/domain/captcha.ts`) are in `frame-src` / `connect-src` of storefront AND admin (panel key check). A new CAPTCHA provider needs its hosts there, else the widget is silently blocked and protected forms fail with `captcha_required`.
+- Prod `litestream` runs as uid 1000 (= app `node` user) so the WAL/-shm files it may create stay writable for the app; `data-init` (busybox) chowns the fresh volume first because the app now starts after litestream. Litestream covers only `nova.db`, not `/data/uploads`.
+- Storefront CSP `connect-src` / `frame-src` include tracking vendor hosts from `TRACKING_CSP` (consent/domain/tags.ts); a vendor whose beacons go to an unlisted host is silently blocked.
 - `globals.css` must keep `@import "tailwindcss" source("..")` (scan src/ only): default root scan watches `.next/dev/logs` (written every request by Next 16) → endless dev reloads / e2e hangs.
 - `npm run dev` and local `docker compose` share `data/nova.db`: never run both (SQLite locks over Docker Desktop file sharing are unreliable). After schema-changing `db:*` commands restart the dev server.
 - Production without SESSION_SECRET/SECRETS_MASTER_KEY/CRON_SECRET → `ConfigError` at startup. `SECRETS_MASTER_KEY` must stay the same across moves, else sealed SMTP/AI/marketplace keys are unreadable.

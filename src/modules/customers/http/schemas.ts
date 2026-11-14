@@ -1,5 +1,6 @@
 import { z } from "zod";
 import "@/modules/shared/schemas";
+import { COUNTRY_CODE } from "@/modules/geo/domain/geo";
 import { CUSTOMER_SEGMENTS, CUSTOMER_SORTS, type CustomerSegment } from "../domain/customer";
 
 const phone = z.string().trim().max(20).regex(/^\+?[1-9][0-9 ]{6,18}$/, "Telefonu +90 5xx… biçiminde girin.").transform((v) => v.replace(/\s/g, ""));
@@ -28,7 +29,9 @@ export const signupSchema = z.object({
   firstName: z.string().trim().min(1, "Adınızı girin.").max(80),
   lastName: z.string().trim().min(1, "Soyadınızı girin.").max(80),
   email: z.email("Geçerli bir e-posta girin.").max(254),
-  phone: optionalPhone,
+  // checked against the chosen country's mobile rules by RegisterCustomer (geo_countries)
+  phone: z.string().trim().max(24).optional().transform((v) => v || null),
+  phoneCountry: z.string().regex(COUNTRY_CODE).optional(),
   password: z.string().min(1, "Parola girin.").max(200),
   kvkkAccepted: z.literal(true, { error: "Aydınlatma metnini okuduğunuzu onaylayın." }),
   marketingEmail: z.boolean().default(false),

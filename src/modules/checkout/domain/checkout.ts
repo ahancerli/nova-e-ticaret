@@ -14,6 +14,8 @@ export type PaymentMethod = "iyzico" | "bank_transfer";
 export interface AddressInput {
   recipientName: string;
   phone: string;
+  /** ISO-2, default TR. */
+  countryCode?: string;
   province: string;
   district: string;
   line1: string;
@@ -28,6 +30,7 @@ export interface ConfirmInput {
   paymentMethod: PaymentMethod;
   email: string;
   phone: string;
+  phoneCountry?: string;
   shipping: AddressInput;
   billing?: AddressInput;
   note?: string;

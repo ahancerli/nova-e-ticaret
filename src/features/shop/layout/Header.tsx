@@ -13,6 +13,7 @@ import { Wordmark } from "./Wordmark";
 
 const UTILITY_LINKS = [
   { href: "/hesabim", label: "Siparişlerim" },
+  { href: "/siparis-sorgula", label: "Sipariş sorgula" },
   { href: "/kampanyalar", label: "Kampanyalar" },
   { href: "/kategoriler", label: "Tüm kategoriler" },
   { href: "/markalar", label: "Markalar" },
@@ -27,29 +28,29 @@ export async function Header({ nav, categories, settings }: { nav: NavItem[]; ca
   const { siteName, logoUrl, tagline, announcement } = settings;
   return (
     <>
-      <div id="top" className="hidden border-b border-line bg-white md:block">
+      <div id="top" className="hidden bg-ink text-white md:block">
         <div className="container-page flex h-9 items-center justify-between gap-6 text-xs">
           {announcement?.text
-            ? (announcement.href ? <Link href={announcement.href} className="truncate font-semibold text-brand hover:underline">{announcement.text}</Link> : <span className="truncate font-semibold text-brand">{announcement.text}</span>)
+            ? (announcement.href ? <Link href={announcement.href} className="truncate font-medium hover:underline">{announcement.text}</Link> : <span className="truncate font-medium">{announcement.text}</span>)
             : <span />}
-          <ul className="flex flex-none items-center gap-5 text-ink-soft">
-            {UTILITY_LINKS.map((l) => <li key={l.href}><Link href={l.href} className="hover:text-brand">{l.label}</Link></li>)}
+          <ul className="flex flex-none items-center gap-5 text-white/70">
+            {UTILITY_LINKS.map((l) => <li key={l.href}><Link href={l.href} className="hover:text-white">{l.label}</Link></li>)}
           </ul>
         </div>
       </div>
       {announcement?.text && (
-        <div className="bg-brand px-4 py-2 text-center text-xs font-semibold text-white md:hidden">
+        <div className="bg-ink px-4 py-2 text-center text-xs font-medium text-white md:hidden">
           {announcement.href ? <Link href={announcement.href}>{announcement.text}</Link> : announcement.text}
         </div>
       )}
 
       {/* Sticky must be a direct child of the page flow — inside a wrapper it would scroll away with it. */}
       <header className="sticky top-0 z-40 bg-white shadow-[0_1px_0_var(--color-line)]">
-        <div className="container-page flex items-center gap-2 py-3 md:gap-8 md:py-4">
+        <div className="container-page flex items-center gap-2 py-3 md:gap-6 md:py-4 lg:gap-10">
           <MobileMenu nav={nav} categories={categories} siteName={siteName} logoUrl={logoUrl} signedIn={Boolean(user)} />
           <Link href="/" aria-label={`${siteName} ana sayfa`} className="flex shrink-0 flex-col">
             <Wordmark name={siteName} logoUrl={logoUrl} />
-            {tagline && <span className="hidden max-w-48 truncate text-[11px] font-semibold text-brand lg:block">{tagline}</span>}
+            {tagline && <span className="mt-1 hidden max-w-48 truncate text-[11px] font-medium text-ink-soft lg:block">{tagline}</span>}
           </Link>
           <div className="hidden max-w-2xl flex-1 md:block"><Suspense><SearchBox /></Suspense></div>
           <div className="ml-auto flex items-center gap-2 md:gap-3">
@@ -58,7 +59,7 @@ export async function Header({ nav, categories, settings }: { nav: NavItem[]; ca
           </div>
         </div>
         <div className="container-page pb-3 md:hidden"><Suspense><SearchBox /></Suspense></div>
-        <div aria-hidden className="h-[3px] bg-gradient-to-r from-brand via-brand to-navy" />
+        <div aria-hidden className="spectrum h-[3px]" />
         <CategoryNav nav={nav} categories={categories} />
       </header>
     </>
@@ -67,7 +68,7 @@ export async function Header({ nav, categories, settings }: { nav: NavItem[]; ca
 
 /** Signed in → account link; anonymous → sign-in with a hover/focus panel offering sign-up (CSS only). */
 function AccountMenu({ name }: { name: string | null }) {
-  const box = "flex h-11 items-center gap-2 rounded-xl border border-line px-3 text-left transition hover:border-brand";
+  const box = "flex h-11 items-center gap-2 rounded-full px-3 text-left transition hover:bg-ground";
   if (name) {
     return (
       <Link href="/hesabim" className={box} aria-label={`Hesabım, ${name}`}>

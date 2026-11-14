@@ -1,5 +1,6 @@
 import { UnitOfWork, ValidationError, type Clock, type Database, type IdGenerator, type RateLimiter } from "@/core";
 import type { AuditLog } from "@/modules/audit/audit-log";
+import type { GeoDirectory } from "@/modules/geo";
 import { accountLinkPath, passwordProblems, type CredentialWriter, type IssuedLink, type PasswordHasher, type SessionRepository } from "@/modules/identity";
 import type { Actor } from "@/modules/shared/actor";
 import { CustomerErrors } from "../domain/errors";
@@ -98,6 +99,7 @@ export interface SignupDeps {
   credentials: CredentialWriter;
   passwords: PasswordHasher;
   limiter: RateLimiter;
+  geo: GeoDirectory;
   legal: { execute(): Promise<{ consentVersion: string }> };
   audit: AuditLog;
   clock: Clock;
@@ -123,6 +125,7 @@ export class RegisterCustomer {
     const name = `${input.firstName.trim()} ${input.lastName.trim()}`.trim();
     const problems = passwordProblems(input.password, { email, name });
     if (problems.length) throw new ValidationError("weak_password", problems[0]!, { fieldErrors: { password: problems } });
+    const phone = input.phone?.trim() ? await deps.geo.phone("phone", input.phone, input.phoneCountry) : null;
     if (await deps.customers.emailExists(email)) throw CustomerErrors.emailTaken();
 
     const id = deps.ids.newId();
@@ -131,7 +134,7 @@ export class RegisterCustomer {
     const consent = (purpose: string, granted: boolean) =>
       deps.customers.consentStatement({ id: deps.ids.newId(), userId: id, purpose, version: consentVersion, granted, now });
     await new UnitOfWork(deps.db)
-      .add(deps.customers.insertUserStatement({ id, email, displayName: name, phone: textOrNull(input.phone), now }))
+      .add(deps.customers.insertUserStatement({ id, email, displayName: name, phone, now }))
       .add(deps.customers.upsertProfileStatement(id, { firstName: input.firstName.trim(), lastName: input.lastName.trim(), companyName: null, notes: null }, now))
       .add(deps.credentials.setPasswordStatement(id, await deps.passwords.hash(input.password), now))
       .add(deps.customers.assignCustomerRoleStatement(id))

@@ -1,4 +1,5 @@
-# Production server: HTTPS reverse proxy (Caddy), secrets from .env.production, daily database backups.
+# Production server: HTTPS reverse proxy (Caddy), secrets from .env.production, continuous off-server database
+# replication (Litestream) + daily on-server backups.
 # The app publishes no port — only Caddy (80/443) is reachable from outside.
 x-logging: &logging
   logging:
@@ -10,6 +11,10 @@ x-logging: &logging
 services:
   app:
     env_file: .env.production
+    depends_on:
+      # a rebuilt server restores the database from the bucket before the app could create an empty one
+      litestream:
+        condition: service_healthy
     <<: *logging
 
   scheduler:
@@ -38,6 +43,41 @@ services:
         condition: service_healthy
     restart: unless-stopped
     <<: *logging
+
+  # Continuous replication of /data/nova.db to S3 / R2 (docker/litestream.yml; LITESTREAM_* in .env.production).
+  # Same uid as the app (node = 1000) so the WAL / shm files it touches stay writable for the app.
+  # Restore by hand into a stopped stack:
+  #   docker compose stop app scheduler backup
+  #   docker compose run --rm --entrypoint litestream litestream restore -config /etc/litestream.yml -o /data/restored.db /data/nova.db
+  litestream:
+    image: litestream/litestream:0.3.13
+    user: "1000:1000"
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
+    entrypoint: ["/bin/sh", "/opt/litestream.sh"]
+    env_file: .env.production
+    volumes:
+      - nova-data:/data
+      - ./docker/litestream.yml:/etc/litestream.yml:ro
+      - ./docker/litestream.sh:/opt/litestream.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 360
+      start_period: 5s
+    restart: unless-stopped
+    <<: *logging
+
+  # Fresh server: the data volume is created empty and root-owned (Litestream starts before the app now); hand it to
+  # the app user (node = uid 1000) so Litestream can restore into it and the app can write it.
+  data-init:
+    image: busybox:1.36.1
+    command: ["chown", "1000:1000", "/data"]
+    volumes:
+      - nova-data:/data
+    restart: "no"
 
   # Online SQLite backup once a day into /data/backups (keeps BACKUP_KEEP, default 14).
   # Copy one off the server:  docker compose cp app:/data/backups ./backups

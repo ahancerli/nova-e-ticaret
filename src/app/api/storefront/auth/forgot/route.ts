@@ -14,6 +14,7 @@ export const dynamic = "force-dynamic";
 export const POST = route({
   body: forgotPasswordSchema,
   rateLimit: { name: "password-forgot", limit: 5, windowSec: 15 * 60 },
+  captcha: "forgot",
   handle: async ({ body, resolve }) => {
     const reset = resolve(RequestPasswordResetToken);
     const logger = resolve(LoggerToken);

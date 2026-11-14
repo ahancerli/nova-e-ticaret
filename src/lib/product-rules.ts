@@ -11,6 +11,15 @@ export function requiredAttributeIds(meta: { categories: CategoryRef[]; category
   return new Set(meta.categoryAttributes.filter((ca) => ca.isRequired && lineage.has(ca.categoryId)).map((ca) => ca.attributeId));
 }
 
+/**
+ * Struck-through price the shop really shows (Ticaret Bakanlığı 30-day rule): the seller's old price capped by the
+ * lowest price of the 30 days before the current price; null when no real reduction remains. Mirrors `shownCompareAtSql`.
+ */
+export function shownCompareAt(priceMinor: number, compareAtMinor: number | null, lowestPriorMinor: number | null): number | null {
+  if (compareAtMinor == null || lowestPriorMinor == null || compareAtMinor <= priceMinor || lowestPriorMinor <= priceMinor) return null;
+  return Math.min(compareAtMinor, lowestPriorMinor);
+}
+
 export const SKU_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 export type ProductStatus = "draft" | "in_review" | "published" | "paused" | "archived";

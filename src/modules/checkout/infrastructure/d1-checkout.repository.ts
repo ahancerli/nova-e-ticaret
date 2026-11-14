@@ -45,16 +45,16 @@ export class D1CheckoutRepository extends Repository implements CheckoutReposito
     // order header (CHECK enforces total = subtotal - discount + shipping)
     out.push(st(
       `INSERT INTO orders (id, order_number, checkout_id, user_id, customer_email, customer_phone, status, payment_status,
-                           subtotal_minor, discount_minor, shipping_minor, tax_minor, total_minor, customer_note, placed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
+                           subtotal_minor, discount_minor, shipping_minor, tax_minor, total_minor, customer_note, placed_at, terms_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
       o.orderId, o.orderNumber, o.sessionId, o.userId, o.email, o.phone, o.status,
-      q.subtotalMinor, q.discountMinor, q.shippingMinor, q.taxMinor, q.totalMinor, o.note, o.now,
+      q.subtotalMinor, q.discountMinor, q.shippingMinor, q.taxMinor, q.totalMinor, o.note, o.now, o.termsVersion,
     ));
 
     const address = (kind: "shipping" | "billing", a: AddressInput) => st(
       `INSERT INTO order_addresses (id, order_id, kind, recipient_name, phone_e164, country_code, province, district, line1, line2, postal_code, company_name, tax_office)
-       VALUES (?, ?, ?, ?, ?, 'TR', ?, ?, ?, ?, ?, ?, ?)`,
-      newId(), o.orderId, kind, a.recipientName, a.phone, a.province, a.district, a.line1, a.line2 ?? null, a.postalCode ?? null, a.companyName ?? null, a.taxOffice ?? null,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      newId(), o.orderId, kind, a.recipientName, a.phone, a.countryCode ?? "TR", a.province, a.district, a.line1, a.line2 ?? null, a.postalCode ?? null, a.companyName ?? null, a.taxOffice ?? null,
     );
     out.push(address("shipping", o.shipping), address("billing", o.billing));
 

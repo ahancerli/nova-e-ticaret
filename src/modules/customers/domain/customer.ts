@@ -77,6 +77,8 @@ export interface SignupInput {
   lastName: string;
   email: string;
   phone?: string | null;
+  /** ISO country of the phone picker (default TR); the number itself may also be +international. */
+  phoneCountry?: string;
   password: string;
   marketingEmail: boolean;
   marketingSms: boolean;

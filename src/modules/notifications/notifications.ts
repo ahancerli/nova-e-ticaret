@@ -3,11 +3,13 @@ import { formatMinor } from "@/lib/money";
 import { IntegrationRuntimeToken, renderTemplate, smsEventFor, trMobile, type IntegrationRuntime } from "@/modules/integrations";
 import { addOutboxHandler, type HandlerOutcome, type OutboxEvent } from "@/modules/outbox";
 import { GetPublicSettingsToken } from "@/modules/settings";
+import { MAIL_ONLY_EVENTS } from "./domain/customer-mail";
+import { registerOrderMails } from "./order-mail";
 
 /**
  * Customer SMS for order lifecycle events through the active SMS integration (Entegrasyonlar › SMS): which events
  * send and their text are the integration's settings. Without an SMS integration events are acknowledged as
- * "skipped" (never silently "sent"). E-mail notifications are not sent yet.
+ * "skipped" (never silently "sent"). The e-mail copy of the same events: `order-mail.ts`.
  */
 export const CUSTOMER_EVENTS = ["order.placed", "order.paid", "order.shipped", "shipment.tracking_assigned", "order.delivered", "order.cancelled", "refund.succeeded"] as const;
 
@@ -80,4 +82,5 @@ export function registerNotifications(): void {
     ));
   }
   addOutboxHandler("order.payment_after_cancel", (r) => new AlertStaffLatePayment(r.resolve(LoggerToken)));
+  registerOrderMails([...CUSTOMER_EVENTS, ...MAIL_ONLY_EVENTS]);
 }

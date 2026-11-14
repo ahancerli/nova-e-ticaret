@@ -78,6 +78,15 @@ export class D1ContentRepository extends Repository implements ContentRepository
     );
   }
 
+  async legalAtVersion(type: LegalType, version: number) {
+    const r = await this.db.first<{ title: string; body_html: string; updated_at: string }>(
+      `SELECT COALESCE(rv.title, p.title) AS title, COALESCE(rv.body_html, p.body_html) AS body_html, COALESCE(rv.created_at, p.updated_at) AS updated_at
+         FROM content_pages p LEFT JOIN content_page_revisions rv ON rv.page_id = p.id AND rv.version = ?
+        WHERE p.legal_type = ? AND p.status <> 'archived'`, version, type,
+    );
+    return r ? { title: r.title, bodyHtml: r.body_html, updatedAt: r.updated_at } : null;
+  }
+
   insertStatement(id: string, p: PageRecord, actorId: string, now: string): Statement {
     return this.db.statement(
       `INSERT INTO content_pages (id, slug, title, kind, legal_type, summary, body_html, status, footer_column, footer_order, version,

@@ -5,7 +5,7 @@ import { normalizeSlug } from "@/modules/shared/slug";
 import { ContentErrors } from "../domain/errors";
 import {
   FOOTER_COLUMNS, LEGAL_TYPES, pageHref,
-  type CheckoutLegal, type FooterLinkColumn, type SignupLegal, type PageDetail, type PageInput, type PagePatch, type PageRevision, type PageSeo, type PageSummary, type PublishedPage,
+  type CheckoutLegal, type FooterLinkColumn, type LegalType, type SignupLegal, type PageDetail, type PageInput, type PagePatch, type PageRevision, type PageSeo, type PageSummary, type PublishedPage,
 } from "../domain/page";
 import { renderTemplate } from "../domain/template";
 import type { ContentRepository, PageRecord } from "./ports";
@@ -199,6 +199,28 @@ export class GetCheckoutLegal {
   }
 }
 
+/**
+ * Query: the distance-sales contract and pre-information form exactly as accepted at checkout (`termsVersion`
+ * "ms<v>-ob<v>", stored on the order), placeholders filled — the copy the order e-mail sends to the customer.
+ */
+export class GetAcceptedContracts {
+  constructor(private readonly pages: ContentRepository, private readonly vars: TemplateVariableSource) {}
+
+  async execute(termsVersion: string | null): Promise<{ title: string; html: string }[]> {
+    const m = /^ms(\d+)-ob(\d+)$/.exec(termsVersion ?? "");
+    const wanted: [LegalType, number][] = [["distance_sales", Number(m?.[1] ?? 0)], ["pre_information", Number(m?.[2] ?? 0)]];
+    const vars = await this.vars.execute();
+    const out: { title: string; html: string }[] = [];
+    for (const [type, version] of wanted) {
+      const row = await this.pages.legalAtVersion(type, version);
+      if (!row) continue;
+      const html = sanitizeRichHtml(renderTemplate(sanitizeRichHtml(row.bodyHtml), { ...vars, "sayfa.guncelleme": updatedFmt.format(new Date(row.updatedAt)) }).html);
+      out.push({ title: row.title, html });
+    }
+    return out;
+  }
+}
+
 /** Query: KVKK notice, membership agreement and privacy policy for the sign-up form (published only). */
 export class GetSignupLegal {
   constructor(private readonly pages: ContentRepository) {}
@@ -213,5 +235,16 @@ export class GetSignupLegal {
     const membership = pick("membership");
     const privacy = pick("privacy");
     return { kvkk, membership, privacy: privacy && { href: privacy.href, title: privacy.title }, consentVersion: `kv${kvkk?.version ?? 0}-us${membership?.version ?? 0}` };
+  }
+}
+
+
+/** Query: the published cookie policy (consent banner link; its version is part of the cookie consent revision). */
+export class GetCookiePolicy {
+  constructor(private readonly pages: ContentRepository) {}
+
+  async execute(): Promise<{ href: string; title: string; version: number } | null> {
+    const [r] = await this.pages.publishedLegal(["cookies"]);
+    return r ? { href: pageHref(r.slug), title: r.title, version: r.version } : null;
   }
 }

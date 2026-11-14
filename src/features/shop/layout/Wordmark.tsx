@@ -9,7 +9,7 @@ export function Wordmark({ name, logoUrl, className = "h-9" }: { name: string; l
   }
   const dot = name.endsWith(".");
   return (
-    <span className="text-2xl font-extrabold tracking-tight text-ink md:text-[28px]">
+    <span className="font-display text-[28px] font-extrabold leading-none tracking-[-0.04em] text-ink md:text-[34px]">
       {dot ? name.slice(0, -1) : name}
       {dot && <span className="text-brand">.</span>}
     </span>

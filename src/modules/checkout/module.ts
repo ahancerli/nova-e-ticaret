@@ -1,5 +1,6 @@
 import { AuthenticatorToken, ClockToken, ConfigToken, DatabaseToken, IdGeneratorToken, LoggerToken, token, type Container, type Resolver } from "@/core";
 import { CartLocatorToken, CartRepositoryToken } from "@/modules/cart";
+import { GeoDirectoryToken } from "@/modules/geo";
 import { BuildQuoteToken } from "@/modules/pricing";
 import { ConfirmCheckout, CreateCheckoutQuote, ExpireStaleCheckouts, SettlePayment, type CheckoutCart, type CheckoutDeps } from "./application/checkout-use-cases";
 import type { CheckoutRepository } from "./application/ports";
@@ -19,6 +20,7 @@ const deps = (r: Resolver): CheckoutDeps => ({
   auth: r.resolve(AuthenticatorToken),
   clock: r.resolve(ClockToken),
   ids: r.resolve(IdGeneratorToken),
+  geo: r.resolve(GeoDirectoryToken),
   secret: r.resolve(ConfigToken).sessionSecret,
 });
 

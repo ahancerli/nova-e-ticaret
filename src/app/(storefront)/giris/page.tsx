@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { LoginForm } from "@/features/auth/LoginForm";
+import { AuthShell } from "@/features/shop";
 import { safeInternalPath } from "@/lib/safe-redirect";
 import { currentPrincipal } from "@/server/app";
 
@@ -12,11 +13,13 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   if (await currentPrincipal("storefront")) redirect(next);
   const carry = next === "/hesabim" ? "" : `?next=${encodeURIComponent(next)}`;
   return (
-    <div className="container-page max-w-md py-16">
-      <h1 className="mb-6 text-2xl font-bold">Giriş yap</h1>
-      <Suspense><LoginForm audience="storefront" fallbackTarget="/hesabim" /></Suspense>
-      <p className="mt-4 text-center text-sm"><Link href="/sifremi-unuttum" className="text-ink-soft hover:text-brand">Şifremi unuttum</Link></p>
-      <p className="mt-6 text-center text-sm text-ink-soft">Hesabınız yok mu? <Link href={`/uye-ol${carry}`} className="font-medium text-brand hover:underline">Üye olun</Link></p>
-    </div>
+    <AuthShell title="Tekrar hoş geldin" subtitle="Hesabına giriş yap, kaldığın yerden alışverişe devam et.">
+      <h2 className="mb-6 font-display text-2xl font-extrabold tracking-tight">Giriş yap</h2>
+      <Suspense><LoginForm audience="storefront" fallbackTarget="/hesabim" card={false} /></Suspense>
+      <p className="mt-4 text-center text-sm"><Link href="/sifremi-unuttum" className="font-medium text-ink-soft underline-offset-4 hover:text-ink hover:underline">Şifremi unuttum</Link></p>
+      <div className="mt-8 rounded-2xl bg-ground p-4 text-center text-sm text-ink-soft">
+        Hesabın yok mu? <Link href={`/uye-ol${carry}`} className="font-bold text-brand hover:underline">Hemen üye ol</Link>
+      </div>
+    </AuthShell>
   );
 }

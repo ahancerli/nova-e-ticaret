@@ -5,6 +5,7 @@ import { useState } from "react";
 import { CheckIcon, StarIcon } from "@/components/icons";
 import { useFieldErrors } from "@/lib/use-field-errors";
 import { BODY_MAX, REJECT_REASONS, REVIEW_STATUSES, TITLE_MAX, type ReviewEligibility } from "@/modules/reviews/domain/review";
+import { useCaptcha } from "../../captcha/useCaptcha";
 import { reviewsApi } from "../data/reviews-api";
 import { RATING_WORDS } from "./Stars";
 
@@ -24,6 +25,7 @@ export function ReviewForm({ slug, productName, eligibility, onDone, onClose }: 
   const [done, setDone] = useState<Done | null>(null);
   const [error, setError] = useState<string | null>(null);
   const errors = useFieldErrors();
+  const captcha = useCaptcha("review");
 
   if (!eligibility) {
     return <div className="space-y-3" aria-busy><div className="skeleton h-10 w-2/3" /><div className="skeleton h-28" /><div className="skeleton h-11" /></div>;
@@ -64,11 +66,12 @@ export function ReviewForm({ slug, productName, eligibility, onDone, onClose }: 
     if (!rating) { setError("Lütfen 1–5 arası puan verin."); return; }
     setBusy(true);
     try {
-      const r = await reviewsApi.submit(slug, { rating, title: title.trim() || null, body, isAnonymous: anon });
+      const r = await reviewsApi.submit(slug, { rating, title: title.trim() || null, body, isAnonymous: anon }, await captcha.headers());
       setDone(r);
       onDone(r);
     } catch (err) {
       if (!errors.fromError(err)) setError(err instanceof Error ? err.message : "Değerlendirme gönderilemedi.");
+      captcha.reset();
     } finally {
       setBusy(false);
     }
@@ -117,7 +120,8 @@ export function ReviewForm({ slug, productName, eligibility, onDone, onClose }: 
         </label>
       ) : null}
       {eligibility.verifiedPurchase ? <p className="flex items-center gap-1.5 text-xs font-medium text-success"><CheckIcon className="size-3.5" /> Yorumunuz “Bu ürünü satın aldı” etiketiyle görünecek.</p> : null}
-      {error ? <p role="alert" className="animate-shake rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{error}</p> : null}
+      {captcha.slot}
+      {error || captcha.error ? <p role="alert" className="animate-shake rounded-xl bg-red-50 px-3 py-2 text-sm text-danger">{error || captcha.error}</p> : null}
       <button type="submit" disabled={busy} className="btn btn-primary w-full">{busy ? "Gönderiliyor…" : existing ? "Değerlendirmeyi güncelle" : "Değerlendirmeyi gönder"}</button>
     </form>
   );

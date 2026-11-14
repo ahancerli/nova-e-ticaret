@@ -31,7 +31,7 @@
 		"deploy": "sh deploy/deploy.sh",
 		"ai:health": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs scripts/ai-health.mjs",
 		"deps:latest": "npx --yes npm-check-updates@latest -u && npm install",
-		"test": "npm run db:test && npm run test:core && npm run test:runtime && npm run test:catalog && npm run test:identity && npm run test:storefront && npm run test:orders && npm run test:integrations && npm run test:reporting && npm run test:content && npm run test:accounts && npm run test:campaigns && npm run test:showcase && npm run test:audit && npm run test:ai && npm run test:mail && npm run test:payments && npm run test:providers && npm run test:bulk && npm run test:marketplaces && npm run test:reviews && npm run test:services",
+		"test": "npm run db:test && npm run test:core && npm run test:runtime && npm run test:catalog && npm run test:identity && npm run test:storefront && npm run test:orders && npm run test:integrations && npm run test:reporting && npm run test:content && npm run test:accounts && npm run test:campaigns && npm run test:showcase && npm run test:audit && npm run test:ai && npm run test:mail && npm run test:payments && npm run test:providers && npm run test:bulk && npm run test:marketplaces && npm run test:reviews && npm run test:commerce && npm run test:consent && npm run test:captcha && npm run test:support && npm run test:services",
 		"test:reviews": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/reviews.test.ts",
 		"test:services": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/services.test.ts",
 		"test:core": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/unit/core.test.ts",
@@ -53,6 +53,10 @@
 		"test:providers": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/providers.test.ts",
 		"test:marketplaces": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/marketplaces.test.ts",
 		"test:bulk": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/bulk.test.ts",
+		"test:commerce": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/commerce.test.ts",
+		"test:consent": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/consent.test.ts",
+		"test:captcha": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/captcha.test.ts",
+		"test:support": "node --no-warnings --experimental-transform-types --import ./tests/integration/register.mjs tests/integration/support.test.ts",
 		"test:e2e": "playwright test"
 	},
 	"dependencies": {

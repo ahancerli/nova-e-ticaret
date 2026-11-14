@@ -14,5 +14,6 @@ export const POST = route({
   params: slugParams,
   body: reviewSubmitSchema,
   rateLimit: { name: "review-submit", limit: 10, windowSec: 60 * 60 },
+  captcha: "review",
   handle: async (ctx) => reply.created(await ctx.resolve(SubmitReviewToken).execute(ctx.params.slug, ctx.body, actorOf(ctx))),
 });

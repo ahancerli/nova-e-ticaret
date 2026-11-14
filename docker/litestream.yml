@@ -1,0 +1,13 @@
+# Litestream: continuous replication of the SQLite database to an S3-compatible bucket (variables: .env.production).
+# Snapshots daily, WAL segments within ~1 s; restore points kept for 30 days.
+dbs:
+  - path: /data/nova.db
+    replicas:
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET}
+        path: ${LITESTREAM_PATH}
+        endpoint: ${LITESTREAM_ENDPOINT}
+        region: ${LITESTREAM_REGION}
+        sync-interval: 1s
+        snapshot-interval: 24h
+        retention: 720h

@@ -54,11 +54,11 @@ def setup_checkout(c, cid="co_1", cart="cart_1"):
 
 
 # --- structure ---------------------------------------------------------------
-@test("01 126 tables exist")
+@test("01 139 tables exist")
 def _():
     c = new_db()
     n = c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()[0]
-    assert n == 126, n
+    assert n == 142, n
 
 
 @test("02 all tables are STRICT")
@@ -651,6 +651,112 @@ def _():
     u.execute("DELETE FROM catalog_change_log")
     u.execute("UPDATE products SET model_code = 'X-1' WHERE id = 'p_pan'")
     assert u.execute("SELECT count(*) FROM catalog_change_log").fetchone()[0] == 1, "trigger recreated with model_code"
+
+
+@test("56 commerce essentials: return requests (reasons, reject reason, one row per line), invoices (GİB number, one valid per order, private key); migration 2026-11-14 upgrades the previous schema")
+def _():
+    c = new_db()
+    # return requests
+    c.execute("INSERT INTO return_requests (id, request_number, order_id, user_id, reason) VALUES ('rr1', 'NOVA-2026-0001-I1', 'ord_demo_1', 'u_customer', 'defective')")
+    expect_error(c, "INSERT INTO return_requests (id, request_number, order_id, reason) VALUES ('rr2', 'NOVA-2026-0001-I2', 'ord_demo_1', 'bored')", contains="CHECK")
+    expect_error(c, "UPDATE return_requests SET status = 'rejected' WHERE id = 'rr1'", contains="CHECK")  # rejected needs a reason
+    c.execute("UPDATE return_requests SET status = 'rejected', reject_reason = 'Kullanılmış' WHERE id = 'rr1'")
+    c.execute("INSERT INTO return_request_items (id, return_request_id, order_id, order_item_id, quantity) VALUES ('ri1', 'rr1', 'ord_demo_1', 'oi_demo_1', 1)")
+    expect_error(c, "INSERT INTO return_request_items (id, return_request_id, order_id, order_item_id, quantity) VALUES ('ri2', 'rr1', 'ord_demo_1', 'oi_demo_1', 1)", contains="UNIQUE")
+    c.execute("INSERT INTO return_requests (id, request_number, order_id, reason) VALUES ('rr3', 'NOVA-2026-0001-I3', 'ord_demo_1', 'other')")
+    expect_error(c, "INSERT INTO return_request_items (id, return_request_id, order_id, order_item_id, quantity) VALUES ('ri3', 'rr3', 'ord_x', 'oi_demo_1', 1)", contains="FOREIGN KEY")  # line of another order
+    expect_error(c, "INSERT INTO return_request_items (id, return_request_id, order_id, order_item_id, quantity) VALUES ('ri4', 'rr3', 'ord_demo_1', 'oi_demo_1', 0)", contains="CHECK")
+    # invoices
+    ins = "INSERT INTO invoices (id, order_id, invoice_number, invoice_date, total_minor, pdf_storage_key) VALUES (?, 'ord_demo_1', ?, '2026-11-14', 100, ?)"
+    c.execute(ins, ("inv1", "ABC2026000000001", "invoices/inv1.pdf"))
+    expect_error(c, ins.replace("?, 'ord_demo_1', ?", "'inv2', 'ord_demo_1', 'ABC2026000000002'").replace(", ?)", ", NULL)"), contains="UNIQUE")  # one valid per order
+    expect_error(c, ins.replace("?, 'ord_demo_1', ?", "'inv3', 'ord_demo_1', 'abc-1'").replace(", ?)", ", NULL)"), contains="CHECK")  # GİB number format
+    expect_error(c, "UPDATE invoices SET pdf_storage_key = 'products/x.pdf' WHERE id = 'inv1'", contains="CHECK")  # never under public /assets
+    expect_error(c, "UPDATE invoices SET status = 'cancelled' WHERE id = 'inv1'", contains="CHECK")  # cancel needs a reason
+    c.execute("UPDATE invoices SET status = 'cancelled', cancel_reason = 'Hatalı tutar' WHERE id = 'inv1'")
+    c.execute(ins, ("inv4", "ABC2026000000004", None))  # a new valid one after cancel
+    assert c.execute("SELECT count(*) FROM integration_providers WHERE kind = 'accounting'").fetchone()[0] >= 7
+    # migration on the previous schema
+    import subprocess
+    try:
+        old = subprocess.run(["git", "show", "189bd01:db/schema.sql"], cwd=ROOT.parent, capture_output=True, text=True, check=True).stdout
+        old_seed = subprocess.run(["git", "show", "189bd01:db/seed.sql"], cwd=ROOT.parent, capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return
+    u = sqlite3.connect(":memory:", isolation_level=None)
+    u.execute("PRAGMA foreign_keys = ON")
+    u.executescript(old)
+    u.executescript(old_seed)
+    u.executescript(SCHEMA)
+    for m in sorted((ROOT / "migrations").glob("*.sql")):
+        first = m.read_text(encoding="utf-8").splitlines()[0][len("-- probe: "):]
+        try:
+            u.execute(first)
+            continue
+        except sqlite3.DatabaseError:
+            u.executescript(m.read_text(encoding="utf-8"))
+    assert "terms_version" in {r[1] for r in u.execute("PRAGMA table_info(orders)")}
+    assert "updated_at" in {r[1] for r in u.execute("PRAGMA table_info(shipping_methods)")}
+    assert u.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('invoices','return_requests','return_request_items')").fetchone()[0] == 3
+    u.executescript(SCHEMA)  # still re-runnable after the upgrade
+
+
+@test("57 cookie consent: settings singleton, tag rows, consent proof cannot be changed")
+def _():
+    c = new_db()
+    assert c.execute("SELECT revision, consent_provider, google_consent_mode FROM consent_settings").fetchone() == (1, "builtin", "basic")
+    expect_error(c, "INSERT INTO consent_settings (id) VALUES (2)", contains="CHECK")
+    expect_error(c, "UPDATE consent_settings SET consent_provider = 'acme'", contains="CHECK")
+    expect_error(c, "UPDATE consent_settings SET consent_max_age_days = 1000", contains="CHECK")
+    c.execute("INSERT INTO tracking_tags (provider_code, config_json) VALUES ('ga4', '{\"measurementId\":\"G-ABC123\"}')")
+    expect_error(c, "INSERT INTO tracking_tags (provider_code, config_json) VALUES ('Bad Code', '{}')", contains="CHECK")
+    expect_error(c, "INSERT INTO tracking_tags (provider_code, config_json) VALUES ('gtm', '[]')", contains="CHECK")
+    c.execute("INSERT INTO cookie_consents (id, visitor_id, revision, functional, analytics, marketing, action, source, recorded_at)"
+              " VALUES ('cc1', 'visitor-0001', 'r1-cp1', 1, 1, 0, 'custom', 'banner', '2026-11-14T10:00:00.000Z')")
+    expect_error(c, "UPDATE cookie_consents SET marketing = 1 WHERE id = 'cc1'", contains="append_only")
+    expect_error(c, "INSERT INTO cookie_consents (id, visitor_id, revision, functional, analytics, marketing, action, source, recorded_at)"
+                    " VALUES ('cc2', 'visitor-0001', 'r1-cp1', 1, 1, 1, 'maybe', 'banner', '2026-11-14T10:00:00.000Z')", contains="CHECK")
+    c.execute("DELETE FROM cookie_consents WHERE id = 'cc1'")  # retention pruning stays possible
+
+
+@test("58 price history: every price change opens a row with the lowest price of the previous 30 days")
+def _():
+    c = new_db()
+    q = lambda: c.execute("SELECT unit_price_minor, lowest_prior_minor FROM variant_price_history WHERE variant_id = 'v_pan' AND valid_to IS NULL").fetchone()
+    assert q()[1] is None, "seed price has no known earlier price"
+    c.execute("UPDATE variant_prices SET compare_at_minor = NULL, updated_at = updated_at WHERE variant_id = 'v_pan'")
+    assert c.execute("SELECT count(*) FROM variant_price_history WHERE variant_id = 'v_pan'").fetchone()[0] == 1, "only price changes count"
+    first = c.execute("SELECT unit_price_minor FROM variant_prices WHERE variant_id = 'v_pan'").fetchone()[0]
+    c.execute("UPDATE variant_prices SET unit_price_minor = ? WHERE variant_id = 'v_pan'", (first - 1000,))
+    assert q() == (first - 1000, first), q()
+    c.execute("UPDATE variant_prices SET unit_price_minor = ? WHERE variant_id = 'v_pan'", (first + 5000,))  # back up: the drop is remembered
+    c.execute("UPDATE variant_prices SET unit_price_minor = ? WHERE variant_id = 'v_pan'", (first - 2000,))
+    assert q() == (first - 2000, first - 1000), q()
+    c.execute("UPDATE variant_price_history SET valid_from = '2020-01-01T00:00:00.000Z', valid_to = '2020-01-02T00:00:00.000Z' WHERE variant_id = 'v_pan' AND valid_to IS NOT NULL")
+    c.execute("UPDATE variant_prices SET unit_price_minor = ? WHERE variant_id = 'v_pan'", (first - 3000,))
+    assert q() == (first - 3000, first - 2000), "rows older than 30 days are ignored"
+    expect_error(c, "INSERT INTO variant_price_history (variant_id, price_list_id, unit_price_minor, valid_from) VALUES ('v_pan', 'pl_retail', 1, '2026-01-01')", contains="UNIQUE")
+    c.execute("DELETE FROM variant_prices WHERE variant_id = 'v_pan'")
+    assert c.execute("SELECT count(*) FROM variant_price_history WHERE variant_id = 'v_pan' AND valid_to IS NULL").fetchone()[0] == 0
+    c.execute("INSERT INTO variant_prices (variant_id, price_list_id, unit_price_minor) VALUES ('v_pan', 'pl_retail', 100)")
+    assert q() == (100, first - 3000), q()
+
+
+@test("59 live support: settings singleton, one open conversation per customer, seq / client id unique, permission")
+def _():
+    c = new_db()
+    assert c.execute("SELECT enabled FROM support_settings WHERE id = 1").fetchone()[0] == 0
+    expect_error(c, "INSERT INTO support_settings (id) VALUES (2)", contains="CHECK")
+    assert c.execute("SELECT count(*) FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE p.code = 'support.chat' AND rp.role_id = 'role_admin'").fetchone()[0] == 1
+    cust = c.execute("SELECT user_id FROM customer_profiles LIMIT 1").fetchone()[0]
+    c.execute("INSERT INTO support_conversations (id, customer_id) VALUES ('sc1', ?)", (cust,))
+    expect_error(c, "INSERT INTO support_conversations (id, customer_id) VALUES ('sc2', ?)", (cust,), contains="UNIQUE")
+    c.execute("INSERT INTO support_messages (id, conversation_id, seq, sender, body, client_id) VALUES ('sm1', 'sc1', 1, 'customer', 'Merhaba', 'client-0001')")
+    expect_error(c, "INSERT INTO support_messages (id, conversation_id, seq, sender, body, client_id) VALUES ('sm2', 'sc1', 1, 'customer', 'x', 'client-0002')", contains="UNIQUE")
+    expect_error(c, "INSERT INTO support_messages (id, conversation_id, seq, sender, body, client_id) VALUES ('sm3', 'sc1', 2, 'customer', 'x', 'client-0001')", contains="UNIQUE")
+    expect_error(c, "INSERT INTO support_messages (id, conversation_id, seq, sender, body, client_id) VALUES ('sm4', 'sc1', 2, 'bot', 'x', 'client-0004')", contains="CHECK")
+    c.execute("UPDATE support_conversations SET status = 'closed' WHERE id = 'sc1'")
+    c.execute("INSERT INTO support_conversations (id, customer_id) VALUES ('sc2', ?)", (cust,))
 
 
 if __name__ == "__main__":

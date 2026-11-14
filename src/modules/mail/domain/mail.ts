@@ -92,12 +92,16 @@ export function buildMime(msg: MailMessage, from: { email: string; name: string 
 /** Minimal HTML escaping for values placed into e-mail templates. */
 export const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-/** Shared e-mail layout: brand header, white card, footer. Inline styles only (mail clients drop <style>). */
-export function emailLayout(brand: string, bodyHtml: string): string {
+/**
+ * Shared e-mail layout: brand header, white card, footer. Inline styles only (mail clients drop <style>). `accent`
+ * colours the header (customer mails use the store's accent; staff mails the panel purple).
+ */
+export function emailLayout(brand: string, bodyHtml: string, accent = "#7367f0"): string {
+  const header = /^#[0-9a-f]{6}$/i.test(accent) ? accent : "#7367f0";
   return `<!doctype html><html lang="tr"><body style="margin:0;background:#f4f4f8;font-family:Arial,Helvetica,sans-serif;color:#2f2b3d">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 12px"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;overflow:hidden">
-<tr><td style="background:#7367f0;padding:20px 28px;color:#ffffff;font-size:20px;font-weight:bold">${escapeHtml(brand)}</td></tr>
+<tr><td style="background:${header};padding:20px 28px;color:#ffffff;font-size:20px;font-weight:bold">${escapeHtml(brand)}</td></tr>
 <tr><td style="padding:28px;font-size:15px;line-height:1.6">${bodyHtml}</td></tr>
 </table>
 <p style="max-width:520px;margin:16px auto 0;font-size:12px;color:#8a8d93">Bu e-posta ${escapeHtml(brand)} tarafından otomatik gönderildi.</p>

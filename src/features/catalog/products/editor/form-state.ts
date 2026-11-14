@@ -14,6 +14,8 @@ export type VariantState = {
   loadedStock?: number;
   /** The variant's own photos (shown instead of the gallery when it is picked in the shop). */
   media: GalleryItem[];
+  /** 30-day lowest price rule caps of the saved variant (none = new variant: no earlier price, no discount shown). */
+  caps?: { priceMinor: number; lowestPriorMinor: number | null; lowest30dMinor: number | null };
 };
 export type FormState = {
   name: string; slug: string; status: Status; shortDescription: string; descriptionHtml: string; taxRateBps: number;
@@ -64,7 +66,7 @@ export function fromData(d: ProductEditorData | null): FormState {
       key: v.id, id: v.id, sku: v.sku, barcode: v.barcode ?? "", name: v.name ?? "", options: v.options, price: minorToStr(v.priceMinor),
       compareAt: minorToStr(v.compareAtMinor), minPrice: minorToStr(v.minPriceMinor), stock: String(v.stock), isActive: v.isActive, isDefault: v.isDefault,
       weightGrams: str(v.weightGrams), widthMm: str(v.widthMm), heightMm: str(v.heightMm), depthMm: str(v.depthMm), reserved: v.reserved, locked: v.locked,
-      loadedStock: v.stock, media: v.media,
+      loadedStock: v.stock, media: v.media, ...(v.priceCaps ? { caps: { priceMinor: v.priceMinor, ...v.priceCaps } } : {}),
     })),
     attributes: Object.fromEntries(d.attributes.map((a) => [a.attributeId, a.values])),
     seo: { metaTitle: d.seo.metaTitle ?? "", metaDescription: d.seo.metaDescription ?? "", canonicalUrl: d.seo.canonicalUrl ?? "", noindex: d.seo.noindex },

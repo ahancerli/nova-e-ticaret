@@ -1,4 +1,5 @@
 import { Repository, chunk, placeholders, type Statement } from "@/core";
+import { shownCompareAtSql } from "@/modules/catalog";
 import { DEFAULT_PRICE_LIST } from "@/modules/catalog/domain/product";
 import {
   DEFAULT_SETTINGS, type ConnectionRow, type ConnectionStats, type MarketplaceProvider, type Mappings, type VariantSnapshot,
@@ -322,7 +323,7 @@ export class D1MarketplaceRepository extends Repository implements MarketplaceRe
         `SELECT v.id AS variant_id, v.product_id, v.sku, v.barcode, v.is_active, v.weight_grams, v.width_mm, v.height_mm, v.depth_mm,
                 p.name, p.description_html, p.short_description, p.brand_id, p.status, p.tax_rate_bps, p.manufacturer_code, p.model_code, p.slug,
                 (SELECT pc.category_id FROM product_categories pc WHERE pc.product_id = p.id ORDER BY pc.is_primary DESC LIMIT 1) AS category_id,
-                vp.unit_price_minor, vp.compare_at_minor,
+                vp.unit_price_minor, ${shownCompareAtSql("vp")} AS compare_at_minor,
                 COALESCE((SELECT SUM(ib.on_hand - ib.reserved) FROM inventory_balances ib WHERE ib.variant_id = v.id), 0) AS available,
                 (SELECT json_group_array(x.url) FROM (SELECT m.public_url AS url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
                    WHERE pm.product_id = v.product_id AND (pm.variant_id = v.id OR pm.variant_id IS NULL)

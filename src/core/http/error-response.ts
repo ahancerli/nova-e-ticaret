@@ -1,5 +1,5 @@
 import { toAppError } from "../errors";
-import { serializeError, type Logger } from "../logging/logger";
+import { RAW_ERROR, serializeError, type Logger } from "../logging/logger";
 import { jsonResponse, type ErrorBody } from "./reply";
 
 const GENERIC_MESSAGE = "Beklenmeyen bir hata oluştu.";
@@ -18,7 +18,7 @@ export function errorResponse(err: unknown, ctx: { requestId: string; logger: Lo
     ...(Object.keys(appErr.details).length ? { details: appErr.details } : {}),
   };
   if (appErr.status >= 500) {
-    ctx.logger.error("request failed", { ...fields, error: serializeError(appErr.cause ?? appErr, ctx.exposeStack) });
+    ctx.logger.error("request failed", { ...fields, error: serializeError(appErr.cause ?? appErr, ctx.exposeStack), [RAW_ERROR]: appErr.cause ?? appErr });
   } else {
     ctx.logger.info("request rejected", fields);
   }

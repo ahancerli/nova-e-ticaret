@@ -1,12 +1,16 @@
 import { z } from "zod";
+import { COUNTRY_CODE, DEFAULT_COUNTRY } from "@/modules/geo/domain/geo";
 import { entityId } from "@/modules/shared/schemas";
 
-const phone = z.string().trim().regex(/^\+?[1-9]\d{9,14}$/, "Telefon +905xxxxxxxxx biçiminde olmalı");
+// checked against the chosen country's mobile rules by ConfirmCheckout (geo_countries)
+const phone = z.string().trim().min(1, "Cep telefonunu girin.").max(24);
+const country = z.string().regex(COUNTRY_CODE);
 const text = (max: number) => z.string().trim().min(1).max(max);
 
 const address = z.object({
   recipientName: text(120),
   phone,
+  countryCode: country.default(DEFAULT_COUNTRY),
   province: text(60),
   district: text(60),
   line1: text(250),
@@ -21,6 +25,7 @@ export const confirmSchema = z.object({
   paymentMethod: z.enum(["iyzico", "bank_transfer"]),
   email: z.email().max(254),
   phone,
+  phoneCountry: country.optional(),
   shipping: address,
   billing: address.optional(),
   note: z.string().trim().max(1000).optional(),

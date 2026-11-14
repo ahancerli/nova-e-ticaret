@@ -1,18 +1,19 @@
 import Link from "next/link";
+import { ChevronIcon } from "@/components/icons";
 
-/** Title row of a storefront section: optional eyebrow, heading (id for aria-labelledby), "Tümünü gör" link. */
+/** Title row of a storefront section: heading (id for aria-labelledby), optional line under it, "Tümünü gör" link. */
 export function SectionHeader({ id, title, subtitle, moreHref, moreLabel = "Tümünü gör" }: {
   id: string; title: string; subtitle?: string | null; moreHref?: string; moreLabel?: string;
 }) {
   return (
-    <div className="mb-5 flex items-end justify-between gap-4">
-      <div className="border-l-4 border-brand pl-3">
-        {subtitle && <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand">{subtitle}</p>}
-        <h2 id={id} className="text-xl font-extrabold tracking-tight text-ink md:text-2xl">{title}</h2>
+    <div className="mb-5 flex items-end justify-between gap-4 md:mb-6">
+      <div className="min-w-0">
+        <h2 id={id} className="font-display text-[22px] font-extrabold leading-tight tracking-[-0.02em] text-ink md:text-[28px]">{title}</h2>
+        {subtitle && <p className="mt-1 text-sm text-ink-soft">{subtitle}</p>}
       </div>
       {moreHref && (
-        <Link href={moreHref} className="flex-none rounded-full border border-line bg-white px-3.5 py-1.5 text-sm font-semibold text-ink-soft transition hover:border-brand hover:text-brand">
-          {moreLabel} →
+        <Link href={moreHref} className="group flex h-10 flex-none items-center gap-1 rounded-full pl-3 pr-2 text-sm font-semibold text-ink transition hover:bg-ink/5">
+          {moreLabel}<ChevronIcon className="size-4 transition group-hover:translate-x-0.5" />
         </Link>
       )}
     </div>
