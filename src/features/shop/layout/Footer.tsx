@@ -4,6 +4,7 @@ import type { FooterLinkColumn } from "@/modules/content";
 import type { PublicSettings } from "@/modules/settings";
 import type { NavItem } from "@/modules/storefront";
 import { CookiePreferencesLink } from "../../consent/CookiePreferencesLink";
+import { NewsletterForm } from "./NewsletterForm";
 import { SocialIcon } from "./SocialIcon";
 import { Wordmark } from "./Wordmark";
 
@@ -15,10 +16,12 @@ const waHref = (phone: string) => `https://wa.me/${phone.replace(/\D/g, "")}`;
  * every published content page that chose a footer column (legal, corporate, help — a new page appears here
  * without code); social accounts, contact, trust badges and company identity from Site ayarları.
  */
-export function Footer({ settings, nav, pageColumns, year, cookiePreferences = false }: {
+export function Footer({ settings, nav, pageColumns, year, cookiePreferences = false, newsletter }: {
   settings: PublicSettings; nav: NavItem[]; pageColumns: FooterLinkColumn[]; year: number;
   /** Show the “Çerez tercihleri” link (cookie banner enabled). */
   cookiePreferences?: boolean;
+  /** E-bülten band: KVKK notice link next to the consent box, the member's e-mail to prefill. */
+  newsletter?: { kvkkHref: string | null; email: string | null };
 }) {
   const { contact, company, footer, social } = settings;
   const columns = [
@@ -43,6 +46,17 @@ export function Footer({ settings, nav, pageColumns, year, cookiePreferences = f
       <div aria-hidden className="spectrum h-1" />
 
       <div className="bg-ink text-white">
+        {newsletter && (
+          <section aria-labelledby="newsletter-title" className="border-b border-white/10">
+            <div className="container-page grid gap-6 py-10 md:py-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,36rem)] lg:items-center lg:gap-12">
+              <div className="max-w-md">
+                <h2 id="newsletter-title" className="font-display text-[26px] font-extrabold leading-tight tracking-tight md:text-3xl">Kampanyalardan ilk siz haberdar olun</h2>
+                <p className="mt-2 text-sm leading-relaxed text-white/70">Yeni gelen ürünler, sepette indirimler ve size özel kuponlar e-postanıza gelsin. İstediğiniz an tek tıkla ayrılabilirsiniz.</p>
+              </div>
+              <NewsletterForm kvkkHref={newsletter.kvkkHref} email={newsletter.email} />
+            </div>
+          </section>
+        )}
         <div className="container-page py-6 md:flex md:flex-wrap md:gap-10 md:py-14 lg:flex-nowrap">
           {columns.map((col) => (
             <FooterColumn key={col.key} label={col.label}>

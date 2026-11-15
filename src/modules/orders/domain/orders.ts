@@ -1,6 +1,6 @@
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError, type FieldErrors } from "@/core";
 import { formatMinor } from "@/lib/money";
-import { ORDER_ACTIONS, canRunAction, orderStatusMeta, type OrderActionId } from "@/lib/order-rules";
+import { ORDER_ACTIONS, canRunAction, orderStatusMeta, type OrderActionId, type OrderPaymentContext } from "@/lib/order-rules";
 
 /** Masks e-mail for list views: a***@d***.com. Full value only with customers.read. */
 export function maskEmail(email: string): string {
@@ -16,11 +16,11 @@ export function maskPhone(phone: string | null): string | null {
 }
 
 /** State machine gate (rules in lib/order-rules.ts, shared with the UI). */
-export function assertActionAllowed(action: OrderActionId, status: string, permissions: ReadonlySet<string>): void {
+export function assertActionAllowed(action: OrderActionId, status: string, permissions: ReadonlySet<string>, ctx: OrderPaymentContext): void {
   const def = ORDER_ACTIONS[action];
   if (!permissions.has(def.permission)) throw new ForbiddenError();
-  if (!canRunAction(action, status, permissions)) {
-    throw new ConflictError("invalid_transition", `“${def.label}” işlemi, sipariş “${orderStatusMeta(status).label}” durumundayken yapılamaz.`);
+  if (!canRunAction(action, status, permissions, ctx)) {
+    throw new ConflictError("invalid_transition", `“${def.label}” işlemi, sipariş “${orderStatusMeta(status, ctx).label}” durumundayken yapılamaz.`);
   }
 }
 
@@ -43,4 +43,5 @@ export const OrderErrors = {
   invalidRestock: (fieldErrors: FieldErrors) => new ValidationError("invalid_restock", "Stoğa geri alınacak adetler geçersiz.", { fieldErrors }),
   restockRaced: () => new ConflictError("restock_changed", "Bu kalem bu sırada stoğa alındı. Sayfayı yenileyin."),
   refundNotFound: () => new NotFoundError("refund_not_found", "İade kaydı bulunamadı."),
+  reservationGone: () => new ConflictError("reservation_expired", "Stok ayırmasının süresi dolmuş; sipariş onaylanamaz. Müşteriden yeni sipariş isteyin."),
 };

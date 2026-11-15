@@ -57,4 +57,6 @@ export const PaymentSettingsErrors = {
   bankAccountNotFound: () => new NotFoundError("bank_account_not_found", "Banka hesabı bulunamadı."),
   bankAccountInUse: () => new ConflictError("bank_account_in_use", "Bu hesaba bağlı siparişler var; silinemez. Pasif yapabilirsiniz."),
   ibanTaken: () => ValidationError.field("iban", "Bu IBAN zaten kayıtlı.", "iban_taken"),
+  codLimits: () => ValidationError.field("maxOrderMinor", "En yüksek tutar, en düşük tutardan küçük olamaz.", "cod_limits_invalid"),
+  codCategory: () => ValidationError.field("categoryIds", "Seçilen kategorilerden biri artık yok. Sayfayı yenileyin.", "cod_category_not_found"),
 };

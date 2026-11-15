@@ -22,7 +22,7 @@ export const AREA_OF_PREFIX: Record<string, Exclude<AuditArea, "all" | "other">>
   order: "orders", return: "orders", invoice: "orders",
   campaign: "campaigns", coupon: "campaigns", pricing_policy: "campaigns",
   content: "content", showcase: "content", review: "content", review_settings: "content",
-  staff: "accounts", role: "accounts", customer: "accounts", account: "accounts",
+  staff: "accounts", role: "accounts", customer: "accounts", account: "accounts", newsletter: "accounts",
   settings: "settings", captcha: "settings", notification_rule: "settings", ai_integration: "settings", mail_integration: "settings", payment: "settings", bank_account: "settings", shipping_method: "settings", integration: "settings", marketplace: "settings", consent: "settings", tracking_tag: "settings", ai: "catalog",
 };
 
@@ -32,7 +32,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   category: "Kategori", brand: "Marka", product: "Ürün", media: "Görsel", order: "Sipariş", campaign: "Kampanya", coupon: "Kupon",
   content_page: "İçerik sayfası", showcase: "Vitrin", user: "Kullanıcı", role: "Rol", site_settings: "Site ayarları", captcha_settings: "Bot koruması", ai_integration: "AI entegrasyonu", mail_integration: "E-posta (SMTP)",
   review: "Ürün yorumu", review_settings: "Yorum ayarları", notification_rule: "Bildirim ayarları", support_conversation: "Canlı destek konuşması", support_settings: "Canlı destek ayarları",
-  payment_config: "Ödeme yöntemi", return_request: "İade talebi", invoice: "Fatura", bank_account: "Banka hesabı", shipping_method: "Kargo ücreti", integration: "Entegrasyon", marketplace: "Pazaryeri bağlantısı", pricing_policy: "Kampanya kuralları", bulk_job: "Toplu işlem", attribute: "Özellik", product_feed: "Ürün kaynağı (XML / REST)",
+  newsletter_subscriber: "E-bülten abonesi", payment_config: "Ödeme yöntemi", return_request: "İade talebi", invoice: "Fatura", bank_account: "Banka hesabı", shipping_method: "Kargo ücreti", integration: "Entegrasyon", marketplace: "Pazaryeri bağlantısı", pricing_policy: "Kampanya kuralları", bulk_job: "Toplu işlem", attribute: "Özellik", product_feed: "Ürün kaynağı (XML / REST)",
 };
 
 const VERB_LABELS: Record<string, string> = {
@@ -46,6 +46,7 @@ const VERB_LABELS: Record<string, string> = {
 const ACTION_LABELS: Record<string, string> = {
   "order.reconcile": "Havale onaylandı", "order.prepare": "Sipariş hazırlanıyor", "order.ship": "Sipariş kargoya verildi",
   "order.deliver": "Sipariş teslim edildi", "order.complete": "Sipariş tamamlandı", "order.cancel": "Sipariş iptal edildi",
+  "order.confirm_cod": "Kapıda ödeme siparişi onaylandı",
   "order.refund": "Sipariş iade edildi", "order.note": "Siparişe not eklendi",
   "coupon.create": "Kupon oluşturuldu", "pricing_policy.update": "Kampanya kuralları güncellendi",
   "attribute.create": "Özellik eklendi", "attribute.update": "Özellik güncellendi", "attribute.delete": "Özellik silindi",
@@ -64,6 +65,8 @@ const ACTION_LABELS: Record<string, string> = {
   "ai.product_generate": "AI ile ürün içeriği oluşturuldu",
   "payment.iyzico_keys": "iyzico anahtarları güncellendi", "payment.card_activate": "Kartla ödeme açıldı", "payment.card_deactivate": "Kartla ödeme kapatıldı",
   "payment.bank_transfer_activate": "Havale / EFT açıldı", "payment.bank_transfer_deactivate": "Havale / EFT kapatıldı",
+  "payment.cod_update": "Kapıda ödeme ayarları güncellendi",
+  "newsletter.delete": "E-bülten abonesi silindi",
   "marketplace.create": "Pazaryeri bağlandı", "marketplace.update": "Pazaryeri bağlantısı güncellendi", "marketplace.delete": "Pazaryeri bağlantısı silindi",
   "marketplace.mapping": "Pazaryeri eşleştirmesi değişti", "marketplace.listings_add": "Pazaryerine ürün eklendi",
   "marketplace.listings_pause": "Pazaryerinde satış durduruldu", "marketplace.listings_resume": "Pazaryerinde satış açıldı",

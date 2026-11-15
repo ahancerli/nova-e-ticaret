@@ -1,3 +1,5 @@
+import type { CashOnDeliverySettings } from "./cash-on-delivery";
+
 /**
  * Ödeme sistemleri (panel) — pure types and rules, safe to import from client components.
  * Card payments: one iyzico account per environment, at most one active. Bank transfer: one config + IBAN accounts.
@@ -54,6 +56,8 @@ export interface BankAccountView {
 export interface PaymentSettingsView {
   iyzico: { active: IyzicoEnvironment | null; accounts: IyzicoAccountView[] };
   bankTransfer: { active: boolean; accounts: BankAccountView[] };
+  /** `updatedAt` null = never saved. `categories` = the tree as picker options (path label). */
+  cashOnDelivery: CashOnDeliverySettings & { updatedAt: string | null; categories: { id: string; label: string }[] };
 }
 
 export interface IyzicoKeysInput {
@@ -76,4 +80,6 @@ export interface PaymentOptions {
   card: boolean;
   bankTransfer: boolean;
   bankAccounts: Omit<BankAccountView, "id" | "isActive" | "inUse">[];
+  /** Offered at all; whether the current cart qualifies comes from /api/checkout/cash-on-delivery. */
+  cashOnDelivery: boolean;
 }

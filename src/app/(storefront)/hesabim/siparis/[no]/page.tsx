@@ -9,7 +9,7 @@ import { currentPrincipal, resolveService } from "@/server/app";
 export const metadata = { title: "Sipariş detayı", robots: { index: false } };
 
 const when = new Intl.DateTimeFormat("tr-TR", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Istanbul" });
-const METHOD: Record<string, string> = { iyzico: "Kredi / banka kartı", bank_transfer: "Havale / EFT" };
+const METHOD: Record<string, string> = { iyzico: "Kredi / banka kartı", bank_transfer: "Havale / EFT", cash_on_delivery: "Kapıda ödeme" };
 
 export default async function CustomerOrderPage({ params }: { params: Promise<{ no: string }> }) {
   const { no } = await params;
@@ -20,10 +20,10 @@ export default async function CustomerOrderPage({ params }: { params: Promise<{ 
 
   return (
     <div className="container-page max-w-4xl space-y-6 py-10">
-      <Link href="/hesabim" className="text-sm text-ink-soft hover:text-brand">← Siparişlerim</Link>
+      <Link href="/hesabim" className="text-sm text-ink-soft hover:text-brand">Siparişlerim</Link>
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold">Sipariş {order.orderNumber}</h1>
-        <OrderStatusPill status={order.status} />
+        <OrderStatusPill status={order.status} paymentMethod={order.paymentMethod} />
       </div>
       <p className="-mt-4 text-sm text-ink-soft">{when.format(new Date(order.placedAt))}{order.paymentMethod ? ` · ${METHOD[order.paymentMethod] ?? order.paymentMethod}` : ""}</p>
 

@@ -12,10 +12,12 @@ const RESTOCKED_QTY = `COALESCE((SELECT SUM(m.on_hand_delta) FROM inventory_move
 export class D1OrderRepository extends Repository implements OrderRepository {
   // --- reads -----------------------------------------------------------------------------------------
   async header(orderId: string): Promise<OrderHeader | null> {
-    const r = await this.db.first<{ id: string; order_number: string; status: string; checkout_id: string; total_minor: number }>(
-      "SELECT id, order_number, status, checkout_id, total_minor FROM orders WHERE id = ?", orderId,
+    const r = await this.db.first<{ id: string; order_number: string; status: string; checkout_id: string; total_minor: number; payment_method: string | null; payment_status: string }>(
+      "SELECT id, order_number, status, checkout_id, total_minor, payment_method, payment_status FROM orders WHERE id = ?", orderId,
     );
-    return r ? { id: r.id, orderNumber: r.order_number, status: r.status, checkoutId: r.checkout_id, totalMinor: r.total_minor } : null;
+    return r ? {
+      id: r.id, orderNumber: r.order_number, status: r.status, checkoutId: r.checkout_id, totalMinor: r.total_minor, paymentMethod: r.payment_method, paymentStatus: r.payment_status,
+    } : null;
   }
 
   async orderNumbers(ids: string[]): Promise<Map<string, string>> {
@@ -121,6 +123,56 @@ export class D1OrderRepository extends Repository implements OrderRepository {
       st("UPDATE coupon_redemptions SET status = 'released' WHERE checkout_id = ? AND status = 'reserved'", order.checkoutId),
       st("UPDATE payments SET status = 'cancelled', updated_at = ? WHERE order_id = ? AND status IN ('created','pending')", now, order.id),
       st("UPDATE bank_transfers SET status = 'cancelled' WHERE payment_id IN (SELECT id FROM payments WHERE order_id = ?) AND status IN ('awaiting','notified','mismatch')", order.id),
+    ];
+  }
+
+  async heldReservations(checkoutId: string): Promise<number> {
+    return Number((await this.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM stock_reservations WHERE checkout_id = ? AND status = 'reserved'", checkoutId))?.n ?? 0);
+  }
+
+  // --- cash on delivery -----------------------------------------------------------------------------
+  commitStockStatements(order: OrderHeader, actorId: string, now: string): [Statement, ...Statement[]] {
+    const st = (sql: string, ...p: unknown[]) => this.db.statement(sql, ...p);
+    return [
+      // the reservation trigger moves the units from reserved to sold (on_hand − qty, reserved − qty)
+      st("UPDATE stock_reservations SET status = 'committed', updated_at = ? WHERE checkout_id = ? AND status = 'reserved'", now, order.checkoutId),
+      st(`INSERT INTO inventory_movements (id, variant_id, warehouse_id, kind, on_hand_delta, reserved_delta, reference_type, reference_id, reason, actor_id, idempotency_key)
+          SELECT lower(hex(randomblob(16))), variant_id, warehouse_id, 'commit', -quantity, -quantity, 'order', ?, 'Kapıda ödeme onayı', ?, 'mv:commit:' || id
+            FROM stock_reservations WHERE checkout_id = ? AND status = 'committed'
+          ON CONFLICT(idempotency_key) DO NOTHING`, order.id, actorId, order.checkoutId),
+      st("UPDATE campaign_allocations SET status = 'committed' WHERE checkout_id = ? AND status = 'reserved'", order.checkoutId),
+      st("UPDATE coupon_redemptions SET status = 'committed' WHERE checkout_id = ? AND status = 'reserved'", order.checkoutId),
+    ];
+  }
+
+  returnCommittedStockStatements(order: OrderHeader, actorId: string, now: string): Statement[] {
+    const st = (sql: string, ...p: unknown[]) => this.db.statement(sql, ...p);
+    return [
+      st(`INSERT INTO inventory_movements (id, variant_id, warehouse_id, kind, on_hand_delta, reserved_delta, reference_type, reference_id, reason, actor_id, idempotency_key)
+          SELECT lower(hex(randomblob(16))), variant_id, warehouse_id, 'return', quantity, 0, 'order', ?, 'Kapıda ödeme iptali', ?, 'mv:cod-cancel:' || id
+            FROM stock_reservations WHERE checkout_id = ? AND status = 'committed'
+          ON CONFLICT(idempotency_key) DO NOTHING`, order.id, actorId, order.checkoutId),
+      st(`UPDATE inventory_balances SET version = version + 1, updated_at = ?1,
+                 on_hand = on_hand + (SELECT SUM(r.quantity) FROM stock_reservations r WHERE r.checkout_id = ?2 AND r.status = 'committed'
+                                       AND r.variant_id = inventory_balances.variant_id AND r.warehouse_id = inventory_balances.warehouse_id)
+           WHERE EXISTS (SELECT 1 FROM stock_reservations r WHERE r.checkout_id = ?2 AND r.status = 'committed'
+                          AND r.variant_id = inventory_balances.variant_id AND r.warehouse_id = inventory_balances.warehouse_id)`, now, order.checkoutId),
+      st("UPDATE campaign_allocations SET status = 'released' WHERE checkout_id = ? AND status = 'committed'", order.checkoutId),
+      st("UPDATE coupon_redemptions SET status = 'released' WHERE checkout_id = ? AND status = 'committed'", order.checkoutId),
+    ];
+  }
+
+  collectCashStatements(order: OrderHeader, actorId: string, now: string): [Statement, ...Statement[]] {
+    const st = (sql: string, ...p: unknown[]) => this.db.statement(sql, ...p);
+    return [
+      st("UPDATE orders SET payment_status = 'paid', updated_at = ? WHERE id = ? AND payment_status = 'pending'", now, order.id),
+      st(`UPDATE payments SET status = 'paid', paid_at = ?, updated_at = ?
+           WHERE order_id = ? AND provider = 'cash_on_delivery' AND status IN ('created','pending')`, now, now, order.id),
+      st(`INSERT INTO order_events (id, order_id, event_type, note, actor_id, idempotency_key)
+          VALUES (lower(hex(randomblob(16))), ?, 'payment_captured', 'Ödeme kapıda tahsil edildi.', ?, ?) ON CONFLICT(idempotency_key) DO NOTHING`, order.id, actorId, `evt:paid:${order.id}`),
+      st(`INSERT INTO outbox_events (id, aggregate_type, aggregate_id, event_type, payload_json, dedupe_key)
+          VALUES (lower(hex(randomblob(16))), 'order', ?, 'order.paid', ?, ?) ON CONFLICT(dedupe_key) DO NOTHING`,
+        order.id, JSON.stringify({ paymentMethod: "cash_on_delivery" }), `order.paid:${order.id}`),
     ];
   }
 

@@ -11,7 +11,7 @@ export const orderQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),
   status: csvEnum(ORDER_STATUSES).optional(),
   paymentStatus: z.enum(PAYMENT_STATUSES).optional(),
-  provider: z.enum(["iyzico", "bank_transfer"]).optional(),
+  provider: z.enum(["iyzico", "bank_transfer", "cash_on_delivery"]).optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-AA-GG").optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-AA-GG").optional(),
   minTotal: z.coerce.number().int().min(0).optional(),
@@ -25,6 +25,7 @@ export const orderQuerySchema = z.object({
 /** POST /api/admin/orders/:id/actions — one schema per state-machine action (lib/order-rules.ts). */
 export const orderActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("prepare"), note: z.string().trim().max(500).optional() }).strict(),
+  z.object({ action: z.literal("confirm_cod"), note: z.string().trim().max(500).optional() }).strict(),
   z.object({ action: z.literal("complete"), note: z.string().trim().max(500).optional() }).strict(),
   z.object({ action: z.literal("deliver"), note: z.string().trim().max(500).optional() }).strict(),
   z.object({ action: z.literal("cancel"), reason: z.string().trim().min(3, "İptal sebebini yazın.").max(500) }).strict(),

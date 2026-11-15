@@ -6,7 +6,7 @@ import { ConsentRoot } from "@/features/consent/ConsentRoot";
 import { CompareBar, Footer, Header, SupportWidget } from "@/features/shop";
 import { GetPublicCaptchaConfigToken } from "@/modules/captcha";
 import { GetConsentConfigToken } from "@/modules/consent";
-import { GetFooterLinksToken } from "@/modules/content";
+import { GetFooterLinksToken, GetSignupLegalToken } from "@/modules/content";
 import { GetPublicSettingsToken } from "@/modules/settings";
 import { GetShellToken } from "@/modules/storefront";
 import { GetCustomerSupportBadgeToken, GetPublicSupportConfigToken } from "@/modules/support";
@@ -26,7 +26,7 @@ function accentCss(color: string | null): string | null {
 }
 
 export default async function StorefrontLayout({ children }: { children: React.ReactNode }) {
-  const [shell, settings, pageColumns, consent, captcha, support, user] = await Promise.all([
+  const [shell, settings, pageColumns, consent, captcha, support, user, legal] = await Promise.all([
     resolveService(GetShellToken).then((q) => q.execute()),
     resolveService(GetPublicSettingsToken).then((q) => q.execute()),
     resolveService(GetFooterLinksToken).then((q) => q.execute()),
@@ -34,6 +34,7 @@ export default async function StorefrontLayout({ children }: { children: React.R
     resolveService(GetPublicCaptchaConfigToken).then((q) => q.execute()),
     resolveService(GetPublicSupportConfigToken).then((q) => q.execute()),
     currentPrincipal("storefront"),
+    resolveService(GetSignupLegalToken).then((q) => q.execute()),
   ]);
   // live support badge: one indexed row for signed-in members, nothing for visitors
   const supportBadge = support.enabled && user ? await resolveService(GetCustomerSupportBadgeToken).then((q) => q.execute(user.id)) : null;
@@ -45,9 +46,12 @@ export default async function StorefrontLayout({ children }: { children: React.R
       <div className={`${display.variable} ${body.variable} bg-white font-sans`}>
         <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-white focus:p-2">İçeriğe geç</a>
         <Header nav={shell.header} categories={shell.categories} settings={settings} />
-        {/* bot protection for sign-up / login / forgot / review forms (null = off: no provider script loads) */}
-        <main id="main"><CaptchaProvider config={captcha}>{children}</CaptchaProvider></main>
-        <Footer settings={settings} nav={shell.footer} pageColumns={pageColumns} year={new Date().getFullYear()} cookiePreferences={consent.bannerEnabled} />
+        {/* bot protection for sign-up / login / forgot / review / e-bülten forms (null = off: no provider script loads) */}
+        <CaptchaProvider config={captcha}>
+          <main id="main">{children}</main>
+          <Footer settings={settings} nav={shell.footer} pageColumns={pageColumns} year={new Date().getFullYear()} cookiePreferences={consent.bannerEnabled}
+            newsletter={{ kvkkHref: legal.kvkk?.href ?? legal.privacy?.href ?? null, email: user?.email ?? null }} />
+        </CaptchaProvider>
         <CartDrawer />
         <CompareBar />
         <SupportWidget config={support} signedIn={Boolean(user)} initial={supportBadge} />

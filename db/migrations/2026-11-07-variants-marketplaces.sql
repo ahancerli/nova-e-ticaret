@@ -11,7 +11,5 @@ ALTER TABLE attribute_options ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1 CH
 ALTER TABLE orders ADD COLUMN sales_channel TEXT NOT NULL DEFAULT 'web' CHECK (sales_channel IN ('web','trendyol','hepsiburada','n11','ciceksepeti'));
 ALTER TABLE orders ADD COLUMN external_order_number TEXT CHECK (external_order_number IS NULL OR length(external_order_number) <= 60);
 
-CREATE INDEX IF NOT EXISTS ix_orders_sales_channel ON orders(sales_channel, placed_at);
-
 -- Demo data: colours are picked with swatches.
 UPDATE attribute_definitions SET display_style = 'swatch' WHERE id = 'a_color' AND display_style = 'button';

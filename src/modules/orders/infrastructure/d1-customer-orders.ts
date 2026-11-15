@@ -6,6 +6,7 @@ export interface CustomerOrderSummary {
   placedAt: string;
   status: string;
   paymentStatus: string;
+  paymentMethod: string | null;
   totalMinor: number;
   itemCount: number;
   firstItem: string | null;
@@ -16,7 +17,8 @@ export interface CustomerOrderDetail extends CustomerOrderSummary {
   subtotalMinor: number;
   discountMinor: number;
   shippingMinor: number;
-  paymentMethod: string | null;
+  /** Kapıda ödeme service fee (part of shippingMinor). */
+  paymentFeeMinor: number;
   items: { name: string; variant: string; quantity: number; unitPriceMinor: number; totalMinor: number; discountMinor: number }[];
   discounts: { label: string; amountMinor: number }[];
   shipping: { recipient: string; line: string } | null;
@@ -29,8 +31,8 @@ export interface CustomerOrderDetail extends CustomerOrderSummary {
 /** Read side of "Siparişlerim": always filtered by the signed-in user's id. */
 export class D1CustomerOrderReadModel extends Repository {
   async list(userId: string): Promise<CustomerOrderSummary[]> {
-    const rows = await this.db.all<{ order_number: string; placed_at: string; status: string; payment_status: string; total_minor: number; item_count: number; first_item: string | null; image_url: string | null }>(
-      `SELECT o.order_number, o.placed_at, o.status, o.payment_status, o.total_minor,
+    const rows = await this.db.all<{ order_number: string; placed_at: string; status: string; payment_status: string; payment_method: string | null; total_minor: number; item_count: number; first_item: string | null; image_url: string | null }>(
+      `SELECT o.order_number, o.placed_at, o.status, o.payment_status, o.payment_method, o.total_minor,
               (SELECT COALESCE(SUM(i.quantity), 0) FROM order_items i WHERE i.order_id = o.id) AS item_count,
               (SELECT i.product_name_snapshot FROM order_items i WHERE i.order_id = o.id ORDER BY i.rowid LIMIT 1) AS first_item,
               (SELECT m.public_url FROM order_items i JOIN product_variants v ON v.id = i.variant_id JOIN product_media pm ON pm.product_id = v.product_id
@@ -39,7 +41,7 @@ export class D1CustomerOrderReadModel extends Repository {
       userId,
     );
     return rows.map((r) => ({
-      orderNumber: r.order_number, placedAt: r.placed_at, status: r.status, paymentStatus: r.payment_status, totalMinor: r.total_minor,
+      orderNumber: r.order_number, placedAt: r.placed_at, status: r.status, paymentStatus: r.payment_status, paymentMethod: r.payment_method, totalMinor: r.total_minor,
       itemCount: r.item_count, firstItem: r.first_item, imageUrl: r.image_url,
     }));
   }
@@ -54,8 +56,8 @@ export class D1CustomerOrderReadModel extends Repository {
   }
 
   private async detailWhere(where: string, ...params: unknown[]): Promise<CustomerOrderDetail | null> {
-    const o = await this.db.first<{ id: string; order_number: string; placed_at: string; status: string; payment_status: string; total_minor: number; subtotal_minor: number; discount_minor: number; shipping_minor: number }>(
-      `SELECT id, order_number, placed_at, status, payment_status, total_minor, subtotal_minor, discount_minor, shipping_minor FROM orders WHERE ${where}`, ...params,
+    const o = await this.db.first<{ id: string; order_number: string; placed_at: string; status: string; payment_status: string; payment_method: string | null; payment_fee_minor: number; total_minor: number; subtotal_minor: number; discount_minor: number; shipping_minor: number }>(
+      `SELECT id, order_number, placed_at, status, payment_status, payment_method, payment_fee_minor, total_minor, subtotal_minor, discount_minor, shipping_minor FROM orders WHERE ${where}`, ...params,
     );
     if (!o) return null;
     const st = (sql: string) => this.db.statement(sql, o.id);
@@ -78,7 +80,7 @@ export class D1CustomerOrderReadModel extends Repository {
       orderNumber: o.order_number, placedAt: o.placed_at, status: o.status, paymentStatus: o.payment_status, totalMinor: o.total_minor,
       subtotalMinor: o.subtotal_minor, discountMinor: o.discount_minor, shippingMinor: o.shipping_minor,
       itemCount: its.reduce((a, i) => a + i.quantity, 0), firstItem: its[0]?.name ?? null, imageUrl: null,
-      paymentMethod: pay?.provider ?? null,
+      paymentMethod: o.payment_method ?? pay?.provider ?? null, paymentFeeMinor: o.payment_fee_minor,
       items: its.map((i) => ({
         name: i.name, variant: (JSON.parse(i.variant_snapshot_json || "{}") as { label?: string }).label ?? "", quantity: i.quantity,
         unitPriceMinor: i.unit_price_minor, totalMinor: i.total_minor, discountMinor: i.discount_minor,

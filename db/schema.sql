@@ -1265,7 +1265,7 @@ CREATE TABLE IF NOT EXISTS checkout_sessions (
 CREATE TABLE IF NOT EXISTS orders (
   -- TABLO: Siparişler (web + pazaryeri). Tutarlar sipariş anında dondurulur ve değiştirilemez (trigger). Durum makinesi:
   --        pending_payment/awaiting_transfer → paid → preparing → shipped → delivered → completed, ya da
-  --        cancelled/refunded.
+  --        cancelled/refunded. Kapıda ödeme: pending_payment (onay bekliyor) → preparing → shipped → delivered (tahsil edildi).
   id             TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
   order_number   TEXT NOT NULL UNIQUE,  -- Müşteriye gösterilen sipariş no (NOVA-2026-0001)
   checkout_id    TEXT NOT NULL UNIQUE REFERENCES checkout_sessions(id) ON DELETE RESTRICT,  -- Siparişi oluşturan checkout (tekil)
@@ -1289,6 +1289,10 @@ CREATE TABLE IF NOT EXISTS orders (
   terms_version  TEXT CHECK (terms_version IS NULL OR length(terms_version) <= 40),  -- Onaylanan sözleşme sürümleri (ms<v>-ob<v>), sipariş e-postası bu metinleri gönderir
   created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Oluşturulma zamanı (UTC ISO-8601)
   updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Son güncelleme zamanı (uygulama yazar)
+  -- Added 2026-11-15 (existing DBs: db/migrations/2026-11-15-cash-on-delivery.sql). The payment method chosen at checkout,
+  -- and the cash-on-delivery service fee. The fee is part of shipping_minor (the total CHECK below stays as it is).
+  payment_method    TEXT CHECK (payment_method IS NULL OR payment_method IN ('iyzico','bank_transfer','cash_on_delivery')),  -- Seçilen ödeme yöntemi: iyzico / bank_transfer / cash_on_delivery kapıda ödeme
+  payment_fee_minor INTEGER NOT NULL DEFAULT 0 CHECK (payment_fee_minor >= 0),  -- Kapıda ödeme hizmet bedeli (kuruş), kargo ücretinin içindedir
   CHECK (total_minor = subtotal_minor - discount_minor + shipping_minor),
   CHECK (tax_minor <= total_minor)
 ) STRICT;
@@ -1370,10 +1374,10 @@ CREATE TABLE IF NOT EXISTS order_events (
 -- 6. PAYMENTS & LOGISTICS
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS payment_configs (
-  -- TABLO: Ödeme yöntemi ayarları: iyzico (kredi kartı) ve havale/EFT, ortam başına (sandbox/production). Gizli
-  --        anahtarlar integration_secrets ta.
+  -- TABLO: Ödeme yöntemi ayarları: iyzico (kredi kartı), havale/EFT ve kapıda ödeme, ortam başına (sandbox/production).
+  --        Gizli anahtarlar integration_secrets ta. Kapıda ödemenin ücreti ve kuralları public_config_json da.
   id                 TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
-  provider           TEXT NOT NULL CHECK (provider IN ('iyzico','bank_transfer')),  -- iyzico / bank_transfer
+  provider           TEXT NOT NULL CHECK (provider IN ('iyzico','bank_transfer','cash_on_delivery')),  -- iyzico / bank_transfer / cash_on_delivery kapıda ödeme
   name               TEXT NOT NULL,  -- Görünen ad
   environment        TEXT NOT NULL CHECK (environment IN ('sandbox','production')),  -- sandbox test / production canlı
   public_config_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(public_config_json)),  -- Gizli olmayan ayarlar (JSON)
@@ -1400,7 +1404,7 @@ CREATE TABLE IF NOT EXISTS payments (
   id                  TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
   order_id            TEXT NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,  -- Sipariş
   payment_config_id   TEXT NOT NULL REFERENCES payment_configs(id) ON DELETE RESTRICT,  -- Kullanılan ödeme ayarı
-  provider            TEXT NOT NULL CHECK (provider IN ('iyzico','bank_transfer')),  -- iyzico / bank_transfer
+  provider            TEXT NOT NULL CHECK (provider IN ('iyzico','bank_transfer','cash_on_delivery')),  -- iyzico / bank_transfer / cash_on_delivery kapıda ödeme (teslimatta paid olur)
   provider_payment_id TEXT,  -- Sağlayıcının ödeme id si
   conversation_id     TEXT NOT NULL UNIQUE,  -- iyzico ile eşleştirme için bizim tekil id miz
   idempotency_key     TEXT NOT NULL UNIQUE,  -- Çift tahsilatı engeller
@@ -1830,6 +1834,53 @@ CREATE TABLE IF NOT EXISTS review_contacts (
   CHECK (channel <> 'email' OR subject IS NOT NULL)
 ) STRICT;
 
+-- E-bülten (footer form): double opt-in. A sign-up stays pending until the link in the confirmation e-mail is used
+-- (only the SHA-256 of the one-time token is stored). Confirm / unsubscribe also write user_consents
+-- (marketing_email) as KVKK / İYS evidence. Unsubscribe links are signed with the session secret, nothing stored.
+CREATE TABLE IF NOT EXISTS newsletter_subscribers (
+  -- TABLO: E-bülten aboneleri (çift onaylı). pending onay e-postası bekliyor, subscribed onayladı, unsubscribed ayrıldı.
+  id                 TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
+  email              TEXT NOT NULL UNIQUE CHECK (email = lower(trim(email)) AND instr(email, '@') > 1 AND length(email) <= 254),  -- E-posta (küçük harf, boşluksuz), tekil
+  status             TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','subscribed','unsubscribed')),  -- pending onay bekliyor / subscribed abone / unsubscribed ayrıldı
+  user_id            TEXT REFERENCES users(id) ON DELETE SET NULL,  -- Aynı e-postayla üye olan müşteri (varsa)
+  source             TEXT NOT NULL DEFAULT 'footer' CHECK (source IN ('footer','account','panel')),  -- Kayıt yeri: footer / account Hesabım / panel
+  consent_version    TEXT CHECK (consent_version IS NULL OR length(consent_version) <= 40),  -- Kayıt anında gösterilen aydınlatma metni sürümü
+  confirm_token_hash TEXT UNIQUE,  -- Onay bağlantısındaki tek kullanımlık anahtarın SHA-256 özeti (onaydan sonra NULL)
+  confirm_expires_at TEXT,  -- Onay bağlantısının geçerlilik sonu
+  confirm_sent_at    TEXT,  -- Son onay e-postası zamanı (tekrar gönderim sınırı)
+  confirmed_at       TEXT,  -- Aboneliğin onaylandığı zaman
+  unsubscribed_at    TEXT,  -- Abonelikten çıkış zamanı
+  ip_hash            TEXT CHECK (ip_hash IS NULL OR length(ip_hash) <= 64),  -- Kaydı yapanın IP özeti (ispat, düz IP tutulmaz)
+  created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Oluşturulma zamanı (UTC ISO-8601)
+  updated_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Son güncelleme zamanı (uygulama yazar)
+  CHECK (status <> 'subscribed' OR confirmed_at IS NOT NULL)
+) STRICT;
+
+-- "Stok gelince haber ver" / "Fiyat düşünce haber ver": a signed-in customer follows one variant (a product without
+-- variant axes has its single variant, so its stock = that variant's stock). /api/cron/product-alerts mails the
+-- customer once (SMTP, MailSender) when the variant is sellable again / its retail price falls below
+-- `baseline_price_minor`, then the row is done (notified). Several attempts on SMTP errors, then failed.
+CREATE TABLE IF NOT EXISTS product_alerts (
+  -- TABLO: Müşterinin Stok gelince haber ver ve Fiyat düşünce haber ver talepleri (varyant bazında). Koşul oluşunca
+  --        bir kez e-posta gider ve kayıt notified olur.
+  id                   TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
+  kind                 TEXT NOT NULL CHECK (kind IN ('back_in_stock','price_drop')),  -- back_in_stock stok gelince / price_drop fiyat düşünce
+  user_id              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,  -- Talep eden müşteri (e-posta adresi buradan)
+  product_id           TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,  -- Ürün
+  variant_id           TEXT NOT NULL,  -- Takip edilen varyant (varyantsız üründe tek varyant)
+  baseline_price_minor INTEGER CHECK (baseline_price_minor IS NULL OR baseline_price_minor >= 0),  -- Talep anındaki satış fiyatı (kuruş), fiyat bunun altına inince haber verilir
+  status               TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','notified','cancelled','failed')),  -- active bekliyor / notified e-posta gitti / cancelled müşteri vazgeçti / failed gönderilemedi
+  attempts             INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),  -- Başarısız gönderim denemesi sayısı
+  next_attempt_at      TEXT,  -- Hata sonrası sıradaki deneme zamanı
+  last_error           TEXT CHECK (last_error IS NULL OR length(last_error) <= 500),  -- Son gönderim hatası
+  notified_price_minor INTEGER CHECK (notified_price_minor IS NULL OR notified_price_minor >= 0),  -- E-postada bildirilen fiyat (kuruş)
+  notified_at          TEXT,  -- E-postanın gittiği zaman
+  created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Oluşturulma zamanı (UTC ISO-8601)
+  updated_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Son güncelleme zamanı (uygulama yazar)
+  FOREIGN KEY (variant_id, product_id) REFERENCES product_variants(id, product_id) ON DELETE CASCADE,
+  CHECK (kind <> 'price_drop' OR baseline_price_minor IS NOT NULL)
+) STRICT;
+
 -- Single row (id = 1). 'manual' = every review waits for approval; 'auto_trusted' publishes verified buyers' 4–5 star
 -- reviews without links / blocked words at once, everything else still waits.
 CREATE TABLE IF NOT EXISTS review_settings (
@@ -2224,6 +2275,10 @@ CREATE INDEX IF NOT EXISTS ix_reviews_status_created     ON reviews(status, crea
 CREATE INDEX IF NOT EXISTS ix_reviews_user                ON reviews(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_review_votes_user           ON review_votes(user_id);
 CREATE INDEX IF NOT EXISTS ix_review_contacts_review      ON review_contacts(review_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_newsletter_status_created ON newsletter_subscribers(status, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_product_alerts_active ON product_alerts(user_id, variant_id, kind) WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS ix_product_alerts_due          ON product_alerts(status, variant_id);
+CREATE INDEX IF NOT EXISTS ix_product_alerts_user         ON product_alerts(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_admin_notifications_created ON admin_notifications(created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_admin_notifications_type    ON admin_notifications(type, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_admin_notif_states_user     ON admin_notification_states(user_id, read_at);

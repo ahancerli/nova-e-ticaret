@@ -25,6 +25,22 @@ def new_db(path: str = ":memory:") -> sqlite3.Connection:
     return c
 
 
+def apply_migration(conn: sqlite3.Connection, path: Path) -> None:
+    """What scripts/db.mjs migrate does: `-- foreign_keys: off` files run with foreign keys off, then FK-checked."""
+    sql = path.read_text(encoding="utf-8")
+    fk_off = any(line.strip() == "-- foreign_keys: off" for line in sql.splitlines())
+    if fk_off:
+        conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        conn.executescript(sql)
+        if fk_off:
+            broken = conn.execute("PRAGMA foreign_key_check").fetchall()
+            assert not broken, broken
+    finally:
+        if fk_off:
+            conn.execute("PRAGMA foreign_keys = ON")
+
+
 def test(name):
     def deco(fn):
         try:
@@ -58,7 +74,7 @@ def setup_checkout(c, cid="co_1", cart="cart_1"):
 def _():
     c = new_db()
     n = c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()[0]
-    assert n == 142, n
+    assert n == 144, n
 
 
 @test("02 all tables are STRICT")
@@ -503,7 +519,7 @@ def _():
     c.executescript(old_seed)
     c.executescript(SCHEMA)  # documented order: schema first (new tables), then the migrations
     for m in sorted((ROOT / "migrations").glob("*.sql")):
-        c.executescript(m.read_text(encoding="utf-8"))
+        apply_migration(c, m)
     cols = {r[1] for r in c.execute("PRAGMA table_info(campaigns)")}
     assert {"offer_type", "first_order_only", "condition_min_quantity", "badge_label", "badge_emoji", "badge_media_id"} <= cols, cols
     assert "allow_with_promotions" in {r[1] for r in c.execute("PRAGMA table_info(coupons)")}
@@ -645,7 +661,7 @@ def _():
             u.execute(first)
             continue  # already applied (what scripts/migrate.mjs does)
         except sqlite3.DatabaseError:
-            u.executescript(m.read_text(encoding="utf-8"))
+            apply_migration(u, m)
     assert "model_code" in {r[1] for r in u.execute("PRAGMA table_info(products)")}
     assert u.execute("SELECT varies_media FROM attribute_definitions WHERE id = 'a_color'").fetchone()[0] == 1
     u.execute("DELETE FROM catalog_change_log")
@@ -694,7 +710,7 @@ def _():
             u.execute(first)
             continue
         except sqlite3.DatabaseError:
-            u.executescript(m.read_text(encoding="utf-8"))
+            apply_migration(u, m)
     assert "terms_version" in {r[1] for r in u.execute("PRAGMA table_info(orders)")}
     assert "updated_at" in {r[1] for r in u.execute("PRAGMA table_info(shipping_methods)")}
     assert u.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('invoices','return_requests','return_request_items')").fetchone()[0] == 3
@@ -757,6 +773,45 @@ def _():
     expect_error(c, "INSERT INTO support_messages (id, conversation_id, seq, sender, body, client_id) VALUES ('sm4', 'sc1', 2, 'bot', 'x', 'client-0004')", contains="CHECK")
     c.execute("UPDATE support_conversations SET status = 'closed' WHERE id = 'sc1'")
     c.execute("INSERT INTO support_conversations (id, customer_id) VALUES ('sc2', ?)", (cust,))
+
+
+@test("60 cash on delivery: provider value, order payment method + fee; migration 2026-11-15 rebuilds the payment tables of the previous schema")
+def _():
+    c = new_db()
+    c.execute("INSERT INTO payment_configs (id, provider, name, environment, is_active, public_config_json) VALUES ('pc_cod', 'cash_on_delivery', 'Kapıda ödeme', 'production', 1, '{\"feeMinor\":2000}')")
+    expect_error(c, "INSERT INTO payment_configs (id, provider, name, environment) VALUES ('pc_x', 'cheque', 'x', 'sandbox')", contains="CHECK")
+    expect_error(c, "UPDATE orders SET payment_method = 'cheque' WHERE id = 'ord_demo_1'", contains="CHECK")
+    expect_error(c, "UPDATE orders SET payment_fee_minor = -1 WHERE id = 'ord_demo_1'", contains="CHECK")
+    import subprocess
+    try:
+        old = subprocess.run(["git", "show", "ff390c0:db/schema.sql"], cwd=ROOT.parent, capture_output=True, text=True, check=True).stdout
+        old_seed = subprocess.run(["git", "show", "ff390c0:db/seed.sql"], cwd=ROOT.parent, capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return
+    u = sqlite3.connect(":memory:", isolation_level=None)
+    u.execute("PRAGMA foreign_keys = ON")
+    u.executescript(old)
+    u.executescript(old_seed)
+    before = u.execute("SELECT count(*), group_concat(id) FROM (SELECT id FROM payments ORDER BY id)").fetchone()
+    refs = u.execute("SELECT (SELECT count(*) FROM bank_transfers) + (SELECT count(*) FROM refunds) + (SELECT count(*) FROM payment_events)").fetchone()[0]
+    u.executescript(SCHEMA)
+    for m in sorted((ROOT / "migrations").glob("*.sql")):
+        try:
+            u.execute(m.read_text(encoding="utf-8").splitlines()[0][len("-- probe: "):])
+            continue
+        except sqlite3.DatabaseError:
+            apply_migration(u, m)
+    assert u.execute("SELECT count(*), group_concat(id) FROM (SELECT id FROM payments ORDER BY id)").fetchone() == before, "payments kept"
+    assert u.execute("SELECT (SELECT count(*) FROM bank_transfers) + (SELECT count(*) FROM refunds) + (SELECT count(*) FROM payment_events)").fetchone()[0] == refs
+    assert u.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert u.execute("SELECT count(*) FROM orders o WHERE o.payment_method IS NULL AND EXISTS (SELECT 1 FROM payments p WHERE p.order_id = o.id)").fetchone()[0] == 0, "backfilled"
+    assert u.execute("SELECT count(*) FROM sqlite_master WHERE name IN ('trg_payment_paid_terminal', 'ux_payment_config_active', 'ix_payments_order')").fetchone()[0] == 3
+    assert u.execute("SELECT count(*) FROM sqlite_master WHERE name LIKE '%\\_new' ESCAPE '\\'").fetchone()[0] == 0
+    u.execute("INSERT INTO payment_configs (id, provider, name, environment) VALUES ('pc_cod', 'cash_on_delivery', 'Kapıda ödeme', 'production')")
+    pid = u.execute("SELECT id FROM payments WHERE status = 'paid' LIMIT 1").fetchone()
+    if pid:
+        expect_error(u, "UPDATE payments SET status = 'failed' WHERE id = ?", (pid[0],), contains="payment_paid_terminal")
+    u.executescript(SCHEMA)  # still re-runnable after the upgrade
 
 
 if __name__ == "__main__":

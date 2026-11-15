@@ -49,6 +49,8 @@ import { registerReporting } from "@/modules/reporting";
 import { registerInvoices } from "@/modules/invoices";
 import { registerReturns } from "@/modules/returns";
 import { registerReviews } from "@/modules/reviews";
+import { registerAlerts } from "@/modules/alerts";
+import { registerNewsletter } from "@/modules/newsletter";
 import { registerSettings } from "@/modules/settings";
 import { registerShipping, registerShippingRates } from "@/modules/shipping";
 import { registerShowcase } from "@/modules/showcase";
@@ -97,6 +99,8 @@ registerGeo(container); // countries + phone rules, provinces, districts (sign-u
 registerInvoices(container); // e-Arşiv faturalar: panel attach (PDF in private storage), customer download + e-mail
 registerReturns(container); // iade (cayma hakkı) talepleri: customer request → panel decision → order refund
 registerReviews(container); // product reviews & ratings: moderation, store reply, reviewer contact (mail + notifications)
+registerAlerts(container); // "Stok gelince / Fiyat düşünce haber ver" per variant, e-mailed by /api/cron/product-alerts (MailSender)
+registerNewsletter(container); // E-bülten: footer sign-up with double opt-in e-mail (MailSender), unsubscribe links, panel list
 registerSupport(container); // Canlı destek: member ↔ staff chat, live events via GraphQL subscription over SSE (in-process hub)
 registerPricing(container);
 registerCampaigns(container);

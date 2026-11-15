@@ -38,9 +38,19 @@ export const SHIPMENT_STATUS: Record<string, { label: string; tone: Tone }> = {
   cancelled: { label: "İptal", tone: "slate" },
 };
 
-export const PROVIDER_LABEL: Record<string, string> = { iyzico: "Kart (iyzico)", bank_transfer: "Havale / EFT" };
+export const PROVIDER_LABEL: Record<string, string> = { iyzico: "Kart (iyzico)", bank_transfer: "Havale / EFT", cash_on_delivery: "Kapıda ödeme" };
 
-export const orderStatusMeta = (s: string) => ORDER_STATUS[s as OrderStatus] ?? { label: s, tone: "slate" as Tone };
+/** What the action rules need besides the status (null for marketplace orders). */
+export interface OrderPaymentContext {
+  paymentMethod: string | null;
+  paymentStatus: string;
+}
+
+const isCod = (ctx?: OrderPaymentContext | null) => ctx?.paymentMethod === "cash_on_delivery";
+
+/** A cash-on-delivery order waits for the staff confirmation in pending_payment ("Onay bekliyor"). */
+export const orderStatusMeta = (s: string, ctx?: OrderPaymentContext | null) =>
+  s === "pending_payment" && isCod(ctx) ? { label: "Onay bekliyor", tone: "amber" as Tone } : ORDER_STATUS[s as OrderStatus] ?? { label: s, tone: "slate" as Tone };
 export const paymentStatusMeta = (s: string) => PAYMENT_STATUS[s as PaymentStatus] ?? { label: s, tone: "slate" as Tone };
 
 /** Customer-facing progress used by the tracker on the detail page. */
@@ -52,22 +62,47 @@ export const ORDER_FLOW: { key: string; label: string; reached: OrderStatus[] }[
   { key: "delivered", label: "Teslim edildi", reached: ["delivered", "completed"] },
 ];
 
+/** Kapıda ödeme: confirmed by the shop instead of paid up front; the money is collected at delivery. */
+export const COD_ORDER_FLOW: typeof ORDER_FLOW = [
+  ORDER_FLOW[0]!,
+  { key: "confirmed", label: "Onaylandı", reached: ["preparing", "shipped", "delivered", "completed", "refunded", "partially_refunded"] },
+  { key: "shipped", label: "Kargoda", reached: ["shipped", "delivered", "completed"] },
+  { key: "delivered", label: "Teslim edildi, ödendi", reached: ["delivered", "completed"] },
+];
+export const orderFlowFor = (ctx?: OrderPaymentContext | null) => (isCod(ctx) ? COD_ORDER_FLOW : ORDER_FLOW);
+
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
-export type OrderActionId = "reconcile" | "prepare" | "ship" | "deliver" | "complete" | "cancel" | "refund" | "note";
+export type OrderActionId = "reconcile" | "confirm_cod" | "prepare" | "ship" | "deliver" | "complete" | "cancel" | "refund" | "note";
 
-export const ORDER_ACTIONS: Record<OrderActionId, { label: string; permission: string; from: OrderStatus[] | "any"; to?: OrderStatus; danger?: boolean }> = {
+interface ActionRule {
+  label: string;
+  permission: string;
+  from: OrderStatus[] | "any";
+  to?: OrderStatus;
+  danger?: boolean;
+  /** Only for orders paid with one of these methods. */
+  methods?: string[];
+  /** Extra statuses allowed while a cash-on-delivery order is still unpaid (refused at the door, returned). */
+  unpaidCodFrom?: OrderStatus[];
+  /** Cash-on-delivery orders: only once the money was collected (payment_status paid / partially_refunded). */
+  codPaidOnly?: boolean;
+}
+
+export const ORDER_ACTIONS: Record<OrderActionId, ActionRule> = {
   reconcile: { label: "Havaleyi onayla", permission: "payments.reconcile", from: ["awaiting_transfer"], to: "paid" },
+  // Kapıda ödeme: the shop calls the customer, then the order is prepared; stock leaves the shelf now, money at delivery.
+  confirm_cod: { label: "Kapıda ödemeyi onayla", permission: "orders.write", from: ["pending_payment"], to: "preparing", methods: ["cash_on_delivery"] },
   prepare: { label: "Hazırlamaya başla", permission: "orders.write", from: ["paid"], to: "preparing" },
   ship: { label: "Kargoya ver", permission: "orders.write", from: ["paid", "preparing"], to: "shipped" },
   deliver: { label: "Teslim edildi", permission: "orders.write", from: ["shipped"], to: "delivered" },
   complete: { label: "Siparişi tamamla", permission: "orders.write", from: ["delivered"], to: "completed" },
   // Paid orders need the refund flow (planned) — cancelling them here would keep the money without a refund record.
-  cancel: { label: "Siparişi iptal et", permission: "orders.write", from: ["pending_payment", "awaiting_transfer"], to: "cancelled", danger: true },
+  cancel: { label: "Siparişi iptal et", permission: "orders.write", from: ["pending_payment", "awaiting_transfer"], to: "cancelled", danger: true, unpaidCodFrom: ["preparing", "shipped"] },
   // Paid orders are cancelled through a (full) refund; partial refunds keep the order status.
   // "cancelled": a card payment that arrived after expiry / cancel is recorded and must be paid back.
-  refund: { label: "İade et", permission: "orders.write", from: ["paid", "preparing", "shipped", "delivered", "completed", "cancelled"], danger: true },
+  refund: { label: "İade et", permission: "orders.write", from: ["paid", "preparing", "shipped", "delivered", "completed", "cancelled"], danger: true, codPaidOnly: true },
   note: { label: "Not ekle", permission: "orders.write", from: "any" },
 };
 
@@ -82,13 +117,22 @@ export const REFUND_STATUS: Record<string, { label: string; tone: Tone }> = {
   cancelled: { label: "İptal", tone: "slate" },
 };
 
-export function canRunAction(action: OrderActionId, status: string, permissions: Iterable<string>): boolean {
+/** `ctx` omitted = status + permission only (bulk menus); the server always passes it. */
+export function canRunAction(action: OrderActionId, status: string, permissions: Iterable<string>, ctx?: OrderPaymentContext | null): boolean {
   const a = ORDER_ACTIONS[action];
-  const perms = new Set(permissions);
-  return perms.has(a.permission) && (a.from === "any" || a.from.includes(status as OrderStatus));
+  if (!new Set(permissions).has(a.permission)) return false;
+  if (ctx !== undefined) {
+    if (a.methods && !a.methods.includes(ctx?.paymentMethod ?? "")) return false;
+    if (a.codPaidOnly && isCod(ctx) && !["paid", "partially_refunded"].includes(ctx!.paymentStatus)) return false;
+  }
+  if (a.from === "any" || a.from.includes(status as OrderStatus)) return true;
+  return isCod(ctx) && ctx!.paymentStatus !== "paid" && (a.unpaidCodFrom ?? []).includes(status as OrderStatus);
 }
 
 /** The single most useful next step for the current status (rendered as the primary button). */
+export const primaryAction = (status: string, ctx?: OrderPaymentContext | null): OrderActionId | undefined =>
+  status === "pending_payment" && isCod(ctx) ? "confirm_cod" : PRIMARY_ACTION[status as OrderStatus];
+
 export const PRIMARY_ACTION: Partial<Record<OrderStatus, OrderActionId>> = {
   awaiting_transfer: "reconcile",
   paid: "prepare",

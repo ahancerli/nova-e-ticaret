@@ -20,5 +20,6 @@ export { SupportWidget } from "./support/SupportWidget";
 export { CompareTable } from "./compare/CompareTable";
 export { PageHero } from "./ui/PageHero";
 export { AuthShell } from "./ui/AuthShell";
+export { NewsletterLinkAction } from "./newsletter/NewsletterLinkAction";
 export { BRAND_TONE, INK_TONE, deptTone } from "./ui/department";
 export { menuIndexOf } from "./layout/category-tree";

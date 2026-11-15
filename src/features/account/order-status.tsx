@@ -6,7 +6,7 @@ const TONE: Record<string, string> = {
 };
 
 /** Order status pill in the storefront palette (labels shared with the panel: src/lib/order-rules.ts). */
-export function OrderStatusPill({ status }: { status: string }) {
-  const m = orderStatusMeta(status);
+export function OrderStatusPill({ status, paymentMethod = null }: { status: string; paymentMethod?: string | null }) {
+  const m = orderStatusMeta(status, { paymentMethod, paymentStatus: "" });
   return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${TONE[m.tone] ?? TONE.slate}`}>{m.label}</span>;
 }

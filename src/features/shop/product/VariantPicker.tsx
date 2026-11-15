@@ -10,6 +10,7 @@ import { PromoBadge } from "@/components/ui/PromoBadge";
 import { CompareToggle } from "../compare/CompareToggle";
 import { ExternalCompare } from "../compare/ExternalCompare";
 import { Stars, formatAverage } from "../reviews/Stars";
+import { PriceAlertButton, StockAlertButton, useProductAlerts } from "./ProductAlerts";
 
 /**
  * Variant selection updates gallery, price and stock together; impossible combinations are disabled (spec §04).
@@ -23,8 +24,9 @@ const TRUST = [
   { icon: RotateCcw, text: "14 gün içinde cayma hakkı", color: "var(--color-dept-2)" },
 ];
 
-export function VariantPicker({ product }: { product: ProductDetail }) {
+export function VariantPicker({ product, signedIn }: { product: ProductDetail; signedIn: boolean }) {
   const { add, busy, error } = useCart();
+  const alerts = useProductAlerts(product.id, product.slug, signedIn);
   const initial = product.variants.find((v) => v.isDefault) ?? product.variants[0];
   const [sel, setSel] = useState<Record<string, string>>(initial?.options ?? {});
   const [qty, setQty] = useState(1);
@@ -138,13 +140,16 @@ export function VariantPicker({ product }: { product: ProductDetail }) {
             <span className="w-8 text-center tabular-nums" aria-live="polite">{qty}</span>
             <button className="grid h-11 w-11 place-items-center disabled:opacity-40" aria-label="Adet artır" disabled={qty >= max} onClick={() => setQty((q) => q + 1)}><PlusIcon /></button>
           </div>
-          <button className="btn btn-primary h-12 flex-1 rounded-full text-base" disabled={!variant || variant.available <= 0 || busy} onClick={() => variant && add(variant.id, qty)}>
-            Sepete ekle
-          </button>
+          {variant && variant.available <= 0 ? <StockAlertButton variantId={variant.id} alerts={alerts} /> : (
+            <button className="btn btn-primary h-12 flex-1 rounded-full text-base" disabled={!variant || busy} onClick={() => variant && add(variant.id, qty)}>
+              Sepete ekle
+            </button>
+          )}
         </div>
         {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
         <div className="mt-4 flex flex-wrap gap-2">
           <CompareToggle item={{ id: product.id, slug: product.slug, name: product.name, imageUrl: gallery[0]?.url ?? null }} />
+          {variant?.priceMinor != null && <PriceAlertButton variantId={variant.id} alerts={alerts} />}
           <ExternalCompare productName={product.name} />
         </div>
         <ul className="mt-6 grid gap-2 sm:grid-cols-3">

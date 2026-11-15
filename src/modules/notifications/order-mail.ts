@@ -8,7 +8,7 @@ import { buildCustomerMail, customerMailFor, type OrderMailFacts } from "./domai
 
 type OrderRow = {
   order_number: string; customer_email: string; user_id: string | null; sales_channel: string; terms_version: string | null;
-  subtotal_minor: number; discount_minor: number; shipping_minor: number; total_minor: number; payment_method: string | null;
+  subtotal_minor: number; discount_minor: number; shipping_minor: number; total_minor: number; payment_method: string | null; payment_fee_minor: number;
   recipient_name: string | null; province: string | null; district: string | null; line1: string | null; line2: string | null;
   bank_name: string | null; account_holder: string | null; iban_normalized: string | null; reference_code: string | null; transfer_expires_at: string | null;
   tracking_number: string | null; tracking_url: string | null;
@@ -19,8 +19,8 @@ export class D1OrderMailFacts extends Repository {
   async load(orderId: string, shipmentId: string | null): Promise<(OrderMailFacts & { salesChannel: string; termsVersion: string | null }) | null> {
     const o = await this.db.first<OrderRow>(
       `SELECT o.order_number, o.customer_email, o.user_id, o.sales_channel, o.terms_version,
-              o.subtotal_minor, o.discount_minor, o.shipping_minor, o.total_minor,
-              p.provider AS payment_method,
+              o.subtotal_minor, o.discount_minor, o.shipping_minor, o.total_minor, o.payment_fee_minor,
+              COALESCE(o.payment_method, p.provider) AS payment_method,
               a.recipient_name, a.province, a.district, a.line1, a.line2,
               ba.bank_name, ba.account_holder, ba.iban_normalized, bt.reference_code, bt.expires_at AS transfer_expires_at,
               sh.tracking_number, sh.tracking_url
@@ -39,7 +39,7 @@ export class D1OrderMailFacts extends Repository {
     return {
       orderNumber: o.order_number, email: o.customer_email, recipientName: o.recipient_name, isMember: o.user_id !== null,
       salesChannel: o.sales_channel, termsVersion: o.terms_version,
-      subtotalMinor: o.subtotal_minor, discountMinor: o.discount_minor, shippingMinor: o.shipping_minor, totalMinor: o.total_minor,
+      subtotalMinor: o.subtotal_minor, discountMinor: o.discount_minor, shippingMinor: o.shipping_minor, paymentFeeMinor: o.payment_fee_minor, totalMinor: o.total_minor,
       items: items.map((i) => ({ name: i.name, options: optionsText(i.options), quantity: i.quantity, totalMinor: i.total_minor })),
       shippingAddress: o.line1 ? [o.line1, o.line2, `${o.district ?? ""} / ${o.province ?? ""}`].filter(Boolean).join(", ") : null,
       paymentMethod: o.payment_method,

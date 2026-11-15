@@ -146,8 +146,12 @@ export function OrdersManager({ initialTab = "all", initialSearch = "", permissi
       },
     },
     {
-      colId: "status", field: "status", headerName: "Durum", sortable: true, minWidth: 150, valueFormatter: (p) => orderStatusMeta(String(p.value)).label,
-      cellRenderer: (p: { value?: string }) => { const s = orderStatusMeta(p.value ?? ""); return <AdminBadge tone={s.tone}>{s.label}</AdminBadge>; },
+      colId: "status", field: "status", headerName: "Durum", sortable: true, minWidth: 150,
+      valueFormatter: (p) => orderStatusMeta(String(p.value), p.data && { paymentMethod: p.data.provider, paymentStatus: p.data.paymentStatus }).label,
+      cellRenderer: (p: { value?: string; data?: Row }) => {
+        const s = orderStatusMeta(p.value ?? "", p.data && { paymentMethod: p.data.provider, paymentStatus: p.data.paymentStatus });
+        return <AdminBadge tone={s.tone}>{s.label}</AdminBadge>;
+      },
     },
     {
       colId: "payment", field: "paymentStatus", headerName: "Ödeme", minWidth: 130, valueFormatter: (p) => paymentStatusMeta(String(p.value)).label,

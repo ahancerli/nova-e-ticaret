@@ -7,7 +7,8 @@ import { useCart } from "@/features/cart/CartProvider";
 import { PromotionRows } from "@/features/cart/CartSummary";
 import { ClientApiError, errorMessage, newIdempotencyKey } from "@/lib/api-client";
 import { useFieldErrors } from "@/lib/use-field-errors";
-import { checkoutApi } from "./api";
+import { checkoutApi, type PaymentMethod } from "./api";
+import type { CashOnDeliveryOffer } from "@/modules/payments/domain/cash-on-delivery";
 import { quoteItems, rememberPurchase } from "@/features/consent/commerce";
 import { track } from "@/features/consent/track";
 import { toAmount } from "@/modules/consent/domain/events";
@@ -31,10 +32,11 @@ const readGuest = () => {
   try { return sessionStorage.getItem(GUEST_KEY) === "1"; } catch { return false; }
 };
 
-const METHODS = [
+const METHODS: { value: PaymentMethod; label: string; hint: string }[] = [
   { value: "iyzico", label: "Kredi / banka kartı (iyzico)", hint: "Güvenli ödeme sayfasına yönlendirilirsiniz." },
   { value: "bank_transfer", label: "Havale / EFT", hint: "Siparişiniz, ödemeniz banka hesabımızda doğrulandıktan sonra hazırlanır." },
-] as const;
+  { value: "cash_on_delivery", label: "Kapıda ödeme", hint: "Siparişinizi telefonla doğruladıktan sonra hazırlarız; ödemeyi teslimatta yaparsınız." },
+];
 
 /**
  * Checkout. A visitor first chooses: sign in, continue as a guest (no account required, spec R13) or sign up; a
@@ -46,8 +48,19 @@ export function CheckoutClient({ legal, payment, customer, addresses = [] }: { l
   const picked = addresses.find((a) => a.id === pick) ?? null;
   const { cart, refresh } = useCart();
   const router = useRouter();
-  const methods = METHODS.filter((m) => (m.value === "iyzico" ? payment.card : payment.bankTransfer));
-  const [method, setMethod] = useState<"iyzico" | "bank_transfer">(methods[0]?.value ?? "iyzico");
+  // Kapıda ödeme depends on the cart (categories, order limits): asked from the server whenever the total changes.
+  const [cod, setCod] = useState<CashOnDeliveryOffer | null>(null);
+  const methods = METHODS.filter((m) => (m.value === "iyzico" ? payment.card : m.value === "bank_transfer" ? payment.bankTransfer : payment.cashOnDelivery && cod?.offered));
+  const [chosenMethod, setMethod] = useState<PaymentMethod | null>(null);
+  const usable = (m: PaymentMethod) => m !== "cash_on_delivery" || !!cod?.available;
+  const method: PaymentMethod = chosenMethod && methods.some((m) => m.value === chosenMethod) && usable(chosenMethod) ? chosenMethod : methods.find((m) => usable(m.value))?.value ?? "iyzico";
+  const feeMinor = method === "cash_on_delivery" ? cod?.feeMinor ?? 0 : 0;
+  useEffect(() => {
+    if (!payment.cashOnDelivery || cart.lines.length === 0) return;
+    let live = true;
+    checkoutApi.cashOnDelivery().then((o) => { if (live) setCod(o); }, () => { if (live) setCod(null); });
+    return () => { live = false; };
+  }, [payment.cashOnDelivery, cart.totalMinor, cart.lines.length]);
   const [sameBilling, setSameBilling] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +111,7 @@ export function CheckoutClient({ legal, payment, customer, addresses = [] }: { l
         return;
       }
       const res = await checkoutApi.confirm({
-        checkoutId: quote.data.checkoutId, paymentMethod: method, email: s("email"), phone: s("phone"), phoneCountry: s("phoneCountry") || undefined,
+        checkoutId: quote.data.checkoutId, paymentMethod: method, paymentFeeMinor: method === "cash_on_delivery" ? feeMinor : undefined, email: s("email"), phone: s("phone"), phoneCountry: s("phoneCountry") || undefined,
         shipping: addr("s_"), billing: sameBilling ? undefined : addr("b_"), note: s("note") || undefined,
         acceptedTermsVersion: legal.termsVersion,
       }, idemKey);
@@ -110,13 +123,16 @@ export function CheckoutClient({ legal, payment, customer, addresses = [] }: { l
       if (res.data.payment?.paymentPageUrl) {
         window.location.assign(res.data.payment.paymentPageUrl);
       } else {
-        router.push(`/siparis/sonuc?durum=havale&no=${encodeURIComponent(res.data.orderNumber)}`);
+        router.push(`/siparis/sonuc?durum=${res.data.paymentMethod === "cash_on_delivery" ? "kapida" : "havale"}&no=${encodeURIComponent(res.data.orderNumber)}`);
       }
     } catch (err) {
       setError(errorMessage(err));
       errors.fromError(err);
       if (err instanceof ClientApiError && ["quote_changed", "cart_changed", "insufficient_stock", "checkout_expired"].includes(err.code)) {
         await refresh();
+      }
+      if (err instanceof ClientApiError && (err.code === "cod_unavailable" || err.code === "quote_changed")) {
+        checkoutApi.cashOnDelivery().then(setCod, () => undefined);
       }
     } finally {
       setBusy(false);
@@ -167,12 +183,23 @@ export function CheckoutClient({ legal, payment, customer, addresses = [] }: { l
           {methods.length === 0 && (
             <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-danger">Şu an çevrim içi ödeme alınamıyor. Lütfen daha sonra tekrar deneyin veya bizimle iletişime geçin.</p>
           )}
-          {methods.map(({ value: v, label: l, hint: d }) => (
-            <label key={v} className={`flex cursor-pointer gap-3 rounded-xl border p-4 ${method === v ? "border-brand bg-brand-soft" : "border-line"}`}>
-              <input type="radio" name="method" value={v} checked={method === v} onChange={() => setMethod(v)} className="mt-1 accent-brand" />
-              <span><span className="block font-medium">{l}</span><span className="text-sm text-ink-soft">{d}</span></span>
-            </label>
-          ))}
+          {methods.map(({ value: v, label: l, hint: d }) => {
+            const off = !usable(v);
+            const isCod = v === "cash_on_delivery";
+            return (
+              <label key={v} className={`flex gap-3 rounded-xl border p-4 ${off ? "cursor-not-allowed border-line bg-ground/60" : "cursor-pointer"} ${method === v ? "border-brand bg-brand-soft" : "border-line"}`}>
+                <input type="radio" name="method" value={v} checked={method === v} disabled={off} onChange={() => setMethod(v)} className="mt-1 accent-brand" />
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-baseline justify-between gap-x-3">
+                    <span className={`font-medium ${off ? "text-ink-soft" : ""}`}>{l}</span>
+                    {isCod && cod ? <span className="text-sm font-semibold tabular-nums text-ink-soft">{cod.feeMinor ? `+${formatMinor(cod.feeMinor)}` : "Ücretsiz"}</span> : null}
+                  </span>
+                  <span className="block text-sm text-ink-soft">{off && isCod ? cod?.reason ?? "Bu sipariş için kullanılamıyor." : d}</span>
+                  {isCod && !off && cod?.note ? <span className="mt-1 block text-xs text-muted">{cod.note}</span> : null}
+                </span>
+              </label>
+            );
+          })}
           {method === "bank_transfer" && payment.bankTransfer && (
             <div className="space-y-2">
               <p className="text-sm text-ink-soft">Siparişi onayladıktan sonra tutarı aşağıdaki hesaba gönderin; açıklamaya sipariş numaranızı yazın.</p>
@@ -201,8 +228,9 @@ export function CheckoutClient({ legal, payment, customer, addresses = [] }: { l
             <div className="flex justify-between"><dt className="text-ink-soft">Ara toplam</dt><dd>{formatMinor(cart.subtotalMinor)}</dd></div>
             <PromotionRows cart={cart} />
             <div className="flex justify-between"><dt className="text-ink-soft">Kargo</dt><dd>{cart.shippingMinor ? formatMinor(cart.shippingMinor) : "Ücretsiz"}</dd></div>
+            {feeMinor ? <div className="flex justify-between"><dt className="text-ink-soft">Kapıda ödeme bedeli</dt><dd>{formatMinor(feeMinor)}</dd></div> : null}
             <div className="flex justify-between text-xs text-muted"><dt>KDV dahil</dt><dd>{formatMinor(cart.taxMinor)}</dd></div>
-            <div className="flex justify-between border-t border-line pt-2 text-lg font-bold"><dt>Toplam</dt><dd className="text-brand">{formatMinor(cart.totalMinor)}</dd></div>
+            <div className="flex justify-between border-t border-line pt-2 text-lg font-bold"><dt>Toplam</dt><dd className="text-brand">{formatMinor(cart.totalMinor + feeMinor)}</dd></div>
           </dl>
           <label className="mt-4 flex gap-2 text-xs text-ink-soft">
             <input type="checkbox" required className="mt-0.5 h-4 w-4 accent-brand" />

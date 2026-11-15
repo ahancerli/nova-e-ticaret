@@ -1,6 +1,7 @@
 import { AppError, UnitOfWork, hmacHex, type Authenticator, type Clock, type Database, type IdGenerator, type Logger, type Statement } from "@/core";
 import type { Quote } from "@/lib/types";
 import type { GeoDirectory } from "@/modules/geo";
+import { cashOnDeliveryOffer, parseCashOnDelivery, type CashOnDeliveryOffer } from "@/modules/payments/domain/cash-on-delivery";
 import {
   CheckoutErrors, PAYABLE_ORDER_STATUSES, RESERVATION_MINUTES, initialOrderStatus, quoteHash, reservationMinutes,
   type AddressInput, type ConfirmInput, type PaymentMethod,
@@ -26,6 +27,25 @@ export interface CheckoutDeps {
 }
 
 /** Command: prices the cart on the server and opens a short-lived checkout session (older ones are superseded). */
+/** Kapıda ödeme rules applied to a quote (fee, order limits, allowed categories). */
+async function cashOnDeliveryFor(checkout: CheckoutRepository, quote: Quote): Promise<CashOnDeliveryOffer> {
+  const config = await checkout.cashOnDeliveryConfig();
+  const settings = parseCashOnDelivery(config?.json ?? null, config?.active ?? false);
+  if (!settings.active) return cashOnDeliveryOffer(settings, { totalMinor: quote.totalMinor, products: [] });
+  return cashOnDeliveryOffer(settings, { totalMinor: quote.totalMinor, products: await checkout.productCategories(quote.lines.map((l) => l.variantId)) });
+}
+
+/** Query (checkout page): can the caller's current cart be paid at the door, and for which fee. */
+export class GetCashOnDeliveryOffer {
+  constructor(private readonly deps: Pick<CheckoutDeps, "cart" | "checkout">) {}
+
+  async execute(): Promise<CashOnDeliveryOffer> {
+    const ref = await this.deps.cart.current();
+    if (!ref) throw CheckoutErrors.cartEmpty();
+    return cashOnDeliveryFor(this.deps.checkout, await this.deps.cart.quote(ref.id));
+  }
+}
+
 export class CreateCheckoutQuote {
   constructor(private readonly deps: CheckoutDeps) {}
 
@@ -70,6 +90,13 @@ export class ConfirmCheckout {
     if ((await quoteHash(quote)) !== session.quoteHash) throw CheckoutErrors.quoteChanged();
     const paymentConfigId = await checkout.activePaymentConfig(input.paymentMethod);
     if (!paymentConfigId) throw CheckoutErrors.methodUnavailable();
+    let paymentFeeMinor = 0;
+    if (input.paymentMethod === "cash_on_delivery") {
+      const offer = await cashOnDeliveryFor(checkout, quote);
+      if (!offer.available) throw CheckoutErrors.codUnavailable(offer.reason);
+      if (input.paymentFeeMinor !== offer.feeMinor) throw CheckoutErrors.feeChanged();
+      paymentFeeMinor = offer.feeMinor;
+    }
 
     const user = await auth.current("storefront");
     const email = input.email.trim().toLowerCase();
@@ -85,12 +112,12 @@ export class ConfirmCheckout {
       .add(...checkout.orderStatements({
         orderId, orderNumber, paymentId, sessionId: session.id, cartId: ref.id, cartVersion: ref.version, userId: user?.id ?? null,
         email, phone: input.phone, status: initialOrderStatus(input.paymentMethod), quote, note: input.note ?? null,
-        shipping: input.shipping, billing: input.billing ?? input.shipping, method: input.paymentMethod, paymentConfigId,
+        shipping: input.shipping, billing: input.billing ?? input.shipping, method: input.paymentMethod, paymentFeeMinor, paymentConfigId,
         customerKey: await hmacHex(this.deps.secret, `customer:${user?.id ?? email}`), termsVersion: input.acceptedTermsVersion,
         reservationExpiresAt: clock.addMinutesIso(reservationMinutes(input.paymentMethod)), now,
       }, () => ids.newId()))
       .commit();
-    return { orderId, orderNumber, paymentId, totalMinor: quote.totalMinor, paymentMethod: input.paymentMethod as PaymentMethod };
+    return { orderId, orderNumber, paymentId, totalMinor: quote.totalMinor + paymentFeeMinor, paymentMethod: input.paymentMethod as PaymentMethod };
   }
 
   /** Country rules: phones → E.164, Turkish province / district → canonical names from the lists. */

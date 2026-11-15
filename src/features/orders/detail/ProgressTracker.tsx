@@ -1,16 +1,17 @@
 import { Check, XCircle } from "lucide-react";
-import { ORDER_FLOW, type OrderStatus } from "@/lib/order-rules";
+import { orderFlowFor, type OrderPaymentContext, type OrderStatus } from "@/lib/order-rules";
 
 // ---------------------------------------------------------------------------
 // Pieces
 // ---------------------------------------------------------------------------
-export function ProgressTracker({ status }: { status: OrderStatus }) {
+export function ProgressTracker({ status, pay }: { status: OrderStatus; pay?: OrderPaymentContext }) {
   const cancelled = status === "cancelled";
-  const reachedIdx = ORDER_FLOW.reduce((acc, s, i) => (s.reached.includes(status) ? i : acc), -1);
+  const flow = orderFlowFor(pay);
+  const reachedIdx = flow.reduce((acc, s, i) => (s.reached.includes(status) ? i : acc), -1);
   return (
     <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white px-4 py-5 shadow-sm sm:px-6">
       <ol className="flex min-w-140 items-center">
-        {ORDER_FLOW.map((s, i) => {
+        {flow.map((s, i) => {
           const done = !cancelled && i <= reachedIdx;
           const current = !cancelled && i === reachedIdx + 1;
           return (
@@ -25,7 +26,7 @@ export function ProgressTracker({ status }: { status: OrderStatus }) {
                   {cancelled && i === 0 ? "İptal edildi" : s.label}
                 </span>
               </div>
-              {i < ORDER_FLOW.length - 1 ? (
+              {i < flow.length - 1 ? (
                 <span className="mx-2 mb-6 h-1 flex-1 overflow-hidden rounded-full bg-slate-100">
                   <span className={`block h-full rounded-full bg-emerald-500 transition-[width] duration-700 ease-out-expo ${!cancelled && i < reachedIdx ? "w-full" : "w-0"}`} />
                 </span>

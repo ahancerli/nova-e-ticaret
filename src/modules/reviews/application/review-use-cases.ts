@@ -248,7 +248,7 @@ export class ContactReviewer {
     try {
       const brand = await this.brand();
       const firstName = d.customer.name.split(/\s+/)[0] ?? "";
-      const accountUrl = `${this.siteUrl}/hesabim#degerlendirmelerim`;
+      const accountUrl = `${this.siteUrl}/hesabim?sekme=degerlendirmeler`;
       const footer = `Bu mesaj, “${d.productName}” için yaptığınız değerlendirme hakkında gönderilmiştir.`;
       delivery = await this.mail.send({
         purpose: "other", to: d.customer.email!, toName: d.customer.name, subject: subject!,

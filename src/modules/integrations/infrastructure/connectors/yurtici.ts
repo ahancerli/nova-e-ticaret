@@ -54,6 +54,12 @@ export class YurticiConnector implements CarrierConnector {
         el("cityName", b.receiver.province), el("townName", b.receiver.district),
         el("receiverPhone1", b.receiver.phone), el("emailAddress", b.receiver.email),
         el("cargoCount", Math.max(1, b.pieces)), el("description", `Sipariş ${b.orderNumber}`),
+        // Tahsilatlı teslimat (kapıda ödeme): amount in TL, collection type 0 = cash. ⚠ Verify field names and whether the
+        // account has the "tahsilatlı gönderi" contract with Yurtiçi before going live.
+        ...(b.cashOnDelivery ? [
+          el("ttInvoiceAmount", (b.cashOnDelivery.amountMinor / 100).toFixed(2)), el("ttDocumentId", b.cargoKey),
+          el("ttCollectionType", 0), el("ttDocumentSaveType", 0),
+        ] : []),
       ].join("")}</ShippingOrderVO>`,
     ].join(""));
     const outFlag = pick(xml, "outFlag");

@@ -2,7 +2,9 @@ import { AuthenticatorToken, ClockToken, ConfigToken, DatabaseToken, IdGenerator
 import { CartLocatorToken, CartRepositoryToken } from "@/modules/cart";
 import { GeoDirectoryToken } from "@/modules/geo";
 import { BuildQuoteToken } from "@/modules/pricing";
-import { ConfirmCheckout, CreateCheckoutQuote, ExpireStaleCheckouts, SettlePayment, type CheckoutCart, type CheckoutDeps } from "./application/checkout-use-cases";
+import {
+  ConfirmCheckout, CreateCheckoutQuote, ExpireStaleCheckouts, GetCashOnDeliveryOffer, SettlePayment, type CheckoutCart, type CheckoutDeps,
+} from "./application/checkout-use-cases";
 import type { CheckoutRepository } from "./application/ports";
 import { D1CheckoutRepository } from "./infrastructure/d1-checkout.repository";
 
@@ -11,6 +13,7 @@ export const CheckoutCartToken = token<CheckoutCart>("CheckoutCart");
 export const CreateCheckoutQuoteToken = token<CreateCheckoutQuote>("CreateCheckoutQuote");
 export const ConfirmCheckoutToken = token<ConfirmCheckout>("ConfirmCheckout");
 export const SettlePaymentToken = token<SettlePayment>("SettlePayment");
+export const GetCashOnDeliveryOfferToken = token<GetCashOnDeliveryOffer>("GetCashOnDeliveryOffer");
 export const ExpireStaleCheckoutsToken = token<ExpireStaleCheckouts>("ExpireStaleCheckouts");
 
 const deps = (r: Resolver): CheckoutDeps => ({
@@ -36,6 +39,7 @@ export function registerCheckout(c: Container): void {
   }));
   c.scoped(CreateCheckoutQuoteToken, (r) => new CreateCheckoutQuote(deps(r)));
   c.scoped(ConfirmCheckoutToken, (r) => new ConfirmCheckout(deps(r)));
+  c.scoped(GetCashOnDeliveryOfferToken, (r) => new GetCashOnDeliveryOffer({ cart: r.resolve(CheckoutCartToken), checkout: r.resolve(CheckoutRepositoryToken) }));
   c.scoped(SettlePaymentToken, (r) => new SettlePayment({
     db: r.resolve(DatabaseToken), checkout: r.resolve(CheckoutRepositoryToken), clock: r.resolve(ClockToken), ids: r.resolve(IdGeneratorToken), logger: r.resolve(LoggerToken),
   }));

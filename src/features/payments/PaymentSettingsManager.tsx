@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { CreditCard, KeyRound, Landmark, Pencil, Plus, ShieldCheck, Trash2, Zap } from "lucide-react";
+import { CreditCard, KeyRound, Landmark, Pencil, Plus, Search, ShieldCheck, Trash2, Truck, Zap } from "lucide-react";
 import { notify } from "@/lib/toast";
 import { useFieldErrors } from "@/lib/use-field-errors";
 import { AdminConfirmDialog } from "@/components/admin/AdminConfirmDialog";
@@ -11,6 +11,7 @@ import { Field, inputCls } from "@/components/admin/form";
 import { AdminBadge, AdminCard, AdminCardTitle, AdminPageHeader } from "@/components/admin/ui";
 import type { BankAccountView, IyzicoAccountView, IyzicoEnvironment, PaymentSettingsView } from "@/modules/payments";
 import { IYZICO_ENV_LABEL, formatIban } from "@/modules/payments/domain/payment-settings";
+import { COD_CONFIRM_HOURS, COD_NOTE_MAX } from "@/modules/payments/domain/cash-on-delivery";
 import { paymentsApi } from "./api";
 
 const dt = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Istanbul" });
@@ -61,7 +62,7 @@ export function PaymentSettingsManager({ initial }: { initial: PaymentSettingsVi
 
   return (
     <div className="space-y-6">
-      <AdminPageHeader title="Ödeme sistemleri" subtitle="Mağazada hangi ödeme yöntemlerinin görüneceği, iyzico anahtarları ve havale için banka hesapları." />
+      <AdminPageHeader title="Ödeme sistemleri" subtitle="Mağazada hangi ödeme yöntemlerinin görüneceği, iyzico anahtarları, havale için banka hesapları ve kapıda ödeme kuralları." />
 
       <AdminCard className="max-w-5xl">
         <AdminCardTitle title="Kart ile ödeme (iyzico)" subtitle="Müşteri iyzico'nun güvenli ödeme sayfasına yönlendirilir; kart bilgisi mağazaya gelmez."
@@ -91,6 +92,8 @@ export function PaymentSettingsManager({ initial }: { initial: PaymentSettingsVi
       </AdminCard>
 
       <BankTransferCard settings={initial.bankTransfer} />
+
+      <CashOnDeliveryCard key={initial.cashOnDelivery.updatedAt ?? "new"} settings={initial.cashOnDelivery} />
 
       <AdminConfirmDialog open={confirmLive} title="Canlı ödemeler açılsın mı?"
         description="Bundan sonra kartla verilen siparişlerde müşterinin kartından gerçek çekim yapılır. Canlı anahtarları “Bağlantıyı test et” ile doğruladığınızdan emin olun."
@@ -333,3 +336,119 @@ function BankTransferCard({ settings }: { settings: PaymentSettingsView["bankTra
   );
 }
 
+
+const tl = (minor: number | null) => (minor == null ? "" : (minor / 100).toFixed(2).replace(".", ",").replace(",00", ""));
+/** "1.250,50" / "1250.5" → kuruş; empty → null; invalid → NaN (reported on the field). */
+const minorOf = (v: string): number | null => {
+  const t = v.trim();
+  if (!t) return null;
+  const n = Number(t.replace(/\s/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : NaN;
+};
+
+/** Kapıda ödeme: on/off, service fee, order total limits, the categories it is offered for, a note for customers. */
+function CashOnDeliveryCard({ settings }: { settings: PaymentSettingsView["cashOnDelivery"] }) {
+  const router = useRouter();
+  const errors = useFieldErrors();
+  const [form, setForm] = useState({
+    active: settings.active, fee: tl(settings.feeMinor || null), min: tl(settings.minOrderMinor), max: tl(settings.maxOrderMinor), note: settings.note ?? "",
+    categoryIds: settings.categoryIds,
+  });
+  const [query, setQuery] = useState("");
+  const [saving, setSaving] = useState(false);
+  const picked = new Set(form.categoryIds);
+  const q = query.trim().toLocaleLowerCase("tr");
+  const shown = settings.categories.filter((c) => !q || c.label.toLocaleLowerCase("tr").includes(q));
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (saving) return;
+    errors.clear();
+    const feeMinor = minorOf(form.fee) ?? 0;
+    const minOrderMinor = minorOf(form.min);
+    const maxOrderMinor = minorOf(form.max);
+    const bad = { feeMinor: Number.isNaN(feeMinor), minOrderMinor: Number.isNaN(minOrderMinor), maxOrderMinor: Number.isNaN(maxOrderMinor) };
+    if (bad.feeMinor || bad.minOrderMinor || bad.maxOrderMinor) {
+      errors.set(Object.fromEntries(Object.entries(bad).filter(([, v]) => v).map(([k]) => [k, ["Geçerli bir tutar girin (ör. 29,90)."]])));
+      return;
+    }
+    setSaving(true);
+    try {
+      await paymentsApi.setCashOnDelivery({
+        active: form.active, feeMinor, minOrderMinor, maxOrderMinor, categoryIds: form.categoryIds, note: form.note.trim() || null, expectedUpdatedAt: settings.updatedAt,
+      });
+      notify.success("Kapıda ödeme ayarları güncellendi");
+      router.refresh();
+    } catch (err) {
+      errors.fromError(err);
+      notify.error(err, { fallback: "Kapıda ödeme ayarları güncellenemedi." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleCategory = (id: string) => {
+    setForm((f) => ({ ...f, categoryIds: f.categoryIds.includes(id) ? f.categoryIds.filter((x) => x !== id) : [...f.categoryIds, id] }));
+    errors.clear("categoryIds");
+  };
+  const money = (id: "fee" | "min" | "max", key: string, label: string, hint: string) => (
+    <Field id={`cod-${id}`} label={label} error={errors.get(key)} hint={hint}>
+      <div className="relative">
+        <input id={`cod-${id}`} inputMode="decimal" className={`${inputCls} pr-10`} value={form[id]} aria-invalid={!!errors.get(key)}
+          onChange={(e) => { setForm((f) => ({ ...f, [id]: e.target.value })); errors.clear(key); }} placeholder={id === "fee" ? "0" : "Sınır yok"} />
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-slate-400">TL</span>
+      </div>
+    </Field>
+  );
+
+  return (
+    <AdminCard className="max-w-5xl">
+      <AdminCardTitle title="Kapıda ödeme" subtitle={`Sipariş “Onay bekliyor” olarak düşer; müşteriyi arayıp “Kapıda ödemeyi onayla” deyince hazırlanır. ${COD_CONFIRM_HOURS} saat içinde onaylanmayan sipariş iptal edilir.`}
+        actions={settings.active ? <AdminBadge tone="green">Açık</AdminBadge> : <AdminBadge>Kapalı</AdminBadge>} />
+      <form onSubmit={save} className="space-y-5 px-5 py-5">
+        <Switch checked={form.active} onChange={(active) => setForm((f) => ({ ...f, active }))} label="Mağazada kapıda ödeme sunulsun" />
+        <div className="grid gap-4 sm:grid-cols-3">
+          {money("fee", "feeMinor", "Hizmet bedeli", "Kapıda ödeme seçilince toplama eklenir. 0 = ücretsiz.")}
+          {money("min", "minOrderMinor", "En düşük sipariş tutarı", "Boş = alt sınır yok.")}
+          {money("max", "maxOrderMinor", "En yüksek sipariş tutarı", "Kargonun tahsilat sınırını aşmayın.")}
+        </div>
+        <Field id="cod-note" label="Müşteriye açıklama" error={errors.get("note")} hint={`Ödeme adımında seçeneğin altında görünür (en fazla ${COD_NOTE_MAX} karakter).`}>
+          <input id="cod-note" className={inputCls} maxLength={COD_NOTE_MAX} value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+            placeholder="Örn. Teslimatta nakit veya kartla ödeyebilirsiniz." />
+        </Field>
+        <div>
+          <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium text-slate-700">Geçerli kategoriler</p>
+              <p className="text-xs text-slate-500">
+                {form.categoryIds.length ? `${form.categoryIds.length} kategori seçili. Sepetteki her ürün bu kategorilerden birinde (veya altında) olmalı.` : "Hiçbiri seçili değil: tüm kategorilerde geçerli."}
+              </p>
+            </div>
+            {form.categoryIds.length ? <button type="button" className={btn} onClick={() => setForm((f) => ({ ...f, categoryIds: [] }))}>Seçimi temizle</button> : null}
+          </div>
+          <div className="rounded-xl border border-slate-200">
+            <label className="flex items-center gap-2 border-b border-slate-100 px-3">
+              <Search className="h-4 w-4 text-slate-400" aria-hidden />
+              <span className="sr-only">Kategori ara</span>
+              <input className="h-10 w-full bg-transparent text-sm outline-none" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Kategori ara" />
+            </label>
+            <ul className="max-h-64 overflow-y-auto py-1" aria-label="Kategoriler">
+              {shown.length === 0 ? <li className="px-3 py-4 text-center text-sm text-slate-500">Eşleşen kategori yok.</li> : shown.map((c) => (
+                <li key={c.id}>
+                  <label className="flex cursor-pointer items-center gap-2.5 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                    <input type="checkbox" className="h-4 w-4 accent-[#7367f0]" checked={picked.has(c.id)} onChange={() => toggleCategory(c.id)} />
+                    <span className="truncate">{c.label}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+          {errors.get("categoryIds") ? <p className="mt-1 text-xs text-red-600">{errors.get("categoryIds")}</p> : null}
+        </div>
+        <div className="flex justify-end">
+          <button type="submit" className={primary} disabled={saving}><Truck className="h-4 w-4" />{saving ? "Güncelleniyor…" : "Güncelle"}</button>
+        </div>
+      </form>
+    </AdminCard>
+  );
+}

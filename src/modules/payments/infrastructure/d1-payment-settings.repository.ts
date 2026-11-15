@@ -1,4 +1,4 @@
-import { Repository, type Statement } from "@/core";
+import { Repository, placeholders, type Statement } from "@/core";
 import type { BankAccountRow, IyzicoConfigRow, PaymentSettingsRepository, SealedSecret } from "../application/settings-ports";
 import { IYZICO_BASE_URL, IYZICO_ENV_LABEL, IYZICO_SECRET_NAMES, type BankAccountView, type IyzicoEnvironment } from "../domain/payment-settings";
 
@@ -119,6 +119,41 @@ export class D1PaymentSettingsRepository extends Repository implements PaymentSe
       `DELETE FROM bank_accounts WHERE id = ? AND NOT EXISTS (SELECT 1 FROM bank_transfers t WHERE t.bank_account_id = bank_accounts.id)
           AND (is_active = 0 OR ${KEEPS_AN_ACTIVE_ACCOUNT})`,
       id, id,
+    );
+  }
+
+  async cashOnDelivery() {
+    const r = await this.db.first<{ public_config_json: string; is_active: number; updated_at: string }>(
+      "SELECT public_config_json, is_active, updated_at FROM payment_configs WHERE provider = 'cash_on_delivery' ORDER BY is_active DESC, id LIMIT 1",
+    );
+    return r ? { json: r.public_config_json, active: r.is_active === 1, updatedAt: r.updated_at } : null;
+  }
+
+  async categoryOptions(): Promise<{ id: string; label: string }[]> {
+    return this.db.all<{ id: string; label: string }>(
+      `WITH RECURSIVE tree(id, label, sort) AS (
+         SELECT id, name, printf('%05d', sort_order) || name FROM categories WHERE parent_id IS NULL
+         UNION ALL SELECT c.id, t.label || ' › ' || c.name, t.sort || '/' || printf('%05d', c.sort_order) || c.name FROM categories c JOIN tree t ON c.parent_id = t.id)
+       SELECT id, label FROM tree ORDER BY sort`,
+    );
+  }
+
+  async countCategories(ids: string[]): Promise<number> {
+    if (!ids.length) return 0;
+    return Number((await this.db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM categories WHERE id IN (${placeholders(ids.length)})`, ...ids))?.n ?? 0);
+  }
+
+  saveCashOnDeliveryStatement(row: { id: string; json: string; active: boolean; now: string }, expectedUpdatedAt: string | null): Statement {
+    if (expectedUpdatedAt === null) {
+      return this.db.statement(
+        `INSERT INTO payment_configs (id, provider, name, environment, public_config_json, is_active, updated_at)
+         SELECT ?, 'cash_on_delivery', 'Kapıda ödeme', 'production', ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM payment_configs WHERE provider = 'cash_on_delivery')`,
+        row.id, row.json, row.active ? 1 : 0, row.now,
+      );
+    }
+    return this.db.statement(
+      "UPDATE payment_configs SET public_config_json = ?, is_active = ?, updated_at = ? WHERE provider = 'cash_on_delivery' AND updated_at = ?",
+      row.json, row.active ? 1 : 0, row.now, expectedUpdatedAt,
     );
   }
 }

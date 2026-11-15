@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { COUNTRY_CODE, DEFAULT_COUNTRY } from "@/modules/geo/domain/geo";
 import { entityId } from "@/modules/shared/schemas";
+import { PAYMENT_METHODS } from "../domain/checkout";
 
 // checked against the chosen country's mobile rules by ConfirmCheckout (geo_countries)
 const phone = z.string().trim().min(1, "Cep telefonunu girin.").max(24);
@@ -22,7 +23,8 @@ const address = z.object({
 
 export const confirmSchema = z.object({
   checkoutId: entityId,
-  paymentMethod: z.enum(["iyzico", "bank_transfer"]),
+  paymentMethod: z.enum(PAYMENT_METHODS),
+  paymentFeeMinor: z.number().int().min(0).max(100_000).optional(),
   email: z.email().max(254),
   phone,
   phoneCountry: country.optional(),

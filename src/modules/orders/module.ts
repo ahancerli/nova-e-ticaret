@@ -2,7 +2,7 @@ import { ClockToken, DatabaseToken, IdGeneratorToken, token, type Container } fr
 import { AuditLogToken } from "@/modules/audit/audit-log";
 import { SettlePaymentToken } from "@/modules/checkout";
 import { OrderActionKit } from "./application/actions/order-action";
-import { DeliverAction, CancelAction, NoteAction, ReconcileAction, TransitionAction } from "./application/actions/status-actions";
+import { CancelAction, ConfirmCodAction, DeliverAction, NoteAction, ReconcileAction, TransitionAction } from "./application/actions/status-actions";
 import { RefundAction, ShipAction } from "./application/actions/fulfilment-actions";
 import { BulkOrderAction, GetOrderDetail, ListOrders, ListShippingMethods, RunOrderAction, SettleRefund, type OrderReadModel } from "./application/order-use-cases";
 import { GetCustomerOrder, ListCustomerOrders, LookupGuestOrder } from "./application/customer-orders";
@@ -44,6 +44,7 @@ export function registerOrders(c: Container): void {
     const kit = r.resolve(OrderActionKitToken);
     return new RunOrderAction(r.resolve(OrderRepositoryToken), [
       new ReconcileAction(kit),
+      new ConfirmCodAction(kit),
       new TransitionAction("prepare", kit),
       new ShipAction(kit),
       new DeliverAction(kit),

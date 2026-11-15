@@ -14,9 +14,11 @@ export const MAIL_ONLY_EVENTS = ["return.requested", "return.approved", "return.
 
 export function customerMailFor(eventType: string, paymentMethod: string | null): CustomerMailKind | null {
   const transfer = paymentMethod === "bank_transfer";
+  // Kapıda ödeme: announced (with the contracts) when placed; the cash collected at delivery sends no extra mail.
+  const cod = paymentMethod === "cash_on_delivery";
   switch (eventType) {
-    case "order.placed": return transfer ? "placed" : null;
-    case "order.paid": return transfer ? "paid" : "placed";
+    case "order.placed": return transfer || cod ? "placed" : null;
+    case "order.paid": return cod ? null : transfer ? "paid" : "placed";
     case "order.shipped": return "shipped";
     case "shipment.tracking_assigned": return "tracking";
     case "order.delivered": return "delivered";
@@ -38,6 +40,8 @@ export interface OrderMailFacts {
   subtotalMinor: number;
   discountMinor: number;
   shippingMinor: number;
+  /** Kapıda ödeme service fee (part of shippingMinor). */
+  paymentFeeMinor?: number;
   totalMinor: number;
   items: { name: string; options: string; quantity: number; totalMinor: number }[];
   shippingAddress: string | null;
@@ -82,7 +86,9 @@ function lead(kind: CustomerMailKind, f: OrderMailFacts, c: MailContext): string
   switch (kind) {
     case "placed": return f.transfer
       ? `${f.orderNumber} numaralı siparişinizi aldık. Ödemenizi aşağıdaki hesaba gönderdiğinizde siparişinizi hazırlamaya başlayacağız.`
-      : `${f.orderNumber} numaralı siparişinizi aldık ve ödemeniz onaylandı. Siparişinizi hazırlamaya başlıyoruz.`;
+      : f.paymentMethod === "cash_on_delivery"
+        ? `${f.orderNumber} numaralı siparişinizi aldık. Siparişinizi doğruladıktan sonra hazırlayacağız; ${formatMinor(f.totalMinor)} tutarını teslimatta kapıda ödeyeceksiniz.`
+        : `${f.orderNumber} numaralı siparişinizi aldık ve ödemeniz onaylandı. Siparişinizi hazırlamaya başlıyoruz.`;
     case "paid": return `${f.orderNumber} numaralı siparişinizin ödemesi onaylandı. Siparişinizi hazırlamaya başlıyoruz.`;
     case "shipped": return `${f.orderNumber} numaralı siparişiniz kargoya verildi.`;
     case "tracking": return `${f.orderNumber} numaralı siparişinizin kargo takip numarası oluştu.`;
@@ -128,10 +134,12 @@ ${row("Banka", `${t.bankName} · ${t.accountHolder}`)}${row("IBAN", iban(t.iban)
 
   if (withItems && f.items.length) {
     text.push(f.items.map((i) => `${i.quantity} × ${i.name}${i.options ? ` (${i.options})` : ""} — ${formatMinor(i.totalMinor)}`).join("\n"));
-    text.push(`Ara toplam: ${formatMinor(f.subtotalMinor)}${f.discountMinor ? `\nİndirim: −${formatMinor(f.discountMinor)}` : ""}\nKargo: ${f.shippingMinor ? formatMinor(f.shippingMinor) : "Ücretsiz"}\nToplam: ${formatMinor(f.totalMinor)}`);
+    const fee = f.paymentFeeMinor ?? 0;
+    const cargo = f.shippingMinor - fee;
+    text.push(`Ara toplam: ${formatMinor(f.subtotalMinor)}${f.discountMinor ? `\nİndirim: −${formatMinor(f.discountMinor)}` : ""}\nKargo: ${cargo ? formatMinor(cargo) : "Ücretsiz"}${fee ? `\nKapıda ödeme bedeli: ${formatMinor(fee)}` : ""}\nToplam: ${formatMinor(f.totalMinor)}`);
     h.push(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;font-size:14px;border-collapse:collapse">
 ${f.items.map((i) => `<tr><td style="padding:10px 0;border-bottom:1px solid #ececf2">${i.quantity} × ${escapeHtml(i.name)}${i.options ? `<br><span style="color:#8a8d93">${escapeHtml(i.options)}</span>` : ""}</td><td align="right" style="padding:10px 0;border-bottom:1px solid #ececf2;white-space:nowrap">${formatMinor(i.totalMinor)}</td></tr>`).join("")}
-${total("Ara toplam", formatMinor(f.subtotalMinor))}${f.discountMinor ? total("İndirim", `−${formatMinor(f.discountMinor)}`) : ""}${total("Kargo", f.shippingMinor ? formatMinor(f.shippingMinor) : "Ücretsiz")}
+${total("Ara toplam", formatMinor(f.subtotalMinor))}${f.discountMinor ? total("İndirim", `−${formatMinor(f.discountMinor)}`) : ""}${total("Kargo", cargo ? formatMinor(cargo) : "Ücretsiz")}${fee ? total("Kapıda ödeme bedeli", formatMinor(fee)) : ""}
 <tr><td style="padding:10px 0;font-weight:bold;font-size:16px">Toplam</td><td align="right" style="padding:10px 0;font-weight:bold;font-size:16px">${formatMinor(f.totalMinor)}</td></tr></table>`);
     if (f.shippingAddress && kind !== "cancelled") {
       text.push(`Teslimat adresi: ${f.shippingAddress}`);

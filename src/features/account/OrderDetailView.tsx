@@ -20,6 +20,16 @@ export function OrderDetailView({ order, email }: { order: CustomerOrderDetail; 
           </section>
         ) : null}
 
+        {order.paymentMethod === "cash_on_delivery" && order.paymentStatus === "pending" && !["cancelled"].includes(order.status) ? (
+          <section className="rounded-2xl border border-line bg-ground p-5 text-sm">
+            <p className="font-semibold">Kapıda ödeme</p>
+            <p className="mt-1 text-ink-soft">
+              {order.status === "pending_payment" ? "Siparişinizi doğruladıktan sonra hazırlamaya başlayacağız. " : ""}
+              <strong className="text-ink">{formatMinor(order.totalMinor)}</strong> tutarını teslimatta kargo görevlisine ödeyeceksiniz.
+            </p>
+          </section>
+        ) : null}
+
         {order.shipments.length ? (
           <section className="card p-5">
             <h2 className="mb-3 font-semibold">Kargo</h2>
@@ -51,7 +61,8 @@ export function OrderDetailView({ order, email }: { order: CustomerOrderDetail; 
           <dl className="mt-4 space-y-1.5 border-t border-line pt-4 text-sm">
             <div className="flex justify-between"><dt className="text-ink-soft">Ara toplam</dt><dd className="tabular-nums">{formatMinor(order.subtotalMinor)}</dd></div>
             {order.discounts.map((d) => <div key={d.label} className="flex justify-between text-success"><dt>{d.label}</dt><dd className="tabular-nums">−{formatMinor(d.amountMinor)}</dd></div>)}
-            <div className="flex justify-between"><dt className="text-ink-soft">Kargo</dt><dd className="tabular-nums">{order.shippingMinor ? formatMinor(order.shippingMinor) : "Ücretsiz"}</dd></div>
+            <div className="flex justify-between"><dt className="text-ink-soft">Kargo</dt><dd className="tabular-nums">{order.shippingMinor - order.paymentFeeMinor ? formatMinor(order.shippingMinor - order.paymentFeeMinor) : "Ücretsiz"}</dd></div>
+            {order.paymentFeeMinor ? <div className="flex justify-between"><dt className="text-ink-soft">Kapıda ödeme bedeli</dt><dd className="tabular-nums">{formatMinor(order.paymentFeeMinor)}</dd></div> : null}
             <div className="flex justify-between border-t border-line pt-2 text-base font-bold"><dt>Toplam</dt><dd className="tabular-nums">{formatMinor(order.totalMinor)}</dd></div>
           </dl>
         </section>

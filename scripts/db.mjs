@@ -10,6 +10,7 @@
 //
 // Migrations: every db/migrations file starts with  -- probe: SELECT new_column FROM some_table LIMIT 0
 // The probe succeeds only after the migration ran, so a file is applied exactly once and re-running is safe.
+// A file with the line  -- foreign_keys: off  runs with foreign keys off (table rebuilds) and is FK-checked before COMMIT.
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs"
 import { basename, dirname, join } from "node:path"
 import { backup } from "node:sqlite"
@@ -51,13 +52,23 @@ function migrate(db) {
 			// probe failed → not applied yet
 		}
 		console.log(`→ applying ${f}`)
+		// Table rebuilds (create new, copy, drop, rename) need foreign keys off: a RESTRICT child would block the DROP.
+		// The pragma is a no-op inside a transaction, so it is switched around it and checked before COMMIT.
+		const fkOff = /^--\s*foreign_keys:\s*off\s*$/m.test(sql)
+		if (fkOff) db.exec("PRAGMA foreign_keys = OFF")
 		db.exec("BEGIN IMMEDIATE")
 		try {
 			db.exec(sql)
+			if (fkOff) {
+				const broken = db.prepare("PRAGMA foreign_key_check").all()
+				if (broken.length) throw new Error(`foreign key check failed: ${JSON.stringify(broken.slice(0, 5))}`)
+			}
 			db.exec("COMMIT")
 		} catch (e) {
 			db.exec("ROLLBACK")
 			fail(`${f} failed: ${e.message}`)
+		} finally {
+			if (fkOff) db.exec("PRAGMA foreign_keys = ON")
 		}
 		applied++
 	}

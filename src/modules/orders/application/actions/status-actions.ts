@@ -24,6 +24,31 @@ export class TransitionAction implements OrderAction<Input<"prepare" | "complete
   }
 }
 
+/**
+ * confirm_cod (Kapıda ödeme): the shop reached the customer; the order is prepared now. The held stock is sold
+ * (reserved → committed) in the same transaction; the money stays pending until delivery.
+ */
+export class ConfirmCodAction implements OrderAction<Input<"confirm_cod">> {
+  readonly id = "confirm_cod" as const;
+  constructor(private readonly kit: OrderActionKit) {}
+
+  async run(order: OrderHeader, input: Input<"confirm_cod">, actor: OrderActor): Promise<ActionResult> {
+    const { kit } = this;
+    const held = await kit.orders.heldReservations(order.checkoutId);
+    if (held === 0) throw OrderErrors.reservationGone();
+    const now = kit.clock.nowIso();
+    const [commit, ...rest] = kit.orders.commitStockStatements(order, actor.userId, now);
+    await new UnitOfWork(kit.db)
+      .add(kit.orders.transitionStatement(order.id, order.status, "preparing", now)).expectChanges(1, OrderErrors.changed)
+      .add(commit).expectChanges(held, OrderErrors.reservationGone)
+      .add(...rest)
+      .add(kit.event(order, actor, "cod_confirmed", "preparing", input.note ?? "Kapıda ödeme siparişi onaylandı.", now))
+      .add(kit.auditStatement(order, actor, input))
+      .commit();
+    return { status: "preparing" };
+  }
+}
+
 /** deliver: order + its open shipments delivered, customer notified via outbox. */
 export class DeliverAction implements OrderAction<Input<"deliver">> {
   readonly id = "deliver" as const;
@@ -32,8 +57,15 @@ export class DeliverAction implements OrderAction<Input<"deliver">> {
   async run(order: OrderHeader, input: Input<"deliver">, actor: OrderActor): Promise<ActionResult> {
     const { kit } = this;
     const now = kit.clock.nowIso();
-    await new UnitOfWork(kit.db)
-      .add(kit.orders.transitionStatement(order.id, order.status, "delivered", now)).expectChanges(1, OrderErrors.changed)
+    // Kapıda ödeme: delivering = the carrier collected the money.
+    const collect = order.paymentMethod === "cash_on_delivery" && order.paymentStatus === "pending";
+    const uow = new UnitOfWork(kit.db)
+      .add(kit.orders.transitionStatement(order.id, order.status, "delivered", now)).expectChanges(1, OrderErrors.changed);
+    if (collect) {
+      const [orderPaid, ...rest] = kit.orders.collectCashStatements(order, actor.userId, now);
+      uow.add(orderPaid).expectChanges(1, OrderErrors.changed).add(...rest);
+    }
+    await uow
       .add(kit.orders.deliverShipmentsStatement(order.id, now))
       .add(kit.event(order, actor, "delivered", "delivered", input.note, now))
       .add(kit.orders.outboxStatement({ id: kit.ids.newId(), aggregateType: "order", aggregateId: order.id, eventType: "order.delivered", payload: {}, dedupeKey: `order.delivered:${order.id}` }))
@@ -51,8 +83,11 @@ export class CancelAction implements OrderAction<Input<"cancel">> {
   async run(order: OrderHeader, input: Input<"cancel">, actor: OrderActor): Promise<ActionResult> {
     const { kit } = this;
     const now = kit.clock.nowIso();
+    // A confirmed cash-on-delivery order (stock already sold) puts its units back on the shelf.
+    const confirmedCod = order.paymentMethod === "cash_on_delivery" && order.status !== "pending_payment";
     await new UnitOfWork(kit.db)
       .add(kit.orders.transitionStatement(order.id, order.status, "cancelled", now, "unpaid")).expectChanges(1, OrderErrors.changed)
+      .add(...(confirmedCod ? kit.orders.returnCommittedStockStatements(order, actor.userId, now) : []))
       .add(...kit.orders.cancelStatements(order, actor.userId, now))
       .add(kit.event(order, actor, "cancelled", "cancelled", input.reason, now))
       .add(kit.orders.outboxStatement({ id: kit.ids.newId(), aggregateType: "order", aggregateId: order.id, eventType: "order.cancelled", payload: { reason: input.reason }, dedupeKey: `order.cancelled:${order.id}` }))

@@ -1,5 +1,6 @@
 import { ConflictError, NotFoundError, ValidationError, sha256Hex } from "@/core";
 import type { Quote } from "@/lib/types";
+import { COD_CONFIRM_HOURS } from "@/modules/payments/domain/cash-on-delivery";
 
 /** Stock is held this long for card payments, and the checkout session lives this long. */
 export const RESERVATION_MINUTES = 15;
@@ -9,7 +10,8 @@ export const WAREHOUSE_ID = "wh_main";
 /** Order statuses that still wait for money. */
 export const PAYABLE_ORDER_STATUSES = ["pending_payment", "awaiting_transfer"] as const;
 
-export type PaymentMethod = "iyzico" | "bank_transfer";
+export type PaymentMethod = "iyzico" | "bank_transfer" | "cash_on_delivery";
+export const PAYMENT_METHODS = ["iyzico", "bank_transfer", "cash_on_delivery"] as const satisfies readonly PaymentMethod[];
 
 export interface AddressInput {
   recipientName: string;
@@ -28,6 +30,8 @@ export interface AddressInput {
 export interface ConfirmInput {
   checkoutId: string;
   paymentMethod: PaymentMethod;
+  /** Kapıda ödeme: the fee the customer was shown (must still be the current one). */
+  paymentFeeMinor?: number;
   email: string;
   phone: string;
   phoneCountry?: string;
@@ -45,8 +49,10 @@ export function quoteHash(q: Quote): Promise<string> {
   }));
 }
 
+/** Kapıda ödeme orders also start in pending_payment: they wait for the staff confirmation (orders: confirm_cod). */
 export const initialOrderStatus = (method: PaymentMethod) => (method === "bank_transfer" ? "awaiting_transfer" : "pending_payment");
-export const reservationMinutes = (method: PaymentMethod) => (method === "bank_transfer" ? BANK_TRANSFER_HOURS * 60 : RESERVATION_MINUTES);
+export const reservationMinutes = (method: PaymentMethod) =>
+  method === "bank_transfer" ? BANK_TRANSFER_HOURS * 60 : method === "cash_on_delivery" ? COD_CONFIRM_HOURS * 60 : RESERVATION_MINUTES;
 
 export const CheckoutErrors = {
   cartEmpty: () => new NotFoundError("cart_empty", "Sepetiniz boş."),
@@ -57,6 +63,8 @@ export const CheckoutErrors = {
   cartChanged: () => new ConflictError("cart_changed", "Sepetiniz değişti. Tutarları yeniden kontrol edin."),
   quoteChanged: () => new ConflictError("quote_changed", "Fiyat veya stok değişti. Güncel tutarı onaylayın."),
   methodUnavailable: () => ValidationError.field("paymentMethod", "Seçilen ödeme yöntemi şu an kullanılamıyor.", "payment_method_unavailable"),
+  codUnavailable: (reason: string | null) => ValidationError.field("paymentMethod", reason ?? "Kapıda ödeme bu sipariş için kullanılamıyor.", "cod_unavailable"),
+  feeChanged: () => new ConflictError("quote_changed", "Kapıda ödeme ücreti değişti. Güncel tutarı kontrol edip tekrar onaylayın."),
   paymentNotFound: () => new NotFoundError("payment_not_found", "Ödeme bulunamadı."),
   /** Internal: another request settled the payment first (treated as "already paid"). */
   paymentAlreadySettled: () => new ConflictError("payment_already_settled", "Ödeme zaten işlendi."),

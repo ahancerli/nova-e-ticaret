@@ -51,6 +51,13 @@ export interface PaymentSettingsRepository {
   updateBankAccountStatement(id: string, row: BankAccountRow): Statement;
   /** Same guard as update, and never deletes an account referenced by orders. */
   deleteBankAccountStatement(id: string): Statement;
+
+  cashOnDelivery(): Promise<{ json: string; active: boolean; updatedAt: string } | null>;
+  /** Every category as `Üst › Alt` labels (Kapıda ödeme category picker). */
+  categoryOptions(): Promise<{ id: string; label: string }[]>;
+  countCategories(ids: string[]): Promise<number>;
+  /** Insert-or-update of the single cash_on_delivery row; guarded on `expectedUpdatedAt` (null = must not exist yet). */
+  saveCashOnDeliveryStatement(row: { id: string; json: string; active: boolean; now: string }, expectedUpdatedAt: string | null): Statement;
 }
 
 /** Checks a pair of iyzico keys with a signed, side-effect-free request (Strategy; tests replace it). */

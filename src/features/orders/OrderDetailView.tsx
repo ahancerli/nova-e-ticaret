@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { AlertTriangle, ArrowLeft, Ban, Banknote, ClipboardList, CreditCard, ExternalLink, FileText, Landmark, MapPin, MessageSquarePlus, MoreHorizontal, Package, Printer, ReceiptText, RotateCcw, StickyNote, Tag, Truck, UserRound, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Ban, Banknote, ClipboardList, CreditCard, ExternalLink, FileText, Landmark, MapPin, MessageSquarePlus, MoreHorizontal, Package, PhoneCall, Printer, ReceiptText, RotateCcw, StickyNote, Tag, Truck, UserRound, XCircle } from "lucide-react";
 import { ordersApi, type OrderActionBody } from "./api";
 import { formatMinor } from "@/lib/money";
 import { notify } from "@/lib/toast";
-import { canRunAction, ORDER_ACTIONS, PRIMARY_ACTION, PROVIDER_LABEL, REFUND_STATUS, SHIPMENT_STATUS, orderStatusMeta, paymentStatusMeta, type OrderActionId, type OrderStatus } from "@/lib/order-rules";
+import { canRunAction, ORDER_ACTIONS, PROVIDER_LABEL, REFUND_STATUS, SHIPMENT_STATUS, orderStatusMeta, paymentStatusMeta, primaryAction, type OrderActionId, type OrderStatus } from "@/lib/order-rules";
 import type { OrderDetail } from "@/modules/orders";
 import { Popover } from "@/components/ui/Popover";
 import { AdminBadge } from "@/components/admin/ui";
@@ -28,9 +28,11 @@ export function OrderDetailView({ order, permissions }: { order: OrderDetail; pe
   const [received, setReceived] = useState("");
   const [noteDraft, setNoteDraft] = useState("");
 
-  const can = (a: OrderActionId) => canRunAction(a, order.status, permissions);
-  const primary = PRIMARY_ACTION[order.status as OrderStatus];
-  const status = orderStatusMeta(order.status);
+  const pay = { paymentMethod: order.payments[0]?.provider ?? null, paymentStatus: order.paymentStatus };
+  const cod = pay.paymentMethod === "cash_on_delivery";
+  const can = (a: OrderActionId) => canRunAction(a, order.status, permissions, pay);
+  const primary = primaryAction(order.status, pay);
+  const status = orderStatusMeta(order.status, pay);
   const payment = paymentStatusMeta(order.paymentStatus);
   const bank = order.payments.find((p) => p.bankTransfer)?.bankTransfer ?? null;
   const cancelEvent = order.events.find((e) => e.type === "cancelled");
@@ -133,6 +135,13 @@ export function OrderDetailView({ order, permissions }: { order: OrderDetail; pe
           {order.reservation.expiresAt ? <> Stok rezervasyonu <b>{fmt(order.reservation.expiresAt)}</b> tarihinde sona erer.</> : null}
         </Alert>
       ) : null}
+      {cod && order.status === "pending_payment" ? (
+        <Alert tone="amber" icon={PhoneCall} title="Kapıda ödeme onayı bekleniyor"
+          action={can("confirm_cod") ? <button type="button" onClick={() => open("confirm_cod")} className="inline-flex min-h-9 items-center rounded-lg bg-amber-600 px-3 text-sm font-semibold text-white hover:bg-amber-700">Kapıda ödemeyi onayla</button> : null}>
+          Müşteriyi arayıp siparişi doğrulayın; onaydan sonra hazırlanır. Tutar <b>{formatMinor(order.money.totalMinor)}</b> teslimatta tahsil edilir.
+          {order.reservation.expiresAt ? <> Onaylanmazsa <b>{fmt(order.reservation.expiresAt)}</b> tarihinde otomatik iptal edilir.</> : null}
+        </Alert>
+      ) : null}
       {bank?.status === "mismatch" ? (
         <Alert tone="red" icon={AlertTriangle} title="Havale tutarı uyuşmuyor">
           Beklenen {formatMinor(bank.expectedMinor)}, kaydedilen {bank.receivedMinor != null ? formatMinor(bank.receivedMinor) : "—"}. Sipariş otomatik olarak ödendi yapılmadı.
@@ -145,7 +154,7 @@ export function OrderDetailView({ order, permissions }: { order: OrderDetail; pe
       ) : null}
 
       {/* ---------------------------------------------------------------- progress */}
-      <ProgressTracker status={order.status as OrderStatus} />
+      <ProgressTracker status={order.status as OrderStatus} pay={pay} />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         {/* ============================================================ main column */}
@@ -382,10 +391,14 @@ export function OrderDetailView({ order, permissions }: { order: OrderDetail; pe
         </label>
       </AdminFormDialog>
 
-      {(["prepare", "deliver", "complete"] as const).map((a) => (
+      {(["confirm_cod", "prepare", "deliver", "complete"] as const).map((a) => (
         <AdminFormDialog key={a} open={dialog?.action === a} icon={ACTION_ICON[a]} tone={a === "complete" ? "success" : "primary"} title={ORDER_ACTIONS[a].label}
           submitLabel={ORDER_ACTIONS[a].label} busy={busy}
-          description={`Sipariş durumu “${orderStatusMeta(ORDER_ACTIONS[a].to!).label}” olarak güncellenecek.`}
+          description={a === "confirm_cod"
+            ? "Müşteriyle görüştüyseniz onaylayın: sipariş hazırlanmaya alınır, ayrılan stok satışa düşer. Ödeme teslimatta kargo tarafından alınır."
+            : a === "deliver" && cod && order.paymentStatus === "pending"
+              ? `Sipariş teslim edildi ve ${formatMinor(order.money.totalMinor)} kapıda tahsil edildi olarak işaretlenecek.`
+              : `Sipariş durumu “${orderStatusMeta(ORDER_ACTIONS[a].to!).label}” olarak güncellenecek.`}
           onCancel={() => setDialog(null)}
           onSubmit={() => void run({ action: a, note: note.trim() || undefined }, `Sipariş “${orderStatusMeta(ORDER_ACTIONS[a].to!).label}” durumuna alındı`)}>
           <NoteField value={note} onChange={setNote} placeholder="Not (isteğe bağlı)" />

@@ -6,6 +6,8 @@ export interface OrderHeader {
   status: string;
   checkoutId: string;
   totalMinor: number;
+  paymentMethod: string | null;
+  paymentStatus: string;
 }
 
 export interface OrderEvent {
@@ -47,6 +49,14 @@ export interface OrderRepository {
   deliverShipmentsStatement(orderId: string, now: string): Statement;
   /** Unpaid cancel: release stock / campaign capacity / coupon, void the payment attempt and transfer. */
   cancelStatements(order: OrderHeader, actorId: string, now: string): Statement[];
+  /** Number of the order's stock reservations still held (reserved). */
+  heldReservations(checkoutId: string): Promise<number>;
+  /** Kapıda ödeme confirmed: reserved stock → committed (sold), campaign capacity and coupon committed. Guard: the held count. */
+  commitStockStatements(order: OrderHeader, actorId: string, now: string): [Statement, ...Statement[]];
+  /** Confirmed cash-on-delivery order cancelled / refused at the door: committed stock back on the shelf, capacity / coupon freed. */
+  returnCommittedStockStatements(order: OrderHeader, actorId: string, now: string): Statement[];
+  /** Cash collected at delivery: pending payment → paid, order payment_status paid (guard: 1), history + order.paid outbox. */
+  collectCashStatements(order: OrderHeader, actorId: string, now: string): [Statement, ...Statement[]];
 
   bankTransferMismatchStatement(transferId: string, receivedMinor: number): Statement;
   bankTransferMatchedStatement(transferId: string, receivedMinor: number, actorId: string, now: string): Statement;

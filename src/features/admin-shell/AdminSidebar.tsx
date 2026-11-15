@@ -13,6 +13,7 @@ import {
   FileText,
   FolderTree,
   LayoutGrid,
+  Mail,
   Megaphone,
   MessageSquareText,
   MessagesSquare,
@@ -50,7 +51,8 @@ export type SidebarIcon =
   | "support"
   | "shipping"
   | "returns"
-  | "invoices";
+  | "invoices"
+  | "newsletter";
 
 type SidebarLink = {
   type: "link";
@@ -95,6 +97,7 @@ export const iconMap: Record<SidebarIcon, ComponentType<{ className?: string }>>
   shipping: Truck,
   returns: Undo2,
   invoices: ReceiptText,
+  newsletter: Mail,
 };
 
 function ItemIcon({ icon }: { icon: SidebarIcon }) {

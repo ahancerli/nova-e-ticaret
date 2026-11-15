@@ -1,4 +1,4 @@
-import { Repository, type Statement } from "@/core";
+import { Repository, chunk, placeholders, type Statement } from "@/core";
 import type { Quote } from "@/lib/types";
 import type { CheckoutRepository, NewOrder, PaymentToSettle } from "../application/ports";
 import { PAYABLE_ORDER_STATUSES, WAREHOUSE_ID, type AddressInput, type PaymentMethod } from "../domain/checkout";
@@ -15,6 +15,30 @@ export class D1CheckoutRepository extends Repository implements CheckoutReposito
 
   async activePaymentConfig(method: PaymentMethod): Promise<string | null> {
     return (await this.db.first<{ id: string }>("SELECT id FROM payment_configs WHERE provider = ? AND is_active = 1 LIMIT 1", method))?.id ?? null;
+  }
+
+  async cashOnDeliveryConfig() {
+    const r = await this.db.first<{ id: string; public_config_json: string; is_active: number }>(
+      "SELECT id, public_config_json, is_active FROM payment_configs WHERE provider = 'cash_on_delivery' ORDER BY is_active DESC, id LIMIT 1",
+    );
+    return r ? { id: r.id, json: r.public_config_json, active: r.is_active === 1 } : null;
+  }
+
+  async productCategories(variantIds: string[]): Promise<{ name: string; categoryIds: string[] }[]> {
+    const out: { name: string; categoryIds: string[] }[] = [];
+    for (const ids of chunk([...new Set(variantIds)])) {
+      const rows = await this.db.all<{ name: string; category_ids: string | null }>(
+        `WITH RECURSIVE prod(product_id) AS (SELECT DISTINCT product_id FROM product_variants WHERE id IN (${placeholders(ids.length)})),
+              up(product_id, category_id) AS (
+                SELECT pc.product_id, pc.category_id FROM product_categories pc JOIN prod ON prod.product_id = pc.product_id
+                UNION SELECT up.product_id, c.parent_id FROM up JOIN categories c ON c.id = up.category_id WHERE c.parent_id IS NOT NULL)
+         SELECT p.name, (SELECT group_concat(up.category_id) FROM up WHERE up.product_id = p.id) AS category_ids
+           FROM prod JOIN products p ON p.id = prod.product_id`,
+        ...ids,
+      );
+      out.push(...rows.map((r) => ({ name: r.name, categoryIds: r.category_ids ? r.category_ids.split(",") : [] })));
+    }
+    return out;
   }
 
   openSessionStatements(s: { id: string; cartId: string; userId: string | null; quoteHash: string; quote: Quote; cartVersion: number; expiresAt: string; now: string }): Statement[] {
@@ -45,10 +69,12 @@ export class D1CheckoutRepository extends Repository implements CheckoutReposito
     // order header (CHECK enforces total = subtotal - discount + shipping)
     out.push(st(
       `INSERT INTO orders (id, order_number, checkout_id, user_id, customer_email, customer_phone, status, payment_status,
-                           subtotal_minor, discount_minor, shipping_minor, tax_minor, total_minor, customer_note, placed_at, terms_version)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
+                           subtotal_minor, discount_minor, shipping_minor, tax_minor, total_minor, customer_note, placed_at, terms_version,
+                           payment_method, payment_fee_minor)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       o.orderId, o.orderNumber, o.sessionId, o.userId, o.email, o.phone, o.status,
-      q.subtotalMinor, q.discountMinor, q.shippingMinor, q.taxMinor, q.totalMinor, o.note, o.now, o.termsVersion,
+      q.subtotalMinor, q.discountMinor, q.shippingMinor + o.paymentFeeMinor, q.taxMinor, q.totalMinor + o.paymentFeeMinor, o.note, o.now, o.termsVersion,
+      o.method, o.paymentFeeMinor,
     ));
 
     const address = (kind: "shipping" | "billing", a: AddressInput) => st(
@@ -111,7 +137,7 @@ export class D1CheckoutRepository extends Repository implements CheckoutReposito
     out.push(st(
       `INSERT INTO payments (id, order_id, payment_config_id, provider, conversation_id, idempotency_key, amount_minor, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
-      o.paymentId, o.orderId, o.paymentConfigId, o.method, o.orderNumber, `pay:${o.sessionId}`, q.totalMinor,
+      o.paymentId, o.orderId, o.paymentConfigId, o.method, o.orderNumber, `pay:${o.sessionId}`, q.totalMinor + o.paymentFeeMinor,
     ));
     if (o.method === "bank_transfer") {
       out.push(st(

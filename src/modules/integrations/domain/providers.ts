@@ -106,8 +106,8 @@ export const defaultSmsEvents = (): Record<SmsEvent, SmsEventSetting> =>
  * before the customer pays); a bank-transfer order is announced at once and its approval is "order.paid".
  */
 export function smsEventFor(eventType: string, paymentMethod: string | null): SmsEvent | null {
-  if (eventType === "order.placed") return paymentMethod === "bank_transfer" ? "order.placed" : null;
-  if (eventType === "order.paid") return paymentMethod === "bank_transfer" ? "order.paid" : "order.placed";
+  if (eventType === "order.placed") return paymentMethod === "bank_transfer" || paymentMethod === "cash_on_delivery" ? "order.placed" : null;
+  if (eventType === "order.paid") return paymentMethod === "cash_on_delivery" ? null : paymentMethod === "bank_transfer" ? "order.paid" : "order.placed";
   return (SMS_EVENTS as readonly string[]).includes(eventType) ? (eventType as SmsEvent) : null;
 }
 

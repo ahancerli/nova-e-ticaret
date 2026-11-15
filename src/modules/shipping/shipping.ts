@@ -52,8 +52,13 @@ export class ShippingRepository extends Repository {
     return this.db.first<{
       id: string; tracking_number: string | null; order_number: string; customer_email: string; customer_phone: string | null;
       recipient_name: string; phone_e164: string; province: string; district: string; line1: string; line2: string | null; pieces: number; booking: string | null;
+      cod_amount: number | null;
     }>(
       `SELECT s.id, s.tracking_number, o.order_number, o.customer_email, o.customer_phone,
+              -- kapıda ödeme: the whole amount is collected with the first parcel of the order
+              CASE WHEN o.payment_method = 'cash_on_delivery' AND o.payment_status = 'pending'
+                    AND NOT EXISTS (SELECT 1 FROM shipments s2 WHERE s2.order_id = o.id AND (s2.created_at < s.created_at OR (s2.created_at = s.created_at AND s2.id < s.id)))
+                   THEN o.total_minor END AS cod_amount,
               a.recipient_name, a.phone_e164, a.province, a.district, a.line1, a.line2,
               (SELECT COALESCE(SUM(si.quantity), 0) FROM shipment_items si WHERE si.shipment_id = s.id) AS pieces,
               (SELECT cs.status FROM carrier_shipments cs WHERE cs.shipment_id = s.id) AS booking
@@ -156,6 +161,28 @@ export class ShippingRepository extends Repository {
          ON CONFLICT(dedupe_key) DO NOTHING`,
         ids.newId(), orderId, `order.delivered:${orderId}`,
       ),
+      // Kapıda ödeme: the carrier delivered = it collected the money. Condition-based, so a repeat changes nothing.
+      this.db.statement(
+        `UPDATE orders SET payment_status = 'paid', updated_at = ?2
+          WHERE id = ?1 AND status = 'delivered' AND payment_method = 'cash_on_delivery' AND payment_status = 'pending'`, orderId, now,
+      ),
+      this.db.statement(
+        `UPDATE payments SET status = 'paid', paid_at = ?2, updated_at = ?2
+          WHERE order_id = ?1 AND provider = 'cash_on_delivery' AND status IN ('created','pending')
+            AND EXISTS (SELECT 1 FROM orders WHERE id = ?1 AND payment_status = 'paid')`, orderId, now,
+      ),
+      this.db.statement(
+        `INSERT INTO order_events (id, order_id, event_type, note, idempotency_key, created_at)
+         SELECT ?, ?2, 'payment_captured', 'Ödeme kapıda tahsil edildi (kargo teslimatı).', ?3, ?4
+          WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?2 AND payment_method = 'cash_on_delivery' AND payment_status = 'paid')
+         ON CONFLICT(idempotency_key) DO NOTHING`, ids.newId(), orderId, `evt:paid:${orderId}`, now,
+      ),
+      this.db.statement(
+        `INSERT INTO outbox_events (id, aggregate_type, aggregate_id, event_type, payload_json, dedupe_key)
+         SELECT ?, 'order', ?2, 'order.paid', '{"paymentMethod":"cash_on_delivery"}', ?3
+          WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?2 AND payment_method = 'cash_on_delivery' AND payment_status = 'paid')
+         ON CONFLICT(dedupe_key) DO NOTHING`, ids.newId(), orderId, `order.paid:${orderId}`,
+      ),
     ];
   }
 }
@@ -184,6 +211,7 @@ export class BookShipment {
           name: s.recipient_name, phone: s.phone_e164 || s.customer_phone || "", email: s.customer_email,
           province: s.province, district: s.district, address: [s.line1, s.line2].filter(Boolean).join(" "),
         },
+        cashOnDelivery: s.cod_amount != null ? { amountMinor: s.cod_amount } : null,
       });
       await this.repo.saveBooking({ ...base, status: "booked", providerRef: r.providerRef, error: null, now: this.clock.nowIso() });
       return { provider: carrier.providerCode, cargoKey };

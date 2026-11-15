@@ -36,6 +36,7 @@ const NAV: Array<{ title: string; items: NavEntry[] }> = [
       { type: "link", href: "/admin/iadeler", label: "İadeler", perm: "orders.read", icon: "returns" },
       { type: "link", href: "/admin/faturalar", label: "Faturalar", perm: "orders.read", icon: "invoices" },
       { type: "link", href: "/admin/musteriler", label: "Müşteriler", perm: "customers.read", icon: "customers" },
+      { type: "link", href: "/admin/e-bulten", label: "E-bülten", perm: "customers.read", icon: "newsletter" },
       { type: "link", href: "/admin/yorumlar", label: "Ürün yorumları", perm: "reviews.moderate", icon: "reviews" },
       { type: "link", href: "/admin/canli-destek", label: "Canlı destek", perm: "support.chat", icon: "support" },
       { type: "link", href: "/admin/bildirimler", label: "Bildirimler", icon: "notifications" },

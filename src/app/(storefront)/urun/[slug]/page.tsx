@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronRight, House } from "lucide-react";
 import { GetProductDetailToken, GetShellToken, GetSimilarProductsToken } from "@/modules/storefront";
-import { resolveService } from "@/server/app";
+import { currentPrincipal, resolveService } from "@/server/app";
 import { ProductGrid, ProductInfoTabs, SimilarProducts, VariantPicker, deptTone, menuIndexOf } from "@/features/shop";
 import { GetProductReviewsToken } from "@/modules/reviews";
 import { TrackEvent } from "@/features/consent/commerce";
@@ -25,10 +25,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ProductPage({ params, searchParams }: Props) {
   const p = await getProductBySlug((await params).slug);
   if (!p) notFound();
-  const [reviews, similar, shell, { degerlendir }] = await Promise.all([
+  const [reviews, similar, shell, user, { degerlendir }] = await Promise.all([
     (await resolveService(GetProductReviewsToken)).execute(p.id, {}),
     (await resolveService(GetSimilarProductsToken)).execute(p.id, { pageSize: 12 }),
     resolveService(GetShellToken).then((q) => q.execute()),
+    currentPrincipal("storefront"),
     searchParams,
   ]);
   // Department colour of the product's category tints the gallery and accents the page.
@@ -59,7 +60,7 @@ export default async function ProductPage({ params, searchParams }: Props) {
           {p.breadcrumb.map((b) => <li key={b.slug} className="flex items-center gap-1.5"><ChevronRight className="size-3.5 opacity-60" aria-hidden /><Link href={`/kategori/${b.slug}`} className="font-medium hover:text-ink">{b.name}</Link></li>)}
         </ol>
       </nav>
-      <VariantPicker product={p} />
+      <VariantPicker product={p} signedIn={Boolean(user)} />
       <TrackEvent id={p.id} event={{
         name: "view_item",
         item: { id: def?.sku || p.id, name: p.name, brand: p.brandName, category: p.breadcrumb.at(-1)?.name ?? null, price: (def?.priceMinor ?? 0) / 100, quantity: 1 },

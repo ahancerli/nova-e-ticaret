@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { AlertTriangle, Ban, Banknote, CheckCheck, CircleDollarSign, ClipboardList, MessageSquarePlus, PackageCheck, PackageOpen, RotateCcw, ShoppingBag, StickyNote, Truck, XCircle } from "lucide-react";
+import { AlertTriangle, Ban, Banknote, CheckCheck, PhoneCall, CircleDollarSign, ClipboardList, MessageSquarePlus, PackageCheck, PackageOpen, RotateCcw, ShoppingBag, StickyNote, Truck, XCircle } from "lucide-react";
 import type { OrderActionId } from "@/lib/order-rules";
 
 export const dt = new Intl.DateTimeFormat("tr-TR", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Istanbul" });
@@ -21,12 +21,13 @@ export const tlToMinor = (s: string) => {
 export const minorToTl = (m: number) => (m / 100).toFixed(2).replace(".", ",");
 
 export const ACTION_ICON: Record<OrderActionId, ComponentType<{ className?: string }>> = {
-  reconcile: Banknote, prepare: PackageOpen, ship: Truck, deliver: PackageCheck, complete: CheckCheck, cancel: Ban, refund: RotateCcw, note: MessageSquarePlus,
+  reconcile: Banknote, confirm_cod: PhoneCall, prepare: PackageOpen, ship: Truck, deliver: PackageCheck, complete: CheckCheck, cancel: Ban, refund: RotateCcw, note: MessageSquarePlus,
 };
 
 export const EVENT_META: Record<string, { label: string; icon: ComponentType<{ className?: string }>; tone: string }> = {
   placed: { label: "Sipariş oluşturuldu", icon: ShoppingBag, tone: "bg-indigo-50 text-[#7367f0]" },
   payment_captured: { label: "Ödeme alındı", icon: CircleDollarSign, tone: "bg-emerald-50 text-emerald-600" },
+  cod_confirmed: { label: "Kapıda ödeme onaylandı", icon: PhoneCall, tone: "bg-indigo-50 text-[#7367f0]" },
   payment_mismatch: { label: "Havale tutarı uyuşmadı", icon: AlertTriangle, tone: "bg-amber-50 text-amber-600" },
   status_changed: { label: "Durum güncellendi", icon: ClipboardList, tone: "bg-violet-50 text-violet-600" },
   shipment_created: { label: "Kargoya verildi", icon: Truck, tone: "bg-blue-50 text-blue-600" },

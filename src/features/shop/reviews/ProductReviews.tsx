@@ -184,7 +184,7 @@ export function ProductReviews({ productId, slug, productName, initial, autoOpen
           {!summary.count ? (
             <div className="card flex flex-col items-center p-8 text-center text-sm text-ink-soft">
               <p>Bu ürün için henüz yayınlanmış bir değerlendirme yok.</p>
-              <Link href="/hesabim#degerlendirmelerim" className="mt-2 font-semibold text-brand hover:underline">Değerlendirmelerim</Link>
+              <Link href="/hesabim?sekme=degerlendirmeler" className="mt-2 font-semibold text-brand hover:underline">Değerlendirmelerim</Link>
             </div>
           ) : null}
         </div>

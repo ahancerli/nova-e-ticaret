@@ -6,7 +6,7 @@ import { addOutboxHandler } from "@/modules/outbox";
 import { SecretVaultToken } from "@/modules/platform/secrets";
 import { ProcessCardRefund, StartCardPayment, VerifyCardPayment } from "./application/card-payments";
 import {
-  CreateBankAccount, DeleteBankAccount, GetPaymentOptions, GetPaymentSettings, SaveIyzicoKeys, SetBankTransfer, SetCardPayments, TestIyzicoKeys,
+  CreateBankAccount, DeleteBankAccount, GetPaymentOptions, GetPaymentSettings, SaveIyzicoKeys, SetBankTransfer, SetCardPayments, SetCashOnDelivery, TestIyzicoKeys,
   UpdateBankAccount, type PaymentSettingsDeps,
 } from "./application/payment-settings";
 import type { PaymentGateway, PaymentRepository } from "./application/ports";
@@ -28,6 +28,7 @@ export const GetPaymentOptionsToken = token<GetPaymentOptions>("GetPaymentOption
 export const SaveIyzicoKeysToken = token<SaveIyzicoKeys>("SaveIyzicoKeys");
 export const SetCardPaymentsToken = token<SetCardPayments>("SetCardPayments");
 export const SetBankTransferToken = token<SetBankTransfer>("SetBankTransfer");
+export const SetCashOnDeliveryToken = token<SetCashOnDelivery>("SetCashOnDelivery");
 export const CreateBankAccountToken = token<CreateBankAccount>("CreateBankAccount");
 export const UpdateBankAccountToken = token<UpdateBankAccount>("UpdateBankAccount");
 export const DeleteBankAccountToken = token<DeleteBankAccount>("DeleteBankAccount");
@@ -55,6 +56,7 @@ export function registerPayments(c: Container): void {
   c.scoped(SaveIyzicoKeysToken, (r) => new SaveIyzicoKeys(deps(r)));
   c.scoped(SetCardPaymentsToken, (r) => new SetCardPayments(deps(r)));
   c.scoped(SetBankTransferToken, (r) => new SetBankTransfer(deps(r)));
+  c.scoped(SetCashOnDeliveryToken, (r) => new SetCashOnDelivery(deps(r)));
   c.scoped(CreateBankAccountToken, (r) => new CreateBankAccount(deps(r)));
   c.scoped(UpdateBankAccountToken, (r) => new UpdateBankAccount(deps(r)));
   c.scoped(DeleteBankAccountToken, (r) => new DeleteBankAccount(deps(r)));

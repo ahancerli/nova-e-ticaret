@@ -57,7 +57,7 @@ export function GuestOrderLookup({ initialNumber = "" }: { initialNumber?: strin
         <div className="space-y-6" aria-live="polite">
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="font-display text-2xl font-extrabold tracking-tight">Sipariş {order.detail.orderNumber}</h2>
-            <OrderStatusPill status={order.detail.status} />
+            <OrderStatusPill status={order.detail.status} paymentMethod={order.detail.paymentMethod} />
           </div>
           <OrderDetailView order={order.detail} email={order.email} />
           <ReturnPanel orderNumber={order.detail.orderNumber} email={order.email} />

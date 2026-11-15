@@ -53,7 +53,7 @@ export class RunOrderAction {
   async execute(orderId: string, input: OrderActionInput, actor: OrderActor): Promise<ActionResult> {
     const order = await this.orders.header(orderId);
     if (!order) throw OrderErrors.notFound();
-    assertActionAllowed(input.action as OrderActionId, order.status, actor.permissions);
+    assertActionAllowed(input.action as OrderActionId, order.status, actor.permissions, order);
     const action = this.actions.get(input.action);
     if (!action) throw new AppError(500, "action_not_registered", `Order action "${input.action}" is not registered.`, { expose: false });
     return action.run(order, input, actor);

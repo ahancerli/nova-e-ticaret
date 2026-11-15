@@ -13,6 +13,8 @@ export interface CarrierBooking {
   orderNumber: string;
   pieces: number;
   receiver: { name: string; phone: string; email: string; province: string; district: string; address: string };
+  /** Kapıda ödeme: the carrier collects this amount at the door (first parcel of the order only); null = prepaid. */
+  cashOnDelivery?: { amountMinor: number } | null;
 }
 
 export type CarrierStatus = "pending" | "in_transit" | "delivered" | "returned" | "lost" | "cancelled";

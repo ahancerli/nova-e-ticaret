@@ -10,15 +10,16 @@ export default async function OrderResultPage({ searchParams }: { searchParams: 
   const { durum, no } = await searchParams;
   const success = durum === "basarili";
   const transfer = durum === "havale";
+  const cod = durum === "kapida";
   const safeNo = no && /^NV[0-9A-Z]{6,20}$/.test(no) ? no : null;
   const accounts = transfer ? (await (await resolveService(GetPaymentOptionsToken)).execute()).bankAccounts : [];
   return (
     <div className="container-page max-w-xl py-16 text-center">
-      <div className={`mx-auto grid h-16 w-16 place-items-center rounded-full text-3xl ${success || transfer ? "bg-green-50 text-success" : "bg-red-50 text-danger"}`} aria-hidden>
-        {success || transfer ? "✓" : "!"}
+      <div className={`mx-auto grid h-16 w-16 place-items-center rounded-full text-3xl ${success || transfer || cod ? "bg-green-50 text-success" : "bg-red-50 text-danger"}`} aria-hidden>
+        {success || transfer || cod ? "✓" : "!"}
       </div>
       <h1 className="mt-6 text-2xl font-bold">
-        {success ? "Ödemeniz alındı" : transfer ? "Siparişiniz oluşturuldu" : "Ödeme tamamlanamadı"}
+        {success ? "Ödemeniz alındı" : transfer || cod ? "Siparişiniz oluşturuldu" : "Ödeme tamamlanamadı"}
       </h1>
       {safeNo && <p className="mt-2 text-ink-soft">Sipariş numaranız: <strong className="text-ink">{safeNo}</strong></p>}
       <p className="mt-4 text-sm text-ink-soft">
@@ -26,10 +27,12 @@ export default async function OrderResultPage({ searchParams }: { searchParams: 
           ? "Sipariş özetiniz e-posta adresinize gönderilecek."
           : transfer
             ? "Havale/EFT açıklamasına sipariş numaranızı yazın. Ödemeniz kontrol edildikten sonra siparişiniz hazırlanır; havale bildirimi tek başına onay anlamına gelmez."
+            : cod
+              ? "Siparişinizi doğrulamak için sizi arayabiliriz. Onaydan sonra hazırlanıp kargoya verilir; ödemeyi teslimatta kargo görevlisine yaparsınız."
             : "Kartınızdan çekim yapılmadıysa sepetinizden tekrar deneyebilirsiniz. Sorun devam ederse bizimle iletişime geçin."}
       </p>
       {accounts.length > 0 && <div className="mt-6"><BankAccounts accounts={accounts} orderNo={safeNo} /></div>}
-      {(success || transfer) && safeNo && <TrackPurchase orderNumber={safeNo} />}
+      {(success || transfer || cod) && safeNo && <TrackPurchase orderNumber={safeNo} />}
       <Link href="/" className="btn btn-primary mt-8">Alışverişe devam et</Link>
     </div>
   );

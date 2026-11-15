@@ -21,6 +21,7 @@ const JOBS = [
 	{ path: "/api/cron/outbox", every: 60 },
 	{ path: "/api/cron/integrations", every: 60 },
 	{ path: "/api/cron/expire", every: 300 },
+	{ path: "/api/cron/product-alerts", every: 300 },
 	{ path: "/api/cron/feeds-sync", every: 900 },
 	{ path: "/api/cron/shipping-sync", every: 1200 },
 ]

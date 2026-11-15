@@ -2,6 +2,7 @@ import { UnitOfWork, encryptSecret, type Clock, type Database, type IdGenerator 
 import type { AuditLog } from "@/modules/audit/audit-log";
 import type { SecretVault } from "@/modules/platform/secrets";
 import type { Actor } from "@/modules/shared/actor";
+import { parseCashOnDelivery, serializeCashOnDelivery, type CashOnDeliverySettings } from "../domain/cash-on-delivery";
 import { PaymentSettingsErrors as E } from "../domain/payment";
 import {
   IYZICO_BASE_URL, IYZICO_ENVIRONMENTS, IYZICO_SECRET_NAMES, formatIban, normalizeIban,
@@ -29,7 +30,9 @@ export class GetPaymentSettings {
   constructor(private readonly repo: PaymentSettingsRepository, private readonly vault: SecretVault) {}
 
   async execute(): Promise<PaymentSettingsView> {
-    const [configs, bankActive, accounts] = await Promise.all([this.repo.iyzicoConfigs(), this.repo.bankTransferActive(), this.repo.bankAccounts()]);
+    const [configs, bankActive, accounts, cod, categories] = await Promise.all([
+      this.repo.iyzicoConfigs(), this.repo.bankTransferActive(), this.repo.bankAccounts(), this.repo.cashOnDelivery(), this.repo.categoryOptions(),
+    ]);
     const iyzicoAccounts = await Promise.all(IYZICO_ENVIRONMENTS.map(async (environment) => {
       const c = configs.find((x) => x.environment === environment);
       const configured = !!c && c.secrets.includes(IYZICO_SECRET_NAMES.apiKey) && c.secrets.includes(IYZICO_SECRET_NAMES.secretKey);
@@ -39,6 +42,7 @@ export class GetPaymentSettings {
     return {
       iyzico: { active: configs.find((c) => c.isActive)?.environment ?? null, accounts: iyzicoAccounts },
       bankTransfer: { active: bankActive, accounts },
+      cashOnDelivery: { ...parseCashOnDelivery(cod?.json ?? null, cod?.active ?? false), updatedAt: cod?.updatedAt ?? null, categories },
     };
   }
 }
@@ -48,12 +52,12 @@ export class GetPaymentOptions {
   constructor(private readonly repo: PaymentSettingsRepository) {}
 
   async execute(): Promise<PaymentOptions> {
-    const [configs, bankActive, accounts] = await Promise.all([this.repo.iyzicoConfigs(), this.repo.bankTransferActive(), this.repo.bankAccounts()]);
+    const [configs, bankActive, accounts, cod] = await Promise.all([this.repo.iyzicoConfigs(), this.repo.bankTransferActive(), this.repo.bankAccounts(), this.repo.cashOnDelivery()]);
     const active = configs.find((c) => c.isActive);
     const bankAccounts = bankActive
       ? accounts.filter((a) => a.isActive).map((a) => ({ bankName: a.bankName, accountHolder: a.accountHolder, iban: formatIban(a.iban), instructions: a.instructions }))
       : [];
-    return { card: !!active && active.secrets.length >= 2, bankTransfer: bankAccounts.length > 0, bankAccounts };
+    return { card: !!active && active.secrets.length >= 2, bankTransfer: bankAccounts.length > 0, bankAccounts, cashOnDelivery: cod?.active ?? false };
   }
 }
 
@@ -127,6 +131,28 @@ export class SetBankTransfer {
     await uow
       .add(deps.audit.recordStatement({
         actor, action: active ? "payment.bank_transfer_activate" : "payment.bank_transfer_deactivate", entityType: "payment_config", entityId: "bank_transfer", diff: { active },
+      }))
+      .commit();
+    return new GetPaymentSettings(deps.repo, deps.vault).execute();
+  }
+}
+
+/** Command: Kapıda ödeme on/off, fee, order limits, allowed categories (one row, optimistic concurrency). */
+export class SetCashOnDelivery {
+  constructor(private readonly deps: PaymentSettingsDeps) {}
+
+  async execute(input: CashOnDeliverySettings & { expectedUpdatedAt: string | null }, actor: Actor): Promise<PaymentSettingsView> {
+    const { deps } = this;
+    if (input.minOrderMinor != null && input.maxOrderMinor != null && input.maxOrderMinor < input.minOrderMinor) throw E.codLimits();
+    const categoryIds = [...new Set(input.categoryIds)];
+    if ((await deps.repo.countCategories(categoryIds)) !== categoryIds.length) throw E.codCategory();
+    const settings: CashOnDeliverySettings = { ...input, categoryIds, note: input.note?.trim() || null };
+    await new UnitOfWork(deps.db)
+      .add(deps.repo.saveCashOnDeliveryStatement({ id: deps.ids.newId(), json: serializeCashOnDelivery(settings), active: settings.active, now: deps.clock.nowIso() }, input.expectedUpdatedAt))
+      .expectChanges(1, E.changedMeanwhile)
+      .add(deps.audit.recordStatement({
+        actor, action: "payment.cod_update", entityType: "payment_config", entityId: "cash_on_delivery",
+        diff: { active: settings.active, feeMinor: settings.feeMinor, minOrderMinor: settings.minOrderMinor, maxOrderMinor: settings.maxOrderMinor, categories: categoryIds.length },
       }))
       .commit();
     return new GetPaymentSettings(deps.repo, deps.vault).execute();

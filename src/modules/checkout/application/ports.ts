@@ -36,6 +36,8 @@ export interface NewOrder {
   shipping: AddressInput;
   billing: AddressInput;
   method: PaymentMethod;
+  /** Kapıda ödeme fee: added to shipping (and the total); stored separately in orders.payment_fee_minor. */
+  paymentFeeMinor: number;
   paymentConfigId: string;
   customerKey: string;
   termsVersion: string;
@@ -47,6 +49,10 @@ export interface NewOrder {
 export interface CheckoutRepository {
   findSession(id: string, cartId: string): Promise<CheckoutSession | null>;
   activePaymentConfig(method: PaymentMethod): Promise<string | null>;
+  /** The cash_on_delivery row (settings JSON), whether active or not. */
+  cashOnDeliveryConfig(): Promise<{ id: string; json: string; active: boolean } | null>;
+  /** Each product of the variants with the ids of its categories and all their ancestors. */
+  productCategories(variantIds: string[]): Promise<{ name: string; categoryIds: string[] }[]>;
   openSessionStatements(s: { id: string; cartId: string; userId: string | null; quoteHash: string; quote: Quote; cartVersion: number; expiresAt: string; now: string }): Statement[];
   /** Marks the session confirmed only while still open. */
   confirmSessionStatement(sessionId: string, now: string): Statement;

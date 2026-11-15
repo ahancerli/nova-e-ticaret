@@ -1,6 +1,8 @@
 import { z } from "zod";
 import "@/modules/shared/schemas";
+import { COD_FEE_MAX_MINOR, COD_NOTE_MAX } from "../domain/cash-on-delivery";
 import { IYZICO_ENVIRONMENTS, isValidIban, normalizeIban, type IyzicoEnvironment } from "../domain/payment-settings";
+import { entityId } from "@/modules/shared/schemas";
 
 const environment = z.enum(IYZICO_ENVIRONMENTS as unknown as [IyzicoEnvironment, ...IyzicoEnvironment[]], { error: "Ortamı seçin." });
 const key = (label: string) => z.string().trim().max(200).optional().transform((v) => v || undefined)
@@ -24,4 +26,15 @@ export const bankAccountSchema = z.object({
   iban: z.string().max(42).transform(normalizeIban).refine(isValidIban, "Geçerli bir IBAN girin (TR ile başlayan 26 karakter)."),
   instructions: z.string().trim().max(300).nullish().transform((v) => v || null),
   isActive: z.boolean(),
+}).strict();
+
+const minor = z.number().int().min(0, "Tutar eksi olamaz.").max(100_000_000);
+export const cashOnDeliverySchema = z.object({
+  active: z.boolean(),
+  feeMinor: z.number().int().min(0, "Ücret eksi olamaz.").max(COD_FEE_MAX_MINOR, "Ücret en fazla 1.000 TL olabilir."),
+  minOrderMinor: minor.nullable(),
+  maxOrderMinor: minor.nullable(),
+  categoryIds: z.array(entityId).max(200),
+  note: z.string().trim().max(COD_NOTE_MAX, `Açıklama en fazla ${COD_NOTE_MAX} karakter.`).nullable(),
+  expectedUpdatedAt: z.string().max(40).nullable(),
 }).strict();
