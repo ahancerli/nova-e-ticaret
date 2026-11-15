@@ -16,6 +16,17 @@ When a task is done, if the change affects anything the memories describe — fo
 changed. Skip it for local changes (a bug fix, a UI text, one component). A Stop hook (`.claude/hooks/serena-memory-check.sh`)
 reminds you if architecture files changed without a memory update.
 
+## Keeping the local database in sync
+
+- After every task (not only schema work), make the local database match `db/schema.sql` + `db/migrations`:
+  `npm run db:backup`, then `npm run db:setup`, then `npm run db:check` (must print "in sync"). Report the result.
+- A schema change always ships with a migration in `db/migrations/` (with its `-- probe:` line) so existing
+  databases get it; `db:setup` only creates missing objects, it never alters an existing table.
+- Objects the check lists as "not in schema" are never dropped automatically: ask the user first, and remove them
+  from any migration that creates them.
+- A Stop hook (`.claude/hooks/db-sync-check.sh`) runs `db:check` and blocks finishing while the database drifts.
+- This never means `npm run build`; ask before building (it breaks the running dev server).
+
 ## UI / design work
 
 - Whenever the user asks for design work — a new page, component, screen, layout, restyle or any visual change — invoke

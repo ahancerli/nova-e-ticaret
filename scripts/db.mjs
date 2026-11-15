@@ -7,13 +7,14 @@
 //   node scripts/db.mjs exec --command "SQL"      run one statement; SELECT prints a table
 //   node scripts/db.mjs import dump.sql [--force] load a SQL dump (e.g. `wrangler d1 export`) into a NEW database, then schema + migrations
 //   node scripts/db.mjs backup [out.db]           online copy (default: <data dir>/backups/nova-<time>.db, keeps BACKUP_KEEP = 14)
+//   node scripts/db.mjs check                     compare the database with db/schema.sql + migrations; exit 1 on drift
 //
 // Migrations: every db/migrations file starts with  -- probe: SELECT new_column FROM some_table LIMIT 0
 // The probe succeeds only after the migration ran, so a file is applied exactly once and re-running is safe.
 // A file with the line  -- foreign_keys: off  runs with foreign keys off (table rebuilds) and is FK-checked before COMMIT.
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs"
 import { basename, dirname, join } from "node:path"
-import { backup } from "node:sqlite"
+import { DatabaseSync, backup } from "node:sqlite"
 import { databasePath, loadEnv } from "./env.mjs"
 import { databaseExists, hasSchema, openDatabase } from "./sqlite.mjs"
 
@@ -75,6 +76,47 @@ function migrate(db) {
 	console.log(`✓ migrations: ${applied} applied, ${files.length - applied} already present`)
 }
 
+// Drift report: pending migrations (probe fails), tables/indexes/triggers/views or columns from db/schema.sql the
+// database lacks, and objects/columns the database has that the schema does not. Column order is ignored (ALTER appends).
+function drift(db) {
+	const pending = readdirSync("db/migrations")
+		.filter((f) => f.endsWith(".sql"))
+		.sort()
+		.filter((f) => {
+			const probe = /^--\s*probe:\s*(.+)$/m.exec(read(`db/migrations/${f}`))?.[1]?.trim()
+			try {
+				db.prepare(probe).all()
+				return false
+			} catch {
+				return true
+			}
+		})
+	const ref = new DatabaseSync(":memory:")
+	ref.exec(read("db/schema.sql"))
+	const objects = (d) =>
+		new Set(
+			d
+				.prepare("SELECT type || ' ' || name AS k FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\'")
+				.all()
+				.map((r) => r.k),
+		)
+	const want = objects(ref)
+	const have = objects(db)
+	const missing = [...want].filter((k) => !have.has(k))
+	const extra = [...have].filter((k) => !want.has(k))
+	const columns = (d, t) => new Set(d.prepare("SELECT name FROM pragma_table_info(?)").all(t).map((r) => r.name))
+	for (const k of want) {
+		if (!k.startsWith("table ") || !have.has(k)) continue
+		const t = k.slice(6)
+		const a = columns(db, t)
+		const b = columns(ref, t)
+		for (const c of b) if (!a.has(c)) missing.push(`column ${t}.${c}`)
+		for (const c of a) if (!b.has(c)) extra.push(`column ${t}.${c}`)
+	}
+	ref.close()
+	return { pending, missing, extra }
+}
+
 function execCommand(db, sql) {
 	if (/;\s*\S/.test(sql.trim())) {
 		db.exec(sql)
@@ -112,6 +154,20 @@ switch (action) {
 		db.close()
 		console.log(`✓ database ready: ${path}${fresh ? " (new)" : ""}`)
 		break
+	}
+	case "check": {
+		if (!databaseExists(path)) fail(`no database at ${path} — run npm run db:setup`)
+		const db = openDatabase(path)
+		const { pending, missing, extra } = drift(db)
+		db.close()
+		if (!pending.length && !missing.length && !extra.length) {
+			console.log(`✓ in sync with db/schema.sql + migrations: ${path}`)
+			break
+		}
+		if (pending.length) console.log(`pending migrations: ${pending.join(", ")}`)
+		if (missing.length) console.log(`missing in database: ${missing.join(", ")}`)
+		if (extra.length) console.log(`not in schema: ${extra.join(", ")}`)
+		process.exit(1)
 	}
 	case "schema":
 	case "seed":
@@ -183,5 +239,5 @@ switch (action) {
 		break
 	}
 	default:
-		fail("usage: node scripts/db.mjs <init|schema|seed|migrate|reset|exec|import|backup> …")
+		fail("usage: node scripts/db.mjs <init|check|schema|seed|migrate|reset|exec|import|backup> …")
 }

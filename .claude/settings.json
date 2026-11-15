@@ -8,6 +8,12 @@
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/serena-memory-check.sh",
             "timeout": 15,
             "statusMessage": "Serena notları kontrol ediliyor"
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/db-sync-check.sh",
+            "timeout": 30,
+            "statusMessage": "Veritabanı şema ile karşılaştırılıyor"
           }
         ]
       }

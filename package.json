@@ -17,6 +17,7 @@
 		"db:schema": "node scripts/db.mjs schema",
 		"db:seed": "node scripts/db.mjs seed",
 		"db:migrate": "node scripts/db.mjs migrate",
+		"db:check": "node scripts/db.mjs check",
 		"db:reset": "node scripts/db.mjs reset",
 		"db:query": "node scripts/db.mjs exec --command",
 		"db:import": "node scripts/db.mjs import",

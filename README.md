@@ -51,6 +51,7 @@ Eski Cloudflare local verisi (`.wrangler/state`) bir kez `npm run db:from-wrangl
 | `npm run db:query -- "SQL"` | Tek SQL; SELECT tablo olarak basılır |
 | `npm run db:import -- dump.sql` | SQL dökümünü (ör. `wrangler d1 export`) **yeni** veritabanına yükler, ardından şema + migration |
 | `npm run db:backup` | Çevrimiçi yedek → `data/backups/nova-<zaman>.db` (son 14'ü tutar, `BACKUP_KEEP`) |
+| `npm run db:check` | Veritabanını `db/schema.sql` + migration'larla karşılaştırır: bekleyen migration, eksik veya fazla tablo/indeks/sütun varsa listeler ve hata koduyla çıkar |
 | `npm run admin:create -- email "Ad"` | Admin oluştur / parolasını sıfırla |
 | `npm run scheduler` | Zamanlanmış işleri çağıran süreç (Docker'da `scheduler` container'ı) |
 | `npm run docker:{up,down,logs,admin}` | Local Docker kısayolları |
