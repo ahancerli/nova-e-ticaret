@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_GALLERY_ITEMS } from "@/modules/media/domain/image";
 import { entityId, slugInput } from "@/modules/shared/schemas";
 
 /** Input contract of the product save use case (create + update): the whole aggregate in one payload. */
@@ -27,7 +28,7 @@ const variantInput = z
     heightMm: optInt(0, 100_000),
     depthMm: optInt(0, 100_000),
     /** The variant's own photos (Renk: every size of a colour shares them). */
-    media: z.array(entityId).max(20).default([]),
+    media: z.array(entityId).max(MAX_GALLERY_ITEMS, `Bir renge en fazla ${MAX_GALLERY_ITEMS} görsel eklenebilir.`).default([]),
   })
   .strict()
   .refine((v) => v.compareAtMinor == null || v.compareAtMinor > v.priceMinor, { path: ["compareAtMinor"], message: "Eski fiyat, satış fiyatından büyük olmalı." })
@@ -48,7 +49,8 @@ export const productSaveSchema = z
     modelCode: z.string().trim().max(64).regex(/^[A-Za-z0-9._-]*$/, "Model kodu harf, rakam, nokta, tire ve alt çizgi içerebilir.").optional().nullable(),
     brandId: entityId.optional().nullable(),
     categories: z.array(z.object({ id: entityId, primary: z.boolean() }).strict()).max(20),
-    media: z.array(entityId).max(30),
+    /** Gallery in order: images and MP4 videos together. */
+    media: z.array(entityId).max(MAX_GALLERY_ITEMS, `Galeriye en fazla ${MAX_GALLERY_ITEMS} görsel veya video eklenebilir.`),
     primaryMediaId: entityId.optional().nullable(),
     axes: z.array(entityId).max(4),
     variants: z.array(variantInput).min(1, "En az bir varyant gerekli.").max(200),

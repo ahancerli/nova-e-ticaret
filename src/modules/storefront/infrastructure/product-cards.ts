@@ -7,6 +7,8 @@ export const PAGE_SIZE = 24;
 
 /** ORDER BY per sort key — the only ORDER BY text that reaches listing SQL. */
 export const SORTS: Record<SortKey, string> = {
+  // the engine's order is applied by the read model when it has the matched ids; without them: newest first
+  relevance: "p.published_at DESC, p.id",
   newest: "p.published_at DESC, p.id",
   price_asc: "min_price ASC, p.id",
   price_desc: "min_price DESC, p.id",
@@ -20,9 +22,9 @@ export const SORTS: Record<SortKey, string> = {
 const PL = `'${DEFAULT_PRICE_LIST.replace(/[^a-z0-9_]/g, "")}'`;
 export const CARD_SELECT = `
   SELECT p.id, p.slug, p.name, p.published_at, b.name AS brand_name, b.slug AS brand_slug,
-         (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id LEFT JOIN product_variants dv ON dv.id = pm.variant_id
+         (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%' LEFT JOIN product_variants dv ON dv.id = pm.variant_id
            WHERE pm.product_id = p.id ORDER BY pm.variant_id IS NOT NULL, pm.is_primary DESC, dv.is_default DESC, pm.sort_order LIMIT 1) AS image_url,
-         (SELECT m.alt_text FROM product_media pm JOIN media_assets m ON m.id = pm.media_id LEFT JOIN product_variants dv ON dv.id = pm.variant_id
+         (SELECT m.alt_text FROM product_media pm JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%' LEFT JOIN product_variants dv ON dv.id = pm.variant_id
            WHERE pm.product_id = p.id ORDER BY pm.variant_id IS NOT NULL, pm.is_primary DESC, dv.is_default DESC, pm.sort_order LIMIT 1) AS image_alt,
          (SELECT MIN(vp.unit_price_minor) FROM product_variants v JOIN variant_prices vp ON vp.variant_id = v.id AND vp.price_list_id = ${PL}
            WHERE v.product_id = p.id AND v.is_active = 1) AS min_price,

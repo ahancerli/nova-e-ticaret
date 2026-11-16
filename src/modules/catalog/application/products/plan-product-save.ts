@@ -37,6 +37,8 @@ export interface SaveLookups {
   brandExists: boolean;
   foundCategoryIds: ReadonlySet<string>;
   foundImageIds: ReadonlySet<string>;
+  /** Gallery videos (MP4); only the shared gallery may hold them. */
+  foundVideoIds?: ReadonlySet<string>;
   skusTakenElsewhere: ReadonlySet<string>;
   barcodesTakenElsewhere: ReadonlySet<string>;
 }
@@ -153,10 +155,14 @@ export function planProductSave(args: {
 
   // --- media (a product with photos only on its variants — every colour has its own — is still publishable) ---
   const mediaIds = [...new Set(input.media)];
-  if (mediaIds.some((m) => !lookups.foundImageIds.has(m))) push("media", "Galerideki bir görsel bulunamadı; yeniden yükleyin.");
-  const primaryMediaId = input.primaryMediaId && mediaIds.includes(input.primaryMediaId) ? input.primaryMediaId : mediaIds[0] ?? null;
+  const isVideo = (m: string) => lookups.foundVideoIds?.has(m) ?? false;
+  if (mediaIds.some((m) => !lookups.foundImageIds.has(m) && !isVideo(m))) push("media", "Galerideki bir görsel veya video bulunamadı; yeniden yükleyin.");
+  const galleryImages = mediaIds.filter((m) => !isVideo(m));
+  // The cover is what cards, the cart, order mails and marketplaces show: always an image, never a video.
+  const primaryMediaId = input.primaryMediaId && galleryImages.includes(input.primaryMediaId) ? input.primaryMediaId : galleryImages[0] ?? null;
   const hasVariantMedia = input.variants.some((v) => v.isActive && v.media?.length);
-  if (input.status === "published" && !mediaIds.length && !hasVariantMedia) push("media", "Yayındaki bir ürün için en az bir görsel gerekli (galeri veya varyant görseli).");
+  if (mediaIds.length > galleryImages.length && !galleryImages.length && !hasVariantMedia) push("media", "Video tek başına eklenemez; listelerde gösterilecek en az bir görsel ekleyin.");
+  if (input.status === "published" && !galleryImages.length && !hasVariantMedia) push("media", "Yayındaki bir ürün için en az bir görsel gerekli (galeri veya varyant görseli).");
 
   // --- variant axes ---
   const attrById = new Map<string, AttributeMeta>(meta.attributes.map((a) => [a.id, a]));
@@ -204,7 +210,7 @@ export function planProductSave(args: {
     }
     if (cur && v.stock < cur.reserved) push(k("stock"), `Rezerve edilmiş ${cur.reserved} adetin altına düşürülemez.`);
     const variantMedia = [...new Set(v.media ?? [])];
-    if (variantMedia.some((m) => !lookups.foundImageIds.has(m))) push(k("media"), "Varyant görsellerinden biri bulunamadı; yeniden yükleyin.");
+    if (variantMedia.some((m) => !lookups.foundImageIds.has(m))) push(k("media"), isVideo(variantMedia.find((m) => !lookups.foundImageIds.has(m)) ?? "") ? "Renk görsellerine video eklenemez; videoyu ürün galerisine ekleyin." : "Varyant görsellerinden biri bulunamadı; yeniden yükleyin.");
 
     // Stock is written only when the user changed it, relative to what the editor showed (expectedStock).
     // Comparing with the current DB value instead would silently undo sales made while the editor was open.

@@ -27,6 +27,15 @@ services:
   kafka-rest:
     <<: *logging
 
+  # Production mode refuses to start without a master key (16+ bytes) and switches the built-in web UI off.
+  # Only this one value is handed over (not the whole .env.production): deploy/deploy.sh copies MEILI_MASTER_KEY into
+  # the server's .env, where Compose reads it. The app gets the same key from .env.production.
+  meilisearch:
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?MEILI_MASTER_KEY is missing (.env.production, then npm run deploy)}
+    <<: *logging
+
   caddy:
     image: caddy:2.8.4-alpine
     env_file: .env.production

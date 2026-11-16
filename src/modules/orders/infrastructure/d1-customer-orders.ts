@@ -36,7 +36,7 @@ export class D1CustomerOrderReadModel extends Repository {
               (SELECT COALESCE(SUM(i.quantity), 0) FROM order_items i WHERE i.order_id = o.id) AS item_count,
               (SELECT i.product_name_snapshot FROM order_items i WHERE i.order_id = o.id ORDER BY i.rowid LIMIT 1) AS first_item,
               (SELECT m.public_url FROM order_items i JOIN product_variants v ON v.id = i.variant_id JOIN product_media pm ON pm.product_id = v.product_id
-                 JOIN media_assets m ON m.id = pm.media_id WHERE i.order_id = o.id ORDER BY pm.is_primary DESC, pm.sort_order LIMIT 1) AS image_url
+                 JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%' WHERE i.order_id = o.id ORDER BY pm.is_primary DESC, pm.sort_order LIMIT 1) AS image_url
          FROM orders o WHERE o.user_id = ? ORDER BY o.placed_at DESC LIMIT 100`,
       userId,
     );

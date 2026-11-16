@@ -26,9 +26,9 @@ export class D1PricingRepository extends Repository implements PricingRepository
               -- variant image first, product gallery second. (Outer columns only in the subquery WHERE:
               -- SQLite ≥ 3.51 rejects them in a correlated subquery's ORDER BY.)
               COALESCE(
-                (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
+                (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%'
                   WHERE pm.variant_id = v.id ORDER BY pm.is_primary DESC, pm.sort_order LIMIT 1),
-                (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
+                (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%'
                   WHERE pm.product_id = p.id AND pm.variant_id IS NULL ORDER BY pm.is_primary DESC, pm.sort_order LIMIT 1)
               ) AS image_url,
               (SELECT group_concat(ao.label, ' / ') FROM variant_options vo JOIN attribute_options ao ON ao.id = vo.option_id

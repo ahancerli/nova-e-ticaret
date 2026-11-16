@@ -70,11 +70,11 @@ def setup_checkout(c, cid="co_1", cart="cart_1"):
 
 
 # --- structure ---------------------------------------------------------------
-@test("01 139 tables exist")
+@test("01 149 tables exist")
 def _():
     c = new_db()
     n = c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()[0]
-    assert n == 144, n
+    assert n == 149, n
 
 
 @test("02 all tables are STRICT")

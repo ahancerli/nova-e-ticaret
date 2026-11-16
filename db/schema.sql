@@ -138,6 +138,22 @@ CREATE TABLE IF NOT EXISTS verification_tokens (
   created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Oluşturulma zamanı (UTC ISO-8601)
 ) STRICT;
 
+-- Sign-in through an identity provider (Google today). Which provider account belongs to which member: the key is the
+-- provider's stable subject id, never the e-mail (it can change at the provider). The provider list lives in the
+-- application (social-login/domain), so a new provider needs no DDL change.
+CREATE TABLE IF NOT EXISTS user_identities (
+  -- TABLO: Sosyal giriş bağlantıları (Google ile giriş). Bir sağlayıcı hesabının hangi üyeye ait olduğunu söyler. Yalnız
+  --        müşteri hesapları bağlanır, personel paneline sosyal giriş yoktur.
+  id            TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,  -- Bağlı üye
+  provider      TEXT NOT NULL CHECK (length(provider) BETWEEN 2 AND 20 AND provider = lower(provider)),  -- Sağlayıcı kodu (google), liste uygulamada tutulur
+  subject       TEXT NOT NULL CHECK (length(subject) BETWEEN 1 AND 255),  -- Sağlayıcının verdiği değişmez kullanıcı kimliği (sub)
+  last_login_at TEXT,  -- Bu bağlantıyla son giriş
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Bağlantının kurulduğu zaman (UTC ISO-8601)
+  UNIQUE (provider, subject),
+  UNIQUE (user_id, provider)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS user_consents (
   -- TABLO: KVKK / ticari ileti / çerez / mesafeli satış onay kayıtları. Hangi metnin hangi sürümünün onaylandığı ispat
   --        için saklanır.
@@ -1003,6 +1019,45 @@ CREATE TABLE IF NOT EXISTS integration_relay_state (
   updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Son ilerleme zamanı
 ) STRICT;
 
+-- Storefront search (src/modules/search): Meilisearch holds a derived index of the published products; these tables
+-- are what the database itself has to remember. The index can always be rebuilt from the catalog.
+CREATE TABLE IF NOT EXISTS search_index_state (
+  -- TABLO: Arama dizininin durumu (tek satır). Dizin Meilisearch te durur ve katalogdan yeniden kurulabilir, burada
+  --        yalnız eşitleme imleci ve son durum tutulur.
+  id             INTEGER PRIMARY KEY CHECK (id = 1),  -- Hep 1
+  last_change_id INTEGER NOT NULL DEFAULT 0 CHECK (last_change_id >= 0),  -- Dizine işlenen son catalog_change_log.id
+  settings_hash  TEXT,  -- Dizine uygulanan ayarların (eş anlamlılar dahil) özeti, değişince ayarlar yeniden gönderilir
+  documents      INTEGER NOT NULL DEFAULT 0 CHECK (documents >= 0),  -- Dizindeki ürün sayısı (son tam kurulumda)
+  last_full_at   TEXT,  -- Son tam yeniden kurulum zamanı
+  last_sync_at   TEXT,  -- Son başarılı eşitleme zamanı
+  last_error     TEXT,  -- Son eşitleme hatası (başarılı eşitlemede temizlenir)
+  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Son güncelleme zamanı
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS search_synonyms (
+  -- TABLO: Arama eş anlamlıları (panel Katalog › Arama). Bir satır bir grup: group türünde tüm kelimeler birbirinin
+  --        yerine geçer, oneway türünde yalnız term arandığında words içindekiler de bulunur.
+  id         TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
+  kind       TEXT NOT NULL CHECK (kind IN ('group','oneway')),  -- group karşılıklı / oneway tek yönlü
+  term       TEXT CHECK ((kind = 'oneway') = (term IS NOT NULL)),  -- Tek yönlüde aranan kelime (group için NULL)
+  words      TEXT NOT NULL CHECK (json_valid(words) AND json_type(words) = 'array'),  -- Kelimeler JSON dizisi (küçük harf)
+  created_by TEXT REFERENCES users(id) ON DELETE SET NULL,  -- Ekleyen personel
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Oluşturulma zamanı (UTC ISO-8601)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS search_terms (
+  -- TABLO: Mağazada yapılan aramaların sayacı (kişiye bağlı değil, yalnız terim). Popüler aramalar ve panelde sonuçsuz
+  --        aramalar listesi buradan gelir. E-posta veya telefon gibi görünen terimler hiç yazılmaz.
+  term              TEXT PRIMARY KEY CHECK (length(term) BETWEEN 2 AND 60),  -- Sadeleştirilmiş terim (küçük harf, Türkçe harfler katlanmış)
+  display           TEXT NOT NULL,  -- Terimin son yazıldığı hali (gösterim)
+  searches          INTEGER NOT NULL DEFAULT 0 CHECK (searches >= 0),  -- Toplam arama sayısı
+  zero_results      INTEGER NOT NULL DEFAULT 0 CHECK (zero_results >= 0),  -- Sonuç çıkmayan arama sayısı
+  last_result_count INTEGER NOT NULL DEFAULT 0 CHECK (last_result_count >= 0),  -- Son aramada bulunan ürün sayısı
+  hidden            INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0,1)),  -- Popüler aramalarda gösterilmesin (panelden gizlendi)
+  first_searched_at TEXT NOT NULL,  -- İlk arama zamanı
+  last_searched_at  TEXT NOT NULL  -- Son arama zamanı
+) STRICT;
+
 -- Database implementation of the message bus (INTEGRATION_BUS=database: local development, tests, small shops).
 -- Same semantics as Kafka: an append-only log per topic and a committed position per consumer group.
 -- With INTEGRATION_BUS=kafka these two tables stay empty.
@@ -1630,6 +1685,25 @@ CREATE TABLE IF NOT EXISTS captcha_settings (
   forms             TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(forms) AND json_type(forms) = 'array'),  -- Korunan formlar JSON dizisi (signup login forgot review)
   min_score         REAL NOT NULL DEFAULT 0.5 CHECK (min_score BETWEEN 0.1 AND 0.9),  -- reCAPTCHA v3 en düşük insan skoru
   verified_at       TEXT,  -- Anahtarların panelde son başarılı doğrulama zamanı
+  updated_by        TEXT REFERENCES users(id) ON DELETE SET NULL,  -- Son değiştiren personel
+  updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Son güncelleme zamanı (uygulama yazar)
+) STRICT;
+
+-- Social sign-in providers for the storefront (panel Ayarlar › Sosyal giriş): one row per provider, written when the
+-- shop enters its OAuth client. The client secret is sealed like the SMTP password. `verified_at` = last time the
+-- provider accepted this client id + secret pair (checked on save).
+CREATE TABLE IF NOT EXISTS social_login_providers (
+  -- TABLO: Sosyal giriş sağlayıcı ayarları (Google ile giriş), sağlayıcı başına bir satır. İstemci gizli anahtarı
+  --        AES-256-GCM ile şifreli, tarayıcıya hiç gönderilmez.
+  provider          TEXT PRIMARY KEY CHECK (length(provider) BETWEEN 2 AND 20 AND provider = lower(provider)),  -- Sağlayıcı kodu (google)
+  enabled           INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),  -- Mağazada bu sağlayıcıyla giriş açık mı
+  client_id         TEXT NOT NULL CHECK (length(client_id) BETWEEN 10 AND 200),  -- OAuth istemci kimliği (herkese açık)
+  secret_ciphertext TEXT NOT NULL,  -- Şifreli istemci gizli anahtarı
+  secret_nonce      TEXT NOT NULL,  -- Şifreleme nonce değeri
+  secret_auth_tag   TEXT NOT NULL,  -- GCM doğrulama etiketi
+  key_version       TEXT NOT NULL,  -- Ana anahtar sürümü (v1)
+  secret_hint       TEXT NOT NULL CHECK (length(secret_hint) <= 8),  -- Gizli anahtarın son karakterleri (panelde gösterim)
+  verified_at       TEXT,  -- Anahtarların sağlayıcıda son başarılı doğrulama zamanı
   updated_by        TEXT REFERENCES users(id) ON DELETE SET NULL,  -- Son değiştiren personel
   updated_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Son güncelleme zamanı (uygulama yazar)
 ) STRICT;

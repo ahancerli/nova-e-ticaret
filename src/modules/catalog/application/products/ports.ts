@@ -29,6 +29,7 @@ export interface ProductRepository {
   brandExists(id: string): Promise<boolean>;
   existingCategoryIds(ids: string[]): Promise<Set<string>>;
   existingImageIds(ids: string[]): Promise<Set<string>>;
+  existingVideoIds(ids: string[]): Promise<Set<string>>;
   takenElsewhere(column: "sku" | "barcode", values: string[], exceptProductId: string | null): Promise<Set<string>>;
 
   /** Update guarded on `expectedUpdatedAt` when given (changes = 1 required). */

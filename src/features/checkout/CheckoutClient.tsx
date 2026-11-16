@@ -19,6 +19,7 @@ import { PhoneField } from "@/features/geo/PhoneField";
 import { RegionFields } from "@/features/geo/RegionFields";
 import { BankAccounts } from "./BankAccounts";
 import { CheckoutGate } from "./CheckoutGate";
+import type { SocialProvider } from "@/modules/social-login/domain/social";
 import type { AddressView } from "@/modules/addresses";
 
 export interface CheckoutCustomer {
@@ -42,7 +43,7 @@ const METHODS: { value: PaymentMethod; label: string; hint: string }[] = [
  * Checkout. A visitor first chooses: sign in, continue as a guest (no account required, spec R13) or sign up; a
  * signed-in customer gets the form prefilled. All amounts come from the server; only enabled payment methods are offered.
  */
-export function CheckoutClient({ legal, payment, customer, addresses = [] }: { legal: CheckoutLegal; payment: PaymentOptions; customer: CheckoutCustomer | null; addresses?: AddressView[] }) {
+export function CheckoutClient({ legal, payment, customer, addresses = [], socialProviders = [] }: { legal: CheckoutLegal; payment: PaymentOptions; customer: CheckoutCustomer | null; addresses?: AddressView[]; socialProviders?: readonly SocialProvider[] }) {
   // Saved address (Hesabım › Adreslerim) prefilled; picking another one re-mounts the fields with its values.
   const [pick, setPick] = useState<string | null>(addresses.find((a) => a.isDefaultShipping)?.id ?? addresses[0]?.id ?? null);
   const picked = addresses.find((a) => a.id === pick) ?? null;
@@ -87,7 +88,7 @@ export function CheckoutClient({ legal, payment, customer, addresses = [] }: { l
   }
 
   if (!customer && !guest) {
-    return <CheckoutGate itemCount={cart.itemCount} onGuest={() => { setGuest(true); try { sessionStorage.setItem(GUEST_KEY, "1"); } catch { /* ignore */ } }} />;
+    return <CheckoutGate itemCount={cart.itemCount} socialProviders={socialProviders} onGuest={() => { setGuest(true); try { sessionStorage.setItem(GUEST_KEY, "1"); } catch { /* ignore */ } }} />;
   }
 
   const fe = errors.get;

@@ -28,7 +28,7 @@ export class D1ProductReadModel extends Repository implements ProductReadModel {
       `SELECT p.id, p.name, p.slug, p.status, p.updated_at, b.name AS brand_name,
               (SELECT c.name FROM product_categories pc JOIN categories c ON c.id = pc.category_id
                 WHERE pc.product_id = p.id ORDER BY pc.is_primary DESC LIMIT 1) AS category_name,
-              (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id LEFT JOIN product_variants dv ON dv.id = pm.variant_id
+              (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%' LEFT JOIN product_variants dv ON dv.id = pm.variant_id
                 WHERE pm.product_id = p.id ORDER BY pm.variant_id IS NOT NULL, pm.is_primary DESC, dv.is_default DESC, pm.sort_order LIMIT 1) AS image_url,
               (SELECT MIN(vp.unit_price_minor) FROM product_variants v JOIN variant_prices vp ON vp.variant_id = v.id AND vp.price_list_id = ?1
                 WHERE v.product_id = p.id) AS min_price,
@@ -52,7 +52,7 @@ export class D1ProductReadModel extends Repository implements ProductReadModel {
     const [prodQ, catsQ, mediaQ, axesQ, varQ, voQ, pavQ, seoQ, vmQ] = await this.db.batch([
       st("SELECT * FROM products WHERE id = ?", id),
       st("SELECT category_id, is_primary FROM product_categories WHERE product_id = ? ORDER BY is_primary DESC", id),
-      st(`SELECT pm.media_id, m.public_url, pm.is_primary FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
+      st(`SELECT pm.media_id, m.public_url, m.mime_type, pm.is_primary FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
            WHERE pm.product_id = ? AND pm.variant_id IS NULL ORDER BY pm.sort_order, pm.id`, id),
       st("SELECT attribute_id FROM product_variant_axes WHERE product_id = ? ORDER BY sort_order", id),
       st(`SELECT v.*, vp.unit_price_minor, vp.compare_at_minor, vp.min_price_minor, ${priceCapsSql("vp")}, COALESCE(ib.on_hand, 0) AS on_hand, COALESCE(ib.reserved, 0) AS reserved,
@@ -72,7 +72,7 @@ export class D1ProductReadModel extends Repository implements ProductReadModel {
     if (!p) return null;
 
     const variantOptions = rows<{ variant_id: string; attribute_id: string; option_id: string }>(voQ);
-    const media = rows<{ media_id: string; public_url: string; is_primary: number }>(mediaQ);
+    const media = rows<{ media_id: string; public_url: string; mime_type: string; is_primary: number }>(mediaQ);
     const variantMedia = new Map<string, { mediaId: string; url: string }[]>();
     for (const m of rows<{ variant_id: string; media_id: string; public_url: string }>(vmQ)) {
       variantMedia.set(m.variant_id, [...(variantMedia.get(m.variant_id) ?? []), { mediaId: m.media_id, url: m.public_url }]);
@@ -89,7 +89,7 @@ export class D1ProductReadModel extends Repository implements ProductReadModel {
       taxRateBps: p.tax_rate_bps, warrantyMonths: p.warranty_months, countryOfOrigin: p.country_of_origin, accountingCode: p.accounting_code,
       manufacturerCode: p.manufacturer_code, modelCode: p.model_code, brandId: p.brand_id, publishedAt: p.published_at, createdAt: p.created_at, updatedAt: p.updated_at,
       categories: rows<{ category_id: string; is_primary: number }>(catsQ).map((c) => ({ id: c.category_id, primary: bool(c.is_primary) })),
-      media: media.map((m) => ({ mediaId: m.media_id, url: m.public_url })),
+      media: media.map((m) => ({ mediaId: m.media_id, url: m.public_url, kind: m.mime_type.startsWith("video/") ? "video" as const : "image" as const })),
       primaryMediaId: media.find((m) => m.is_primary === 1)?.media_id ?? media[0]?.media_id ?? null,
       axes: rows<{ attribute_id: string }>(axesQ).map((a) => a.attribute_id),
       variants: rows<VariantRaw>(varQ).map((v) => ({

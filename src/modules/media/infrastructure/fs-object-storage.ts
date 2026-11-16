@@ -3,7 +3,7 @@ import { createReadStream } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
-import type { ObjectStorage, StoredObject } from "../application/ports";
+import type { ByteRange, ObjectStorage, StoredObject } from "../application/ports";
 
 interface ObjectMeta {
   contentType: string;
@@ -39,18 +39,22 @@ export class FsObjectStorage implements ObjectStorage {
     await writeFile(/* turbopackIgnore: true */ `${file}.meta.json`, JSON.stringify(meta));
   }
 
-  async get(key: string): Promise<StoredObject | null> {
+  async get(key: string, range?: ByteRange): Promise<StoredObject | null> {
     const file = this.pathOf(key);
     if (!file) return null;
     let meta: ObjectMeta;
+    let size: number;
     try {
       meta = JSON.parse(await readFile(/* turbopackIgnore: true */ `${file}.meta.json`, "utf8")) as ObjectMeta;
-      await stat(/* turbopackIgnore: true */ file);
+      size = (await stat(/* turbopackIgnore: true */ file)).size;
     } catch {
       return null;
     }
+    const part = range && size > 0 && range.start < size ? { start: range.start, end: Math.min(range.end ?? size - 1, size - 1) } : undefined;
     return {
-      body: Readable.toWeb(createReadStream(/* turbopackIgnore: true */ file)) as unknown as ReadableStream,
+      body: Readable.toWeb(createReadStream(/* turbopackIgnore: true */ file, part)) as unknown as ReadableStream,
+      size,
+      range: part,
       httpEtag: `"${meta.etag}"`,
       writeHttpMetadata: (headers) => headers.set("content-type", meta.contentType),
     };

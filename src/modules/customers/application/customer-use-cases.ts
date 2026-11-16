@@ -1,4 +1,4 @@
-import { UnitOfWork, ValidationError, type Clock, type Database, type IdGenerator, type RateLimiter } from "@/core";
+import { UnitOfWork, ValidationError, type Clock, type Database, type IdGenerator, type RateLimiter, type Statement } from "@/core";
 import type { AuditLog } from "@/modules/audit/audit-log";
 import type { GeoDirectory } from "@/modules/geo";
 import { accountLinkPath, passwordProblems, type CredentialWriter, type IssuedLink, type PasswordHasher, type SessionRepository } from "@/modules/identity";
@@ -93,26 +93,78 @@ export class RunCustomerAction {
   }
 }
 
-export interface SignupDeps {
-  db: Database;
+export interface EnrollmentDeps {
   customers: CustomerRepository;
-  credentials: CredentialWriter;
-  passwords: PasswordHasher;
-  limiter: RateLimiter;
-  geo: GeoDirectory;
   legal: { execute(): Promise<{ consentVersion: string }> };
   audit: AuditLog;
   clock: Clock;
   ids: IdGenerator;
 }
 
+export interface EnrollmentInput {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  marketingEmail: boolean;
+  marketingSms: boolean;
+  requestId: string;
+  /** How the person signed up; "password" is left out of the audit diff. */
+  method?: string;
+}
+
+/**
+ * The rows that make a member: account, profile, customer role, consents (KVKK notice + marketing choices with the
+ * document versions shown on the form — İYS / KVKK evidence) and the audit entry. Returned as statements so the way
+ * the person proved who they are (password, social identity) commits in the same transaction.
+ */
+export class CustomerEnrollment {
+  constructor(private readonly deps: EnrollmentDeps) {}
+
+  async prepare(input: EnrollmentInput): Promise<{ userId: string; statements: Statement[] }> {
+    const { deps } = this;
+    const email = input.email.trim().toLowerCase();
+    const firstName = input.firstName.trim();
+    const lastName = input.lastName.trim();
+    if (await deps.customers.emailExists(email)) throw CustomerErrors.emailTaken();
+
+    const id = deps.ids.newId();
+    const now = deps.clock.nowIso();
+    const { consentVersion } = await deps.legal.execute();
+    const consent = (purpose: string, granted: boolean) =>
+      deps.customers.consentStatement({ id: deps.ids.newId(), userId: id, purpose, version: consentVersion, granted, now });
+    return {
+      userId: id,
+      statements: [
+        deps.customers.insertUserStatement({ id, email, displayName: `${firstName} ${lastName}`.trim(), phone: input.phone, now }),
+        deps.customers.upsertProfileStatement(id, { firstName, lastName, companyName: null, notes: null }, now),
+        deps.customers.assignCustomerRoleStatement(id),
+        consent("kvkk_notice", true), consent("marketing_email", input.marketingEmail), consent("marketing_sms", input.marketingSms),
+        deps.audit.recordStatement({
+          actor: { userId: id, requestId: input.requestId }, action: "customer.signup", entityType: "user", entityId: id,
+          diff: { marketingEmail: input.marketingEmail, marketingSms: input.marketingSms, ...(input.method ? { method: input.method } : {}) },
+        }),
+      ],
+    };
+  }
+}
+
+export interface SignupDeps {
+  db: Database;
+  enrollment: CustomerEnrollment;
+  credentials: CredentialWriter;
+  passwords: PasswordHasher;
+  limiter: RateLimiter;
+  geo: GeoDirectory;
+  clock: Clock;
+}
+
 /** Sign-ups per IP: 5 per hour (fake-account / enumeration brake). */
 export const SIGNUP_LIMIT = { limit: 5, windowSec: 60 * 60 } as const;
 
 /**
- * Command: storefront sign-up. The person chooses the password (policy-checked); the KVKK notice acknowledgement
- * and the marketing choices are stored as consents with the document versions shown on the form (İYS / KVKK
- * evidence). Account, profile, credential, role and consents are one transaction.
+ * Command: storefront sign-up with a password the person chooses (policy-checked). Account, profile, credential,
+ * role and consents are one transaction (see CustomerEnrollment).
  */
 export class RegisterCustomer {
   constructor(private readonly deps: SignupDeps) {}
@@ -122,25 +174,17 @@ export class RegisterCustomer {
     await deps.limiter.hit(`signup:${await deps.limiter.clientKey(req)}`, SIGNUP_LIMIT.limit, SIGNUP_LIMIT.windowSec);
 
     const email = input.email.trim().toLowerCase();
-    const name = `${input.firstName.trim()} ${input.lastName.trim()}`.trim();
-    const problems = passwordProblems(input.password, { email, name });
+    const problems = passwordProblems(input.password, { email, name: `${input.firstName.trim()} ${input.lastName.trim()}`.trim() });
     if (problems.length) throw new ValidationError("weak_password", problems[0]!, { fieldErrors: { password: problems } });
     const phone = input.phone?.trim() ? await deps.geo.phone("phone", input.phone, input.phoneCountry) : null;
-    if (await deps.customers.emailExists(email)) throw CustomerErrors.emailTaken();
 
-    const id = deps.ids.newId();
-    const now = deps.clock.nowIso();
-    const { consentVersion } = await deps.legal.execute();
-    const consent = (purpose: string, granted: boolean) =>
-      deps.customers.consentStatement({ id: deps.ids.newId(), userId: id, purpose, version: consentVersion, granted, now });
+    const member = await deps.enrollment.prepare({
+      email, firstName: input.firstName, lastName: input.lastName, phone, marketingEmail: input.marketingEmail, marketingSms: input.marketingSms, requestId,
+    });
     await new UnitOfWork(deps.db)
-      .add(deps.customers.insertUserStatement({ id, email, displayName: name, phone, now }))
-      .add(deps.customers.upsertProfileStatement(id, { firstName: input.firstName.trim(), lastName: input.lastName.trim(), companyName: null, notes: null }, now))
-      .add(deps.credentials.setPasswordStatement(id, await deps.passwords.hash(input.password), now))
-      .add(deps.customers.assignCustomerRoleStatement(id))
-      .add(consent("kvkk_notice", true), consent("marketing_email", input.marketingEmail), consent("marketing_sms", input.marketingSms))
-      .add(deps.audit.recordStatement({ actor: { userId: id, requestId }, action: "customer.signup", entityType: "user", entityId: id, diff: { marketingEmail: input.marketingEmail, marketingSms: input.marketingSms } }))
+      .add(...member.statements)
+      .add(deps.credentials.setPasswordStatement(member.userId, await deps.passwords.hash(input.password), deps.clock.nowIso()))
       .commit();
-    return { userId: id };
+    return { userId: member.userId };
   }
 }

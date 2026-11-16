@@ -294,5 +294,69 @@ await t("variant photos + model code: photos saved per variant, product publisha
   assert(deleted.slug === "renkli-tisort" && !objects.has(black.storageKey), "delete releases variant photos too");
 });
 
+// --- gallery videos + byte ranges ------------------------------------------------------------------
+/** Minimal MP4 header: `ftyp` box with the given major brand. */
+const mp4 = (brand = "isom", size = 64) => {
+  const b = new Uint8Array(size);
+  b.set([0, 0, 0, 24]);
+  b.set(new TextEncoder().encode(`ftyp${brand}`), 4);
+  b.set(new TextEncoder().encode("isomavc1"), 16);
+  return b;
+};
+await t("video upload: MP4 only in the product gallery; QuickTime, other folders and oversized files are refused; /assets serves the key", async () => {
+  const v = await resolve<any>(media.UploadImageToken).execute({ bytes: mp4(), fileName: "tanitim.mp4", folder: "products" }, actor);
+  assert(v.mime === "video/mp4" && v.storageKey.endsWith(".mp4") && v.width === null && media.STORAGE_KEY_PATTERN.test(v.storageKey), JSON.stringify(v));
+  assert(media.sniffVideo(mp4("mp42"))?.mime === "video/mp4" && media.sniffVideo(mp4("qt  ").fill(0, 16)) === null && media.sniffVideo(PNG) === null, "brands");
+  await rejects(() => resolve<any>(media.UploadImageToken).execute({ bytes: mp4(), fileName: "x.mp4", folder: "categories" }, actor), "unsupported_image", 415);
+  await rejects(() => resolve<any>(media.UploadImageToken).execute({ bytes: mp4("isom", media.MAX_VIDEO_BYTES + 1), fileName: "x.mp4", folder: "products" }, actor), "file_too_large", 413);
+});
+
+await t("product gallery: a video sits in the order but is never the cover; a video alone or on a colour is refused; at most 12 items", async () => {
+  const up = (bytes: Uint8Array, name: string) => resolve<any>(media.UploadImageToken).execute({ bytes, fileName: name, folder: "products" }, actor);
+  const [vid, img] = [await up(mp4(), "klip.mp4"), await up(PNG, "kapak.png")];
+  const base = { name: "Videolu Ürün", status: "draft", taxRateBps: 2000, categories: [{ id: "c_mutfak", primary: true }], axes: [], attributes: [], seo: { noindex: false } };
+  const variant = { sku: "VID-1", options: {}, priceMinor: 100, stock: 0, isActive: true, isDefault: true };
+  const create = (patch: Record<string, unknown>) => resolve<any>(catalog.CreateProductToken).execute({ ...base, media: [vid.id, img.id], variants: [variant], ...patch }, admin);
+
+  const alone = await rejects(() => create({ media: [vid.id] }), "validation_error", 422);
+  assert(alone.fieldErrors.media, JSON.stringify(alone.fieldErrors));
+  const onColour = await rejects(() => create({ variants: [{ ...variant, media: [vid.id] }] }), "validation_error", 422);
+  assert(onColour.fieldErrors["variants.0.media"]?.[0].includes("video"), JSON.stringify(onColour.fieldErrors));
+  assert(!catalog.productSaveSchema.safeParse({ ...base, media: Array.from({ length: 13 }, () => crypto.randomUUID()), variants: [variant] }).success, "13 items refused by the schema");
+
+  const r = await create({ primaryMediaId: vid.id });
+  const e = await editorOf(r.id);
+  assert(e.media.map((m: any) => m.kind).join() === "video,image" && e.primaryMediaId === img.id, JSON.stringify([e.media, e.primaryMediaId]));
+  const cover = d1.raw.prepare(
+    `SELECT m.public_url AS url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%' WHERE pm.product_id = ? ORDER BY pm.is_primary DESC, pm.sort_order LIMIT 1`).get(r.id) as any;
+  assert(cover.url === img.url, "thumbnail queries pick the image");
+  await resolve<any>(catalog.DeleteProductToken).execute(r.id, actor);
+  assert(!objects.has(vid.storageKey) && !objects.has(img.storageKey), "video released with the product");
+});
+
+await t("storage byte ranges: a part, an open end clamped to the file, and a start past the end", async () => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const dir = await mkdtemp(`${tmpdir()}/nova-media-`);
+  try {
+    const fs = new media.FsObjectStorage(dir);
+    const bytes = Uint8Array.from({ length: 100 }, (_, i) => i);
+    await fs.put("products/clip.mp4", bytes, "video/mp4", {});
+    const read = async (range?: { start: number; end?: number }) => {
+      const o = (await fs.get("products/clip.mp4", range))!;
+      return { size: o.size, range: o.range, body: [...new Uint8Array(await new Response(o.body).arrayBuffer())] };
+    };
+    const whole = await read();
+    assert(whole.size === 100 && whole.range === undefined && whole.body.length === 100, "whole object");
+    const part = await read({ start: 10, end: 19 });
+    assert(part.range!.start === 10 && part.range!.end === 19 && part.body.join() === bytes.slice(10, 20).join(), JSON.stringify(part));
+    const open = await read({ start: 90, end: 5000 });
+    assert(open.range!.end === 99 && open.body.length === 10, "clamped to the file");
+    assert((await read({ start: 100 })).range === undefined, "start past the end is not a part");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

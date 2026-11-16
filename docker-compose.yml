@@ -1,4 +1,4 @@
-# Nova — all services in one project: Next.js app (SQLite inside), scheduler, Kafka + Kafka REST proxy.
+# Nova — all services in one project: Next.js app (SQLite inside), scheduler, Kafka + Kafka REST proxy, Meilisearch.
 #   local:       docker compose up -d --build                  (+ docker-compose.override.yml, loaded automatically)
 #   production:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 #                (the server's .env sets COMPOSE_FILE, so plain `docker compose …` works there — see deploy/deploy.sh)
@@ -16,11 +16,15 @@ services:
       MEDIA_DIR: /data/uploads
       INTEGRATION_BUS: kafka
       KAFKA_REST_URL: http://kafka-rest:8082
+      MEILI_URL: http://meilisearch:7700
     volumes:
       - nova-data:/data
     depends_on:
       kafka-rest:
         condition: service_healthy
+      # started, not healthy: the shop must come up (and search fall back to SQL) even while the search engine is down
+      meilisearch:
+        condition: service_started
     restart: unless-stopped
     stop_grace_period: 20s
 
@@ -89,6 +93,32 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  # Storefront search engine (typo tolerance, synonyms, relevance). Only reachable inside the compose network.
+  # Locally it runs in development mode without a key; production sets the master key (docker-compose.prod.yml).
+  # The index is derived from the database:
+  # the scheduler's /api/cron/search-sync fills an empty volume by itself, so meili-data needs no backup.
+  # Upgrading the image to a new minor version: `docker compose down meilisearch && docker volume rm nova_meili-data`
+  # (old index formats are not read), then `up -d` — the next sync rebuilds the index.
+  meilisearch:
+    image: getmeili/meilisearch:v1.56.2
+    environment:
+      MEILI_ENV: development
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_DB_PATH: /meili_data/data.ms
+      # small shop defaults: indexing may not starve the app on a shared server
+      MEILI_MAX_INDEXING_MEMORY: 512Mb
+      MEILI_MAX_INDEXING_THREADS: "2"
+    volumes:
+      - meili-data:/meili_data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:7700/health > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
 volumes:
   nova-data:
   kafka-data:
+  meili-data:

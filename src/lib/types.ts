@@ -38,7 +38,8 @@ export interface ProductDetail {
   brandSlug: string | null;
   shortDescription: string | null;
   descriptionHtml: string | null;
-  media: { variantId: string | null; url: string; alt: string }[];
+  /** Gallery in display order; `kind: "video"` items are MP4 clips (never the cover). */
+  media: { variantId: string | null; url: string; alt: string; kind: "image" | "video" }[];
   variants: { id: string; sku: string; isDefault: boolean; priceMinor: number | null; compareAtMinor: number | null; campaignPriceMinor: number | null; available: number; options: Record<string, string> }[];
   promotions: PromotionBadge[];
   axes: { code: string; label: string; style: "button" | "swatch" | "dropdown"; options: { value: string; label: string; colorHex: string | null }[] }[];
@@ -92,6 +93,8 @@ export interface SearchSuggestions {
   products: ProductCard[];
   categories: { name: string; href: string }[];
   brands: { name: string; href: string }[];
+  /** Popular searches completing the typed text (search engine only; empty with the SQL fallback). */
+  queries: string[];
 }
 
 export interface QuoteLine {

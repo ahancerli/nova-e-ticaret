@@ -26,6 +26,9 @@ export const authApi = {
     api<{ changed: true }>("/api/storefront/auth/password", { method: "POST", json: { currentPassword, newPassword } }),
   register: (input: { firstName: string; lastName: string; email: string; phone: string; phoneCountry?: string; password: string; kvkkAccepted: boolean; marketingEmail: boolean; marketingSms: boolean }, headers?: Headers) =>
     api<{ userId: string }>("/api/storefront/auth/register", { method: "POST", json: input, headers }),
+  /** "Üyeliği tamamla" after a first social sign-in; the account comes from the signed draft cookie, not from this body. */
+  socialSignup: (input: { firstName: string; lastName: string; kvkkAccepted: boolean; marketingEmail: boolean; marketingSms: boolean }) =>
+    api<{ userId: string; next: string }>("/api/storefront/auth/social/signup", { method: "POST", json: input }),
 };
 
 export type ForgotDevOutcome =

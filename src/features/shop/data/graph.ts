@@ -28,13 +28,13 @@ export interface ListingFilter {
 }
 
 export interface ListingData {
-  products: { items: ProductCard[]; total: number; page: number; pageSize: number; pages: number };
+  products: { items: ProductCard[]; total: number; page: number; pageSize: number; pages: number; correctedQuery?: string | null };
   facets: Facets;
 }
 
 /** One round trip for the whole listing screen (was two REST calls). */
 export const LISTING_QUERY = `query Listing($filter: ProductFilter) {
-  products(filter: $filter) { total page pageSize pages items { ${PRODUCT_FIELDS} } }
+  products(filter: $filter) { total page pageSize pages correctedQuery items { ${PRODUCT_FIELDS} } }
   facets(filter: $filter) {
     brands { value label count selected }
     attributes { code label options { value label count selected colorHex } }
@@ -43,7 +43,7 @@ export const LISTING_QUERY = `query Listing($filter: ProductFilter) {
 }`;
 
 export const SUGGEST_QUERY = `query Suggest($q: String!) {
-  suggest(q: $q) { products { ${PRODUCT_FIELDS} } categories { name href } brands { name href } }
+  suggest(q: $q) { products { ${PRODUCT_FIELDS} } categories { name href } brands { name href } queries }
 }`;
 
 export const REVIEWS_QUERY = `query Reviews($productId: ID!, $sort: ReviewSort, $rating: Int, $page: Int) {
@@ -58,5 +58,6 @@ export const shopGraph = {
   reviews: (v: { productId: string; sort: PublicReviewSort; rating: number | null; page: number }, signal?: AbortSignal) =>
     graph<{ reviews: ReviewPage }>(REVIEWS_QUERY, v, signal).then((d) => d.reviews),
   listing: (filter: ListingFilter, signal?: AbortSignal) => graph<ListingData>(LISTING_QUERY, { filter }, signal),
+  popularSearches: (signal?: AbortSignal) => graph<{ popularSearches: string[] }>("query Popular { popularSearches }", {}, signal).then((d) => d.popularSearches),
   suggest: (q: string, signal?: AbortSignal) => graph<{ suggest: SearchSuggestions }>(SUGGEST_QUERY, { q }, signal).then((d) => d.suggest),
 };

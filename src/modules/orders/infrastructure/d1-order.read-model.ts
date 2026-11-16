@@ -88,9 +88,9 @@ export class D1OrderReadModel extends Repository {
       this.db.statement(`SELECT i.id, i.variant_id, i.sku_snapshot, i.product_name_snapshot, i.variant_snapshot_json, i.quantity, i.unit_price_minor,
                          i.subtotal_minor, i.discount_minor, i.tax_rate_bps, i.tax_minor, i.total_minor, p.id AS product_id, p.slug AS product_slug,
                          COALESCE(
-                           (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
+                           (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%'
                              WHERE pm.variant_id = v.id ORDER BY pm.is_primary DESC, pm.sort_order LIMIT 1),
-                           (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
+                           (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%'
                              WHERE pm.product_id = v.product_id AND pm.variant_id IS NULL ORDER BY pm.is_primary DESC, pm.sort_order LIMIT 1)
                          ) AS image_url,
                          COALESCE((SELECT SUM(si.quantity) FROM shipment_items si JOIN shipments s ON s.id = si.shipment_id

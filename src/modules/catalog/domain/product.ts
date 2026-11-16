@@ -94,7 +94,8 @@ export interface ProductEditorData {
   /** Also the optimistic-concurrency token: the editor sends it back as `expectedUpdatedAt`. */
   updatedAt: string;
   categories: { id: string; primary: boolean }[];
-  media: { mediaId: string; url: string }[];
+  /** Shared gallery in order; `kind: "video"` = MP4 clip (never the cover). */
+  media: { mediaId: string; url: string; kind?: "image" | "video" }[];
   primaryMediaId: string | null;
   axes: string[];
   variants: EditorVariant[];

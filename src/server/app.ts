@@ -51,9 +51,11 @@ import { registerReturns } from "@/modules/returns";
 import { registerReviews } from "@/modules/reviews";
 import { registerAlerts } from "@/modules/alerts";
 import { registerNewsletter } from "@/modules/newsletter";
+import { registerSearch } from "@/modules/search";
 import { registerSettings } from "@/modules/settings";
 import { registerShipping, registerShippingRates } from "@/modules/shipping";
 import { registerShowcase } from "@/modules/showcase";
+import { registerSocialLogin } from "@/modules/social-login";
 import { registerSupport } from "@/modules/support";
 import { registerStaff } from "@/modules/staff";
 import { registerStorefront } from "@/modules/storefront";
@@ -92,8 +94,10 @@ registerPanelNotifications(container); // bell + Bildirimler; NotificationPublis
 registerContent(container); // {{placeholders}} from settings
 registerConsent(container); // cookie consent (KVKK banner + proof) and tracking tags; cookie policy version from content
 registerCustomers(container); // members + storefront sign-up (consent versions from content)
+registerSocialLogin(container); // "Google ile devam et": provider settings (Ayarlar › Sosyal giriş), OAuth flow on top of identity sessions + customer enrollment
 registerCatalog(container);
 registerStorefront(container);
+registerSearch(container); // Meilisearch behind storefront text search (falls back to SQL without MEILI_URL), index sync, panel Katalog › Arama
 registerAddresses(container); // Hesabım › Adreslerim + checkout address picker
 registerGeo(container); // countries + phone rules, provinces, districts (sign-up, addresses, checkout)
 registerInvoices(container); // e-Arşiv faturalar: panel attach (PDF in private storage), customer download + e-mail

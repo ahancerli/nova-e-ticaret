@@ -17,6 +17,11 @@ export interface AppConfig {
    */
   integrationBus: "kafka" | "database";
   kafka: { restUrl: string; username: string; password: string; topicPrefix: string };
+  /**
+   * Storefront search engine (Meilisearch). Empty `url` = no engine: search falls back to SQL (`npm run dev` without
+   * Docker, tests). The key is the instance's master key and stays on the server.
+   */
+  search: { url: string; key: string; indexPrefix: string };
 }
 
 export class ConfigError extends Error {
@@ -51,6 +56,11 @@ export function buildConfig(env: Partial<RuntimeEnv>, processEnv: Record<string,
       username: pick("KAFKA_REST_USERNAME"),
       password: pick("KAFKA_REST_PASSWORD"),
       topicPrefix: (pickVar("KAFKA_TOPIC_PREFIX") || "nova").replace(/[^A-Za-z0-9._-]/g, ""),
+    },
+    search: {
+      url: pickVar("MEILI_URL").replace(/\/$/, ""),
+      key: pick("MEILI_MASTER_KEY"),
+      indexPrefix: (pickVar("MEILI_INDEX_PREFIX") || "nova").replace(/[^A-Za-z0-9_-]/g, ""),
     },
   };
   if (config.integrationBus === "kafka" && !/^https?:\/\//.test(config.kafka.restUrl)) {

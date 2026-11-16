@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { LoginForm } from "@/features/auth/LoginForm";
+import { SocialButtons } from "@/features/auth/SocialButtons";
+import type { SocialProvider } from "@/modules/social-login/domain/social";
 
 /**
  * First step of checkout for a visitor who is not signed in: sign in (the cart merges into the account), continue
  * as a guest, or create an account — all three come back to the payment step.
  */
-export function CheckoutGate({ onGuest, itemCount }: { onGuest: () => void; itemCount: number }) {
+export function CheckoutGate({ onGuest, itemCount, socialProviders = [] }: { onGuest: () => void; itemCount: number; socialProviders?: readonly SocialProvider[] }) {
   return (
     <div className="container-page max-w-5xl py-10">
       <h1 className="text-2xl font-bold">Ödeme</h1>
@@ -17,6 +19,7 @@ export function CheckoutGate({ onGuest, itemCount }: { onGuest: () => void; item
         <section className="card p-5 lg:col-span-1" aria-labelledby="gate-login">
           <h2 id="gate-login" className="text-lg font-semibold">Üye girişi</h2>
           <p className="mb-4 text-sm text-ink-soft">Bilgileriniz dolu gelsin, siparişinizi hesabınızdan takip edin.</p>
+          <SocialButtons providers={socialProviders} next="/odeme" />
           <Suspense><LoginForm audience="storefront" fallbackTarget="/odeme" card={false} submitLabel="Giriş yap ve devam et" /></Suspense>
           <p className="mt-3 text-center text-sm"><Link href="/sifremi-unuttum" className="text-ink-soft hover:text-brand">Şifremi unuttum</Link></p>
         </section>

@@ -3,6 +3,15 @@
  * Bytes live in object storage under "<folder>/<uuid>.<ext>"; the DB stores the key and its public path.
  */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+/** Product videos are short clips shown in the gallery; larger files belong on a video host. */
+export const MAX_VIDEO_BYTES = 5 * 1024 * 1024;
+/** Folders whose galleries may hold a video next to the images. */
+export const VIDEO_FOLDERS: readonly string[] = ["products"];
+export const VIDEO_MIME = "video/mp4";
+/** One product gallery (and one colour gallery): images and videos together. */
+export const MAX_GALLERY_ITEMS = 12;
+export type MediaKind = "image" | "video";
+export const mediaKindOf = (mime: string): MediaKind => (mime.startsWith("video/") ? "video" : "image");
 export const MEDIA_FOLDERS = ["categories", "brands", "products", "branding", "showcase", "campaigns"] as const;
 export type MediaFolder = (typeof MEDIA_FOLDERS)[number];
 export const ASSET_PREFIX = "/assets/";
@@ -11,7 +20,7 @@ export const ASSET_PREFIX = "/assets/";
  * The only object keys the public /assets route serves (no traversal, no listing, no foreign keys).
  * Derived from MEDIA_FOLDERS so every folder that accepts uploads is also served (logo, showcase, …).
  */
-export const STORAGE_KEY_PATTERN = new RegExp(`^(${MEDIA_FOLDERS.join("|")})/[0-9a-f-]{36}\\.(png|jpg|webp|avif)$`);
+export const STORAGE_KEY_PATTERN = new RegExp(`^(${MEDIA_FOLDERS.join("|")})/[0-9a-f-]{36}\\.(png|jpg|webp|avif|mp4)$`);
 
 export const isMediaFolder = (v: string): v is MediaFolder => (MEDIA_FOLDERS as readonly string[]).includes(v);
 export const isUploadedKey = (storageKey: string): boolean => MEDIA_FOLDERS.some((f) => storageKey.startsWith(`${f}/`));
@@ -37,6 +46,19 @@ function ascii(b: Uint8Array, from: number, to: number) {
 export function sniffImage(bytes: Uint8Array): ImageKind | null {
   const hit = SIGNATURES.find((s) => s.test(bytes));
   return hit ? { mime: hit.mime, ext: hit.ext } : null;
+}
+
+// ISO base media "ftyp" brands of MP4 files (H.264 / H.265 in an MP4 container). QuickTime (.mov, brand "qt  ") is left
+// out: browsers other than Safari do not play it.
+const MP4_BRANDS = new Set(["isom", "iso2", "iso4", "iso5", "iso6", "mp41", "mp42", "avc1", "M4V ", "MSNV", "dash", "mmp4", "3gp4", "3gp5"]);
+
+/** Detects an MP4 video from its `ftyp` box (the browser-supplied type is not trusted). */
+export function sniffVideo(bytes: Uint8Array): ImageKind | null {
+  if (bytes.length < 16 || ascii(bytes, 4, 8) !== "ftyp") return null;
+  const boxEnd = Math.min(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0), bytes.length, 64);
+  // major brand at 8, minor version at 12, compatible brands from 16
+  for (let i = 8; i + 4 <= boxEnd; i += i === 8 ? 8 : 4) if (MP4_BRANDS.has(ascii(bytes, i, i + 4))) return { mime: VIDEO_MIME, ext: "mp4" };
+  return null;
 }
 
 /** Best-effort pixel size for PNG / JPEG / WebP. */

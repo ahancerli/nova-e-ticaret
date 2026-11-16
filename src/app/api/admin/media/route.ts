@@ -1,5 +1,5 @@
 import { BadRequestError, ForbiddenError, PayloadTooLargeError, ValidationError, reply } from "@/core";
-import { MAX_IMAGE_BYTES, UploadImageToken, isMediaFolder, type MediaFolder } from "@/modules/media";
+import { MAX_IMAGE_BYTES, MAX_VIDEO_BYTES, UploadImageToken, isMediaFolder, type MediaFolder } from "@/modules/media";
 import { actorOf } from "@/modules/shared/actor";
 import { route } from "@/server/app";
 
@@ -15,7 +15,7 @@ const MULTIPART_OVERHEAD = 64 * 1024;
 
 /**
  * POST /api/admin/media  (multipart/form-data: file, folder)
- * Stores the image in media storage (MEDIA_DIR) and returns { id, url } to attach to a record (e.g. categories.image_media_id).
+ * Stores the image (in the products folder also a short MP4 video) in media storage (MEDIA_DIR) and returns { id, url, mime } to attach to a record (e.g. categories.image_media_id).
  */
 export const POST = route({
   auth: { audience: "admin" },
@@ -24,8 +24,8 @@ export const POST = route({
     // Reject oversized bodies before buffering them; a body without a declared length (chunked) could be unbounded.
     const length = ctx.req.headers.get("content-length");
     if (!length) throw new BadRequestError("length_required", "Yükleme boyutu bildirilmedi.");
-    if (Number(length) > MAX_IMAGE_BYTES + MULTIPART_OVERHEAD) {
-      throw new PayloadTooLargeError("file_too_large", "Görsel en fazla 5 MB olabilir.", { fieldErrors: { file: ["Görsel en fazla 5 MB olabilir."] } });
+    if (Number(length) > Math.max(MAX_IMAGE_BYTES, MAX_VIDEO_BYTES) + MULTIPART_OVERHEAD) {
+      throw new PayloadTooLargeError("file_too_large", "Dosya en fazla 5 MB olabilir.", { fieldErrors: { file: ["Dosya en fazla 5 MB olabilir."] } });
     }
     const form = await ctx.req.formData().catch(() => {
       throw new BadRequestError("invalid_form", "Yükleme verisi okunamadı.");

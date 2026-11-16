@@ -11,7 +11,7 @@ HOST="${DEPLOY_HOST:?set DEPLOY_HOST=user@server (or deploy/.deploy.env)}"
 DIR="${DEPLOY_DIR:-/opt/nova}"
 
 [ -f .env.production ] || { echo "✖ .env.production missing (template: .env.production.example)"; exit 1; }
-for key in DOMAIN ACME_EMAIL PUBLIC_SITE_URL SESSION_SECRET SECRETS_MASTER_KEY CRON_SECRET; do
+for key in DOMAIN ACME_EMAIL PUBLIC_SITE_URL SESSION_SECRET SECRETS_MASTER_KEY CRON_SECRET MEILI_MASTER_KEY; do
 	grep -Eq "^${key}=.+" .env.production || { echo "✖ .env.production: ${key} is empty"; exit 1; }
 done
 
@@ -27,6 +27,7 @@ scp -q .env.production "$HOST:$DIR/.env.production"
 echo "→ building and starting containers"
 ssh "$HOST" "cd '$DIR' && chmod 600 .env.production \
 	&& printf 'COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml\n' > .env \
+	&& grep -E '^MEILI_MASTER_KEY=' .env.production >> .env && chmod 600 .env \
 	&& docker compose up -d --build --remove-orphans \
 	&& docker image prune -f > /dev/null \
 	&& docker compose ps"

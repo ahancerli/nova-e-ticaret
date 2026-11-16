@@ -1,4 +1,4 @@
-import { RateLimitError, UnitOfWork, ValidationError, type Audience, type Authenticator, type Clock, type Database, type IdGenerator, type Logger, type Principal, type RateLimiter } from "@/core";
+import { RateLimitError, UnitOfWork, ValidationError, type Audience, type Authenticator, type Clock, type Database, type IdGenerator, type Logger, type Principal, type RateLimiter, type Statement } from "@/core";
 import { IdentityErrors } from "../domain/errors";
 import { LOGIN_LIMITS, SESSION_POLICIES } from "../domain/session-policy";
 import { passwordProblems } from "../domain/password-policy";
@@ -34,18 +34,62 @@ export class GetCurrentPrincipal implements Authenticator {
   }
 }
 
-export interface LoginDeps {
-  db: Database;
-  credentials: CredentialRepository;
+export interface SessionIssuerDeps {
   sessions: SessionRepository;
-  passwords: PasswordHasher;
   tokens: TokenService;
   cookies: SessionCookies;
-  limiter: RateLimiter;
   listeners: LoginListener[];
   clock: Clock;
   ids: IdGenerator;
   logger: Logger;
+}
+
+/** A session that is ready to be stored: `statements` join the caller's UnitOfWork, `activate()` runs after its commit. */
+export interface PreparedSession {
+  statements: Statement[];
+  expiresAt: string;
+  /** Sets the cookie and runs the login listeners (guest-cart merge). */
+  activate(): Promise<void>;
+}
+
+/**
+ * Opens a session for an already authenticated user. The one path behind every way of signing in (password, social
+ * sign-in): only the token's HMAC is stored, and the session row commits together with whatever proved the identity.
+ */
+export class SessionIssuer {
+  constructor(private readonly deps: SessionIssuerDeps) {}
+
+  async prepare(input: { userId: string; audience: Audience; ipKey: string; remember?: boolean }): Promise<PreparedSession> {
+    const { deps } = this;
+    const policy = SESSION_POLICIES[input.audience];
+    const token = deps.tokens.newToken();
+    const now = deps.clock.now();
+    const expiresAt = deps.clock.addMinutesIso(input.remember ? policy.rememberTtlMinutes : policy.ttlMinutes, now);
+    return {
+      expiresAt,
+      statements: [
+        deps.sessions.createStatement({ id: deps.ids.newId(), userId: input.userId, tokenHash: await deps.tokens.hash(token), expiresAt, ipHash: input.ipKey }),
+        deps.sessions.touchLoginStatement(input.userId, now.toISOString()),
+      ],
+      activate: async () => {
+        await deps.cookies.set(policy.cookie, token, { expires: new Date(expiresAt), sameSite: policy.sameSite });
+        for (const listener of deps.listeners) {
+          // A listener (e.g. guest-cart merge) must not turn a successful login into an error.
+          await listener.onLogin({ userId: input.userId, audience: input.audience }).catch((err: unknown) =>
+            deps.logger.warn("login listener failed", { audience: input.audience, error: String(err) }));
+        }
+      },
+    };
+  }
+}
+
+export interface LoginDeps {
+  db: Database;
+  credentials: CredentialRepository;
+  passwords: PasswordHasher;
+  issuer: SessionIssuer;
+  limiter: RateLimiter;
+  clock: Clock;
 }
 
 export interface LoginCommand {
@@ -86,22 +130,13 @@ export class Login {
       throw IdentityErrors.invalidCredentials();
     }
 
-    const token = deps.tokens.newToken();
-    const now = deps.clock.now();
-    const expiresAt = deps.clock.addMinutesIso(cmd.remember ? policy.rememberTtlMinutes : policy.ttlMinutes, now);
+    const session = await deps.issuer.prepare({ userId: credential.userId, audience: cmd.audience, ipKey, remember: cmd.remember });
     await new UnitOfWork(deps.db)
-      .add(deps.sessions.createStatement({ id: deps.ids.newId(), userId: credential.userId, tokenHash: await deps.tokens.hash(token), expiresAt, ipHash: ipKey }))
-      .add(deps.credentials.resetFailuresStatement(credential.userId, now.toISOString()))
-      .add(deps.sessions.touchLoginStatement(credential.userId, now.toISOString()))
+      .add(...session.statements)
+      .add(deps.credentials.resetFailuresStatement(credential.userId, deps.clock.nowIso()))
       .commit();
-    await deps.cookies.set(policy.cookie, token, { expires: new Date(expiresAt), sameSite: policy.sameSite });
-
-    for (const listener of deps.listeners) {
-      // A listener (e.g. guest-cart merge) must not turn a successful login into an error.
-      await listener.onLogin({ userId: credential.userId, audience: cmd.audience }).catch((err: unknown) =>
-        deps.logger.warn("login listener failed", { audience: cmd.audience, error: String(err) }));
-    }
-    return { userId: credential.userId, expiresAt };
+    await session.activate();
+    return { userId: credential.userId, expiresAt: session.expiresAt };
   }
 
   private async isBlocked(bucket: string): Promise<boolean> {

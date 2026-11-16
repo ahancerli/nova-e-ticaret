@@ -1,6 +1,6 @@
 import type { Clock } from "@/core";
 import type { ComparedProduct, Facets, HomeData, ProductCard, ProductDetail, SearchSuggestions } from "@/lib/types";
-import type { CategoryPageData, ListParams, ProductPage, ProductPromotions, ShellData, StorefrontReadModel } from "./ports";
+import type { CategoryPageData, ListParams, ProductPage, ProductPromotions, ProductSearch, ShellData, StorefrontReadModel } from "./ports";
 
 /** Cards with their active campaigns (badge + "Sepette ₺X"), so every listing shows the same deal the cart applies. */
 async function withPromotions(promotions: ProductPromotions, cards: ProductCard[]): Promise<ProductCard[]> {
@@ -34,20 +34,31 @@ export class GetHome {
 
 /** Query: one page of the product listing (category / brand / search + filters). */
 export class ListCatalogProducts {
-  constructor(private readonly read: StorefrontReadModel, private readonly promotions: ProductPromotions) {}
+  constructor(private readonly read: StorefrontReadModel, private readonly promotions: ProductPromotions, private readonly search: ProductSearch) {}
 
+  /**
+   * With a search term the engine picks and ranks the products (typos, synonyms, relevance) and SQL does the rest
+   * for exactly those ids: other filters, live prices and stock, paging. No engine → the SQL text match.
+   */
   async execute(p: ListParams): Promise<ProductPage> {
-    const page = await this.read.listProducts(p);
-    return { ...page, items: await withPromotions(this.promotions, page.items) };
+    const match = p.q ? await this.search.match({ q: p.q, category: p.category, brand: p.brand }) : null;
+    const page = await this.read.listProducts(match ? { ...p, matchIds: match.ids } : p);
+    // one count per search, not per filter click or page turn
+    const plain = p.page === 1 && !p.inStock && p.minPrice == null && p.maxPrice == null && !Object.keys(p.attrs).length;
+    // counted under the corrected spelling, so a common typo never becomes a "popular search"
+    if (p.q && plain) await this.search.record(match?.correctedQuery ?? p.q, page.total);
+    return { ...page, items: await withPromotions(this.promotions, page.items), correctedQuery: match?.correctedQuery ?? null };
   }
 }
 
 /** Query: filter counts for the current listing (brand, attribute options, price range). */
 export class GetFacets {
-  constructor(private readonly read: StorefrontReadModel) {}
+  constructor(private readonly read: StorefrontReadModel, private readonly search: ProductSearch) {}
 
-  execute(p: Omit<ListParams, "sort" | "page">): Promise<Facets> {
-    return this.read.facets(p);
+  async execute(p: Omit<ListParams, "sort" | "page">): Promise<Facets> {
+    // same match as the listing (the search port answers once per request)
+    const match = p.q ? await this.search.match({ q: p.q, category: p.category, brand: p.brand }) : null;
+    return this.read.facets(match ? { ...p, matchIds: match.ids } : p);
   }
 }
 
@@ -148,12 +159,26 @@ export class ListActiveCategories {
 
 /** Query: search-as-you-type (products, categories, brands). Short input answers empty without touching D1. */
 export class SearchSuggest {
-  constructor(private readonly read: StorefrontReadModel, private readonly promotions: ProductPromotions) {}
+  constructor(private readonly read: StorefrontReadModel, private readonly promotions: ProductPromotions, private readonly search: ProductSearch) {}
 
   async execute(q: string): Promise<SearchSuggestions> {
     const term = q.trim().slice(0, 100);
-    if (term.length < 2) return { products: [], categories: [], brands: [] };
+    if (term.length < 2) return { products: [], categories: [], brands: [], queries: [] };
+    const hit = await this.search.suggest(term);
+    if (hit) {
+      const products = await withPromotions(this.promotions, await this.read.cardsByIds(hit.productIds));
+      return { products, categories: hit.categories, brands: hit.brands, queries: hit.queries };
+    }
     const r = await this.read.suggest(term);
     return { ...r, products: await withPromotions(this.promotions, r.products) };
+  }
+}
+
+/** Query: what other visitors search for most (shown in the empty search box). */
+export class GetPopularSearches {
+  constructor(private readonly search: ProductSearch) {}
+
+  execute(): Promise<string[]> {
+    return this.search.popular();
   }
 }

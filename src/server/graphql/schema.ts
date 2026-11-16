@@ -3,7 +3,7 @@ import { buildSchema } from "graphql";
 import type { Token } from "@/core";
 import { GetProductReviewsToken, PUBLIC_REVIEW_SORTS, type PublicReviewSort } from "@/modules/reviews";
 import {
-  GetFacetsToken, GetShellToken, ListCatalogProductsToken, SearchSuggestToken, parseListQuery,
+  GetFacetsToken, GetShellToken, ListCatalogProductsToken, GetPopularSearchesToken, SearchSuggestToken, parseListQuery,
 } from "@/modules/storefront";
 
 /**
@@ -24,6 +24,7 @@ export const schema = buildSchema(/* GraphQL */ `
     categories: [Category!]!
     "Search-as-you-type; fewer than 2 characters answers empty."
     suggest(q: String!): Suggestions!
+    popularSearches: [String!]!
     "Published reviews of a product: rating summary + one page (10)."
     reviews(productId: ID!, sort: ReviewSort, rating: Int, page: Int): ReviewPage!
   }
@@ -46,7 +47,7 @@ export const schema = buildSchema(/* GraphQL */ `
   type RatingSummary { average: Float, count: Int!, "Index 0 = 1 star … 4 = 5 stars." distribution: [Int!]! }
   type ReviewPage { summary: RatingSummary!, items: [Review!]!, total: Int!, page: Int!, pages: Int! }
 
-  enum ProductSort { newest price_asc price_desc name }
+  enum ProductSort { relevance newest price_asc price_desc name }
 
   input AttributeFilter { code: String!, values: [String!]! }
 
@@ -85,7 +86,7 @@ export const schema = buildSchema(/* GraphQL */ `
 
   type Promotion { campaignId: ID!, kind: String!, label: String!, emoji: String, imageUrl: String }
 
-  type ProductPage { items: [Product!]!, total: Int!, page: Int!, pageSize: Int!, pages: Int! }
+  type ProductPage { items: [Product!]!, total: Int!, page: Int!, pageSize: Int!, pages: Int!, correctedQuery: String }
 
   type FacetOption { value: String!, label: String!, count: Int!, selected: Boolean!, colorHex: String }
   type FacetAttribute { code: String!, label: String!, options: [FacetOption!]! }
@@ -95,7 +96,7 @@ export const schema = buildSchema(/* GraphQL */ `
   type Category { id: ID!, slug: String!, name: String!, href: String!, imageUrl: String, menuImageUrl: String, children: [Category!]! }
 
   type Link { name: String!, href: String! }
-  type Suggestions { products: [Product!]!, categories: [Link!]!, brands: [Link!]! }
+  type Suggestions { products: [Product!]!, categories: [Link!]!, brands: [Link!]!, queries: [String!]! }
 `);
 
 export interface GraphContext {
@@ -129,6 +130,7 @@ export const rootValue = {
     ctx.resolve(GetFacetsToken).execute(parseListQuery(toListQuery(filter))), // sort / page are ignored by facets
   categories: async (_: unknown, ctx: GraphContext) => (await ctx.resolve(GetShellToken).execute()).categories,
   suggest: ({ q }: { q: string }, ctx: GraphContext) => ctx.resolve(SearchSuggestToken).execute(q),
+  popularSearches: (_: unknown, ctx: GraphContext) => ctx.resolve(GetPopularSearchesToken).execute(),
   reviews: (a: { productId: string; sort?: string | null; rating?: number | null; page?: number | null }, ctx: GraphContext) =>
     ctx.resolve(GetProductReviewsToken).execute(a.productId.slice(0, 64), {
       sort: a.sort && a.sort in PUBLIC_REVIEW_SORTS ? (a.sort as PublicReviewSort) : "newest", rating: a.rating, page: a.page ?? 1,

@@ -231,7 +231,7 @@ export class D1MarketplaceRepository extends Repository implements MarketplaceRe
     const rows = await this.db.all<{ variant_id: string; product_id: string; name: string; sku: string; barcode: string | null; label: string | null; status: string; content_id: number | null; last_error: string | null; last_pushed_at: string | null; image_url: string | null }>(
       `SELECT l.variant_id, l.product_id, p.name, v.sku, v.barcode, l.status, l.content_id, l.last_error, l.last_pushed_at,
               (SELECT group_concat(ao.label, ' / ') FROM variant_options vo JOIN attribute_options ao ON ao.id = vo.option_id WHERE vo.variant_id = v.id) AS label,
-              (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id WHERE pm.product_id = p.id ORDER BY pm.is_primary DESC, pm.sort_order LIMIT 1) AS image_url
+              (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%' WHERE pm.product_id = p.id ORDER BY pm.is_primary DESC, pm.sort_order LIMIT 1) AS image_url
          FROM marketplace_listings l JOIN product_variants v ON v.id = l.variant_id JOIN products p ON p.id = l.product_id
         WHERE l.connection_id = ? AND (? IS NULL OR l.status = ?) AND (? IS NULL OR p.name LIKE ? ESCAPE '\\' OR v.sku LIKE ? ESCAPE '\\' OR v.barcode LIKE ? ESCAPE '\\')
         ORDER BY CASE l.status WHEN 'error' THEN 0 WHEN 'rejected' THEN 1 WHEN 'pending' THEN 2 WHEN 'submitted' THEN 3 ELSE 4 END, p.name LIMIT ?`,
@@ -325,7 +325,7 @@ export class D1MarketplaceRepository extends Repository implements MarketplaceRe
                 (SELECT pc.category_id FROM product_categories pc WHERE pc.product_id = p.id ORDER BY pc.is_primary DESC LIMIT 1) AS category_id,
                 vp.unit_price_minor, ${shownCompareAtSql("vp")} AS compare_at_minor,
                 COALESCE((SELECT SUM(ib.on_hand - ib.reserved) FROM inventory_balances ib WHERE ib.variant_id = v.id), 0) AS available,
-                (SELECT json_group_array(x.url) FROM (SELECT m.public_url AS url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
+                (SELECT json_group_array(x.url) FROM (SELECT m.public_url AS url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%'
                    WHERE pm.product_id = v.product_id AND (pm.variant_id = v.id OR pm.variant_id IS NULL)
                    ORDER BY pm.variant_id IS NULL, pm.is_primary DESC, pm.sort_order) AS x) AS images,
                 (SELECT json_group_object(vo.attribute_id, vo.option_id) FROM variant_options vo WHERE vo.variant_id = v.id) AS var_opts,

@@ -3,31 +3,7 @@
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ComponentType } from "react";
-import {
-  Bell,
-  FileSpreadsheet,
-  ChevronRight,
-  Contact,
-  CreditCard,
-  FileCheck2,
-  FileText,
-  FolderTree,
-  LayoutGrid,
-  Mail,
-  Megaphone,
-  MessageSquareText,
-  MessagesSquare,
-  MonitorCog,
-  Package,
-  PlugZap,
-  Settings,
-  ShoppingCart,
-  Tags,
-  UsersRound,
-  ReceiptText,
-  Truck,
-  Undo2,
-} from "lucide-react";
+import { Bell, FileSpreadsheet, ChevronRight, Contact, CreditCard, FileCheck2, FileText, FolderTree, LayoutGrid, Mail, Megaphone, MessageSquareText, MessagesSquare, MonitorCog, Package, PlugZap, Settings, ShoppingCart, Tags, UsersRound, ReceiptText, Truck, Undo2, Search } from "lucide-react";
 import { Collapsible } from "@/components/ui/Collapsible";
 
 export type SidebarIcon =
@@ -36,6 +12,7 @@ export type SidebarIcon =
   | "customers"
   | "products"
   | "categories"
+  | "search"
   | "brands"
   | "campaigns"
   | "showcase"
@@ -81,6 +58,7 @@ export const iconMap: Record<SidebarIcon, ComponentType<{ className?: string }>>
   customers: Contact,
   products: Package,
   categories: FolderTree,
+  search: Search,
   brands: Tags,
   campaigns: Megaphone,
   showcase: MonitorCog,

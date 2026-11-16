@@ -15,6 +15,8 @@ import { PageHero } from "../ui/PageHero";
 import { ProductGrid, ProductGridSkeleton } from "../ui/ProductGrid";
 import { Filters } from "./Filters";
 
+/** A search starts in the engine's order ("Önerilen"); that option only exists while there is a search term. */
+const RELEVANCE = { v: "relevance", l: "Önerilen" };
 const SORTS = [
   { v: "newest", l: "En yeniler" },
   { v: "price_asc", l: "En düşük fiyat" },
@@ -29,7 +31,7 @@ function toFilter(sp: URLSearchParams, scope: { category?: string; brand?: strin
   return {
     category: scope.category, brand: scope.brand ?? (sp.get("brand") || undefined), q: sp.get("q") || undefined,
     minPrice: num("minPrice"), maxPrice: num("maxPrice"), inStock: sp.get("inStock") === "1" || undefined,
-    sort: SORTS.some((s) => s.v === sp.get("sort")) ? sp.get("sort")! : undefined, page: num("page"),
+    sort: [RELEVANCE, ...SORTS].some((s) => s.v === sp.get("sort")) ? sp.get("sort")! : undefined, page: num("page"),
     attributes: attributes.length ? attributes : undefined,
   };
 }
@@ -115,6 +117,10 @@ export function Listing({ title, scope, initial, breadcrumb = [], tone, subtitle
   const chips = activeChips(params, facets, lockBrand);
   const clearAll = () => edit((q) => { for (const k of [...q.keys()]) if (k !== "q" && k !== "sort") q.delete(k); });
   const card = "rounded-2xl border border-line bg-white";
+  const term = params.get("q")?.trim() ?? "";
+  const sorts = term ? [RELEVANCE, ...SORTS] : SORTS;
+  const defaultSort = term ? RELEVANCE.v : "newest";
+  const corrected = !loading && term ? products.correctedQuery : null;
 
   return (
     <>
@@ -135,13 +141,19 @@ export function Listing({ title, scope, initial, breadcrumb = [], tone, subtitle
                 <label className="relative flex-1 sm:flex-none">
                   <span className="sr-only">Sıralama</span>
                   <select className="h-11 w-full appearance-none rounded-full border border-line bg-white pl-4 pr-10 text-sm font-semibold outline-none transition hover:border-ink focus:border-ink sm:w-56"
-                    value={params.get("sort") ?? "newest"} onChange={(e) => edit((q) => { if (e.target.value === "newest") q.delete("sort"); else q.set("sort", e.target.value); })}>
-                    {SORTS.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
+                    value={params.get("sort") ?? defaultSort} onChange={(e) => edit((q) => { if (e.target.value === defaultSort) q.delete("sort"); else q.set("sort", e.target.value); })}>
+                    {sorts.map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
                   </select>
                   <ArrowUpDown className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-soft" aria-hidden />
                 </label>
               </div>
             </div>
+
+            {corrected && (
+              <p className={`${card} px-4 py-3 text-sm text-ink-soft`} role="status">
+                “{term}” yerine <a href={`/ara?q=${encodeURIComponent(corrected)}`} className="font-bold text-ink underline-offset-4 hover:underline">“{corrected}”</a> için sonuçlar gösteriliyor.
+              </p>
+            )}
 
             {!lockBrand && facets.brands.length > 1 && (
               <div className="flex items-center gap-3">
@@ -182,8 +194,8 @@ export function Listing({ title, scope, initial, breadcrumb = [], tone, subtitle
             {!error && loading && <ProductGridSkeleton variant="listing" count={8} />}
             {!error && !loading && products.items.length === 0 && (
               <div className={`${card} py-16 text-center`}>
-                <p className="text-lg font-bold">Bu filtrelerle eşleşen ürün yok</p>
-                <p className="mt-1 text-sm text-ink-soft">Filtrelerin bir kısmını kaldırmayı deneyin.</p>
+                <p className="text-lg font-bold">{term && !chips.length ? `“${term.slice(0, 60)}” için ürün bulunamadı` : "Bu filtrelerle eşleşen ürün yok"}</p>
+                <p className="mt-1 text-sm text-ink-soft">{term && !chips.length ? "Yazımı kontrol edin, daha kısa ya da daha genel bir kelime deneyin." : "Filtrelerin bir kısmını kaldırmayı deneyin."}</p>
                 {chips.length > 0 && <button type="button" className="btn btn-primary mt-5" onClick={clearAll}>Filtreleri temizle</button>}
               </div>
             )}

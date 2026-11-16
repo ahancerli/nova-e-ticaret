@@ -45,20 +45,21 @@ abstract class SaveProduct {
     const skus = [...new Set(input.variants.map((v) => normalizeSku(v.sku)))];
     const barcodes = [...new Set(input.variants.map((v) => v.barcode?.trim()).filter((b): b is string => Boolean(b)))];
     const modelCode = input.modelCode?.trim().toUpperCase();
-    const [meta, slugTaken, modelCodeTaken, brandExists, foundCategoryIds, foundImageIds, skusTakenElsewhere, barcodesTakenElsewhere] = await Promise.all([
+    const [meta, slugTaken, modelCodeTaken, brandExists, foundCategoryIds, foundImageIds, foundVideoIds, skusTakenElsewhere, barcodesTakenElsewhere] = await Promise.all([
       this.deps.meta.execute(),
       slug.length >= 2 ? products.slugTaken(slug, productId) : Promise.resolve(false),
       modelCode ? products.modelCodeTaken(modelCode, productId) : Promise.resolve(false),
       input.brandId ? products.brandExists(input.brandId) : Promise.resolve(true),
       products.existingCategoryIds([...new Set(input.categories.map((c) => c.id))]),
       products.existingImageIds([...new Set([...input.media, ...input.variants.flatMap((v) => v.media ?? [])])]),
+      products.existingVideoIds([...new Set([...input.media, ...input.variants.flatMap((v) => v.media ?? [])])]),
       products.takenElsewhere("sku", skus, productId),
       products.takenElsewhere("barcode", barcodes, productId),
     ]);
 
     return planProductSave({
       productId, input, current, meta, canPublish: actor.canPublish, now, newId: () => this.deps.ids.newId(),
-      lookups: { slugTaken, modelCodeTaken, brandExists, foundCategoryIds, foundImageIds, skusTakenElsewhere, barcodesTakenElsewhere },
+      lookups: { slugTaken, modelCodeTaken, brandExists, foundCategoryIds, foundImageIds, foundVideoIds, skusTakenElsewhere, barcodesTakenElsewhere },
     });
   }
 

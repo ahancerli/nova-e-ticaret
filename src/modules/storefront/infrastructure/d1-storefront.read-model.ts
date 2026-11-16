@@ -2,6 +2,7 @@ import { Repository, placeholders } from "@/core";
 import type { CategoryNode, ComparedProduct, Facets, HomeData, ProductCard, ProductDetail, SearchSuggestions } from "@/lib/types";
 import { shownCompareAtSql } from "@/modules/catalog";
 import { DEFAULT_PRICE_LIST } from "@/modules/catalog/domain/product";
+import { mediaKindOf } from "@/modules/media/domain/image";
 import type { ListParams, NavItem, ShellData, SitemapEntry, StorefrontReadModel } from "../application/ports";
 import { HOME_SECTION_LOADERS, type HomeSectionRow } from "./home-sections";
 import { CARD_SELECT, PAGE_SIZE, SORTS, toCard, type CardRow } from "./product-cards";
@@ -100,7 +101,17 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
       products: rows<CardRow>(products).map(toCard),
       categories: rows<{ slug: string; name: string }>(categories).map((c) => ({ name: c.name, href: `/kategori/${c.slug}` })),
       brands: rows<{ slug: string; name: string }>(brands).map((b) => ({ name: b.name, href: `/marka/${b.slug}` })),
+      queries: [],
     };
+  }
+
+  async cardsByIds(ids: string[]): Promise<ProductCard[]> {
+    if (!ids.length) return [];
+    const list = JSON.stringify(ids);
+    return (await this.db.all<CardRow>(
+      `SELECT r.* FROM (${CARD_SELECT} WHERE p.status = 'published' AND p.id IN (SELECT value FROM json_each(?))) r JOIN json_each(?) j ON j.value = r.id ORDER BY j.key`,
+      list, list,
+    )).map(toCard);
   }
 
   // --- home ------------------------------------------------------------------------------------------
@@ -144,7 +155,11 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
       where.push("EXISTS (SELECT 1 FROM product_categories pc WHERE pc.product_id = p.id AND pc.category_id IN (SELECT id FROM cat_tree))");
     }
     if (p.brand) { where.push("b.slug = ?"); params.push(p.brand); }
-    if (p.q) {
+    if (p.matchIds) {
+      // the search engine already matched the text; one JSON parameter carries the whole id list
+      where.push("p.id IN (SELECT value FROM json_each(?))");
+      params.push(JSON.stringify(p.matchIds));
+    } else if (p.q) {
       where.push("(p.name LIKE ? ESCAPE '\\' OR b.name LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id AND (v.sku = ? OR v.barcode = ?)))");
       const like = likeOf(p.q);
       params.push(like, like, p.q, p.q);
@@ -197,7 +212,10 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
     const order = SORTS[p.sort].replaceAll("p.", "x.");
     const offset = (Math.trunc(p.page) - 1) * PAGE_SIZE;
     const [items, count] = await this.db.batch([
-      this.db.statement(`${base} ORDER BY ${order} LIMIT ${PAGE_SIZE} OFFSET ${offset}`, ...allParams),
+      p.sort === "relevance" && p.matchIds
+        // json_each numbers the array elements: `key` is the engine's rank
+        ? this.db.statement(`SELECT r.* FROM (${base}) r JOIN json_each(?) j ON j.value = r.id ORDER BY j.key LIMIT ${PAGE_SIZE} OFFSET ${offset}`, ...allParams, JSON.stringify(p.matchIds))
+        : this.db.statement(`${base} ORDER BY ${order} LIMIT ${PAGE_SIZE} OFFSET ${offset}`, ...allParams),
       this.db.statement(`SELECT COUNT(*) AS n FROM (${base})`, ...allParams),
     ]);
     const total = rows<{ n: number }>(count)[0]?.n ?? 0;
@@ -257,7 +275,7 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
     if (!product) return null;
     const st = (sql: string, ...params: unknown[]) => this.db.statement(sql, ...params);
     const [media, variants, axes, attrs, related, breadcrumb] = await this.db.batch([
-      st(`SELECT pm.variant_id, m.public_url, m.alt_text FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
+      st(`SELECT pm.variant_id, m.public_url, m.alt_text, m.mime_type FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
            WHERE pm.product_id = ? ORDER BY pm.is_primary DESC, pm.sort_order`, product.id),
       st(`SELECT v.id, v.sku, v.is_default, vp.unit_price_minor, ${shownCompareAtSql("vp")} AS compare_at_minor,
                  COALESCE((SELECT SUM(ib.on_hand - ib.reserved) FROM inventory_balances ib WHERE ib.variant_id = v.id), 0) AS available,
@@ -303,7 +321,7 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
     return {
       id: product.id, slug: product.slug, name: product.name, brandName: product.brand_name, brandSlug: product.brand_slug,
       shortDescription: product.short_description, descriptionHtml: product.description_html,
-      media: rows<{ variant_id: string | null; public_url: string; alt_text: string }>(media).map((m) => ({ variantId: m.variant_id, url: m.public_url, alt: m.alt_text })),
+      media: rows<{ variant_id: string | null; public_url: string; alt_text: string; mime_type: string }>(media).map((m) => ({ variantId: m.variant_id, url: m.public_url, alt: m.alt_text, kind: mediaKindOf(m.mime_type) })),
       variants: rows<VariantRow>(variants).map((v) => ({
         id: v.id, sku: v.sku, isDefault: v.is_default === 1, priceMinor: v.unit_price_minor, compareAtMinor: v.compare_at_minor, campaignPriceMinor: null,
         available: Math.max(0, v.available), options: JSON.parse(v.options ?? "{}"),

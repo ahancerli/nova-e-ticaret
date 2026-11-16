@@ -31,7 +31,8 @@ export function parseListQuery(sp: URLSearchParams): ListParams {
     minPrice: num("minPrice"),
     maxPrice: num("maxPrice"),
     inStock: sp.get("inStock") === "1",
-    sort: ((s) => (isSortKey(s) ? s : "newest"))(sp.get("sort") ?? "newest"),
+    // a search starts in the engine's order; plain listings start with the newest products
+    sort: ((s, fallback) => (s && isSortKey(s) ? s : fallback))(sp.get("sort"), sp.get("q")?.trim() ? "relevance" as const : "newest" as const),
     page: Math.min(Math.max(num("page") ?? 1, 1), 500),
     attrs,
   };

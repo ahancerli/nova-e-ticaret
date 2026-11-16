@@ -5,7 +5,7 @@ import type { AlertKind, AlertStatus, DueAlert, MyProductAlert, ProductAlertStat
 
 const AVAILABLE = (variant: string) => `COALESCE((SELECT SUM(ib.on_hand - ib.reserved) FROM inventory_balances ib WHERE ib.variant_id = ${variant}), 0)`;
 /** The variant's own photo first (Renk), else the product cover. */
-const IMAGE = `(SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
+const IMAGE = `(SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%'
    WHERE pm.product_id = a.product_id AND (pm.variant_id = a.variant_id OR pm.variant_id IS NULL)
    ORDER BY pm.variant_id IS NULL, pm.is_primary DESC, pm.sort_order LIMIT 1)`;
 const VARIANT_LABEL = `(SELECT group_concat(d.label || ': ' || ao.label, ', ') FROM variant_options vo

@@ -15,7 +15,7 @@ type Props = { params: Promise<{ slug: string }>; searchParams: Promise<{ degerl
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const p = await getProductBySlug((await params).slug);
   if (!p) return {};
-  return { title: p.name, description: p.shortDescription ?? undefined, openGraph: { images: p.media[0]?.url ? [p.media[0].url] : [] } };
+  return { title: p.name, description: p.shortDescription ?? undefined, openGraph: { images: p.media.filter((m) => m.kind === "image").slice(0, 1).map((m) => m.url) } };
 }
 
 /**
@@ -40,7 +40,7 @@ export default async function ProductPage({ params, searchParams }: Props) {
     "@context": "https://schema.org",
     "@type": "Product",
     name: p.name,
-    image: p.media.map((m) => m.url),
+    image: p.media.filter((m) => m.kind === "image").map((m) => m.url),
     brand: p.brandName ? { "@type": "Brand", name: p.brandName } : undefined,
     sku: def?.sku,
     offers: def?.priceMinor != null ? { "@type": "Offer", priceCurrency: "TRY", price: (def.priceMinor / 100).toFixed(2), availability: def.available > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock" } : undefined,

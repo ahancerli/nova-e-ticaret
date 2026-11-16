@@ -62,6 +62,10 @@ export class D1ProductRepository extends Repository implements ProductRepository
     return this.existing("SELECT id FROM media_assets WHERE id IN (#) AND mime_type LIKE 'image/%'", ids);
   }
 
+  existingVideoIds(ids: string[]): Promise<Set<string>> {
+    return this.existing("SELECT id FROM media_assets WHERE id IN (#) AND mime_type LIKE 'video/%'", ids);
+  }
+
   async takenElsewhere(column: "sku" | "barcode", values: string[], exceptProductId: string | null): Promise<Set<string>> {
     const col = column === "sku" ? "sku" : "barcode"; // allowlist
     const out = new Set<string>();

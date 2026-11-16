@@ -54,6 +54,7 @@ const NAV: Array<{ title: string; items: NavEntry[] }> = [
           { type: "link", href: "/admin/kategoriler", label: "Kategoriler", perm: "catalog.write", icon: "categories" },
           { type: "link", href: "/admin/markalar", label: "Markalar", perm: "catalog.write", icon: "brands" },
           { type: "link", href: "/admin/ozellikler", label: "Özellikler & varyantlar", perm: "catalog.write", icon: "categories" },
+          { type: "link", href: "/admin/arama", label: "Arama", perm: "catalog.write", icon: "search" },
           { type: "link", href: "/admin/kampanyalar", label: "Kampanyalar", perm: "campaigns.write", icon: "campaigns" },
           { type: "link", href: "/admin/vitrin", label: "Vitrin", perm: "storefront.write", icon: "showcase" },
           { type: "link", href: "/admin/toplu-islemler", label: "Toplu işlemler", perm: "catalog.write", icon: "bulk" },

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { BadgeCheck, Building2, ExternalLink, Globe2, Palette, PanelBottom, Phone, Plus, Save, Search, Share2, ShieldCheck, X, type LucideIcon } from "lucide-react";
+import { BadgeCheck, Building2, ExternalLink, Globe2, LogIn, Palette, PanelBottom, Phone, Plus, Save, Search, Share2, ShieldCheck, X, type LucideIcon } from "lucide-react";
 import { notify } from "@/lib/toast";
 import { useFieldErrors } from "@/lib/use-field-errors";
 import { AdminCard, AdminPageHeader } from "@/components/admin/ui";
@@ -144,6 +144,12 @@ export function SettingsManager({ initial, initialGroup }: { initial: AdminSetti
               <Link href="/admin/ayarlar/bot-korumasi" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-600 transition hover:bg-white/70">
                 <ShieldCheck className="size-4 flex-none text-slate-400" aria-hidden />
                 <span className="whitespace-nowrap">Bot koruması</span>
+              </Link>
+            </li>
+            <li className="flex-none">
+              <Link href="/admin/ayarlar/sosyal-giris" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-600 transition hover:bg-white/70">
+                <LogIn className="size-4 flex-none text-slate-400" aria-hidden />
+                <span className="whitespace-nowrap">Sosyal giriş</span>
               </Link>
             </li>
           </ul>

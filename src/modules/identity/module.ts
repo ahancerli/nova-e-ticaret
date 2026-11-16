@@ -4,7 +4,7 @@ import { AccountLinks, CompleteAccountLink, PeekAccountLink, RequestPasswordRese
 import { MailSenderToken } from "@/modules/mail";
 import { AuditLogToken } from "@/modules/audit/audit-log";
 import { D1AccountReadModel, GetCustomerProfile, GetStaffRoles } from "./application/account-queries";
-import { ChangePassword, GetCurrentPrincipal, Login, Logout } from "./application/session-use-cases";
+import { ChangePassword, GetCurrentPrincipal, Login, Logout, SessionIssuer } from "./application/session-use-cases";
 import { BcryptPasswordHasher, HmacTokenService, NextSessionCookies } from "./infrastructure/adapters";
 import { D1AccountTokenRepository, D1CredentialRepository, D1PermissionRepository, D1SessionRepository } from "./infrastructure/d1-identity.repositories";
 
@@ -18,6 +18,8 @@ export const SessionCookiesToken = token<SessionCookies>("SessionCookies");
 export const LoginListenersToken = token<LoginListener[]>("LoginListeners");
 
 export const GetCurrentPrincipalToken = token<GetCurrentPrincipal>("GetCurrentPrincipal");
+/** Opens a session for an already authenticated user (password login, social sign-in). */
+export const SessionIssuerToken = token<SessionIssuer>("SessionIssuer");
 export const LoginToken = token<Login>("Login");
 export const LogoutToken = token<Logout>("Logout");
 export const GetStaffRolesToken = token<GetStaffRoles>("GetStaffRoles");
@@ -51,18 +53,17 @@ export function registerIdentity(c: Container): void {
   ));
   // The HTTP pipeline's Authenticator port is this query.
   c.scoped(AuthenticatorToken, (r) => r.resolve(GetCurrentPrincipalToken));
+  c.scoped(SessionIssuerToken, (r) => new SessionIssuer({
+    sessions: r.resolve(SessionRepositoryToken), tokens: r.resolve(TokenServiceToken), cookies: r.resolve(SessionCookiesToken),
+    listeners: r.resolve(LoginListenersToken), clock: r.resolve(ClockToken), ids: r.resolve(IdGeneratorToken), logger: r.resolve(LoggerToken),
+  }));
   c.scoped(LoginToken, (r) => new Login({
     db: r.resolve(DatabaseToken),
     credentials: r.resolve(CredentialRepositoryToken),
-    sessions: r.resolve(SessionRepositoryToken),
     passwords: r.resolve(PasswordHasherToken),
-    tokens: r.resolve(TokenServiceToken),
-    cookies: r.resolve(SessionCookiesToken),
+    issuer: r.resolve(SessionIssuerToken),
     limiter: r.resolve(RateLimiterToken),
-    listeners: r.resolve(LoginListenersToken),
     clock: r.resolve(ClockToken),
-    ids: r.resolve(IdGeneratorToken),
-    logger: r.resolve(LoggerToken),
   }));
   c.scoped(GetStaffRolesToken, (r) => new GetStaffRoles(new D1AccountReadModel(r.resolve(DatabaseToken))));
   c.scoped(GetCustomerProfileToken, (r) => new GetCustomerProfile(new D1AccountReadModel(r.resolve(DatabaseToken))));

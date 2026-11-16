@@ -23,14 +23,14 @@ export const AREA_OF_PREFIX: Record<string, Exclude<AuditArea, "all" | "other">>
   campaign: "campaigns", coupon: "campaigns", pricing_policy: "campaigns",
   content: "content", showcase: "content", review: "content", review_settings: "content",
   staff: "accounts", role: "accounts", customer: "accounts", account: "accounts", newsletter: "accounts",
-  settings: "settings", captcha: "settings", notification_rule: "settings", ai_integration: "settings", mail_integration: "settings", payment: "settings", bank_account: "settings", shipping_method: "settings", integration: "settings", marketplace: "settings", consent: "settings", tracking_tag: "settings", ai: "catalog",
+  search: "catalog", settings: "settings", captcha: "settings", social_login: "settings", notification_rule: "settings", ai_integration: "settings", mail_integration: "settings", payment: "settings", bank_account: "settings", shipping_method: "settings", integration: "settings", marketplace: "settings", consent: "settings", tracking_tag: "settings", ai: "catalog",
 };
 
 export const areaOf = (action: string): Exclude<AuditArea, "all"> => AREA_OF_PREFIX[action.split(".")[0] ?? ""] ?? "other";
 
 export const ENTITY_LABELS: Record<string, string> = {
   category: "Kategori", brand: "Marka", product: "Ürün", media: "Görsel", order: "Sipariş", campaign: "Kampanya", coupon: "Kupon",
-  content_page: "İçerik sayfası", showcase: "Vitrin", user: "Kullanıcı", role: "Rol", site_settings: "Site ayarları", captcha_settings: "Bot koruması", ai_integration: "AI entegrasyonu", mail_integration: "E-posta (SMTP)",
+  content_page: "İçerik sayfası", showcase: "Vitrin", user: "Kullanıcı", role: "Rol", site_settings: "Site ayarları", search: "Mağaza araması", captcha_settings: "Bot koruması", social_login: "Sosyal giriş", ai_integration: "AI entegrasyonu", mail_integration: "E-posta (SMTP)",
   review: "Ürün yorumu", review_settings: "Yorum ayarları", notification_rule: "Bildirim ayarları", support_conversation: "Canlı destek konuşması", support_settings: "Canlı destek ayarları",
   newsletter_subscriber: "E-bülten abonesi", payment_config: "Ödeme yöntemi", return_request: "İade talebi", invoice: "Fatura", bank_account: "Banka hesabı", shipping_method: "Kargo ücreti", integration: "Entegrasyon", marketplace: "Pazaryeri bağlantısı", pricing_policy: "Kampanya kuralları", bulk_job: "Toplu işlem", attribute: "Özellik", product_feed: "Ürün kaynağı (XML / REST)",
 };
@@ -61,7 +61,7 @@ const ACTION_LABELS: Record<string, string> = {
   "review_settings.update": "Yorum ayarları güncellendi",
   "support.close": "Canlı destek konuşması kapatıldı", "support.reopen": "Canlı destek konuşması yeniden açıldı", "support_settings.update": "Canlı destek ayarları güncellendi", "notification_rule.update": "Bildirim ayarları güncellendi",
   "ai_integration.create": "AI entegrasyonu eklendi", "ai_integration.update": "AI entegrasyonu güncellendi", "ai_integration.delete": "AI entegrasyonu kaldırıldı",
-  "captcha.update": "Bot koruması ayarı güncellendi", "mail_integration.create": "E-posta (SMTP) ayarı eklendi", "mail_integration.update": "E-posta (SMTP) ayarı güncellendi", "mail_integration.delete": "E-posta (SMTP) ayarı kaldırıldı",
+  "search.synonym_add": "Arama eş anlamlısı eklendi", "search.synonym_delete": "Arama eş anlamlısı silindi", "search.reindex": "Arama dizini yeniden kuruldu", "search.term_hide": "Arama terimi popüler listeden gizlendi", "search.term_show": "Arama terimi yeniden gösterildi", "search.term_delete": "Arama terimi sayacı silindi", "captcha.update": "Bot koruması ayarı güncellendi", "social_login.update": "Sosyal giriş ayarı güncellendi", "customer.social_link": "Hesap sosyal girişe bağlandı", "mail_integration.create": "E-posta (SMTP) ayarı eklendi", "mail_integration.update": "E-posta (SMTP) ayarı güncellendi", "mail_integration.delete": "E-posta (SMTP) ayarı kaldırıldı",
   "ai.product_generate": "AI ile ürün içeriği oluşturuldu",
   "payment.iyzico_keys": "iyzico anahtarları güncellendi", "payment.card_activate": "Kartla ödeme açıldı", "payment.card_deactivate": "Kartla ödeme kapatıldı",
   "payment.bank_transfer_activate": "Havale / EFT açıldı", "payment.bank_transfer_deactivate": "Havale / EFT kapatıldı",
@@ -126,6 +126,8 @@ export function entityHref(entityType: string, entityId: string | null, opts: { 
     case "role": return "/admin/kullanicilar/roller";
     case "site_settings": return "/admin/ayarlar";
     case "captcha_settings": return "/admin/ayarlar/bot-korumasi";
+    case "search": return "/admin/arama";
+    case "social_login": return "/admin/ayarlar/sosyal-giris";
     case "support_conversation": return `/admin/canli-destek?konusma=${id}`;
     case "support_settings": return "/admin/canli-destek";
     case "showcase": return "/admin/vitrin";

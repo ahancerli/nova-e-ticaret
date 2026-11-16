@@ -9,7 +9,7 @@ import {
 
 /** Order statuses that prove a purchase (paid and not cancelled / fully refunded). */
 const PURCHASED = "('paid','preparing','shipped','delivered','completed','partially_refunded')";
-const IMAGE = (product: string) => `(SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id
+const IMAGE = (product: string) => `(SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%'
    WHERE pm.product_id = ${product} ORDER BY pm.is_primary DESC, pm.sort_order LIMIT 1)`;
 const VARIANT_LABEL = `(SELECT group_concat(d.label || ': ' || ao.label, ', ') FROM variant_options vo
    JOIN attribute_definitions d ON d.id = vo.attribute_id JOIN attribute_options ao ON ao.id = vo.option_id WHERE vo.variant_id = r.variant_id)`;

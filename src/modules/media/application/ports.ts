@@ -24,8 +24,18 @@ export interface MediaRepository {
   delete(id: string): Promise<boolean>;
 }
 
+/** Inclusive byte positions; `end` omitted = to the end of the object. */
+export interface ByteRange {
+  start: number;
+  end?: number;
+}
+
 export interface StoredObject {
   body: ReadableStream;
+  /** Total size of the object in bytes (not of the returned part). */
+  size?: number;
+  /** Set when a part was returned: the inclusive positions actually served. */
+  range?: { start: number; end: number };
   httpEtag: string;
   writeHttpMetadata(headers: Headers): void;
 }
@@ -34,6 +44,7 @@ export interface StoredObject {
 export interface ObjectStorage {
   readonly available: boolean;
   put(key: string, bytes: Uint8Array, contentType: string, metadata: Record<string, string>): Promise<void>;
-  get(key: string): Promise<StoredObject | null>;
+  /** With `range`, the body holds only that part (clamped to the object); a start past the end yields an empty part. */
+  get(key: string, range?: ByteRange): Promise<StoredObject | null>;
   delete(key: string): Promise<void>;
 }

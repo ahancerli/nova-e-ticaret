@@ -302,7 +302,7 @@ function VariantMatrix({ form, setForm, fe, axisAttrs, onUploadingChange }: { fo
                       <span className="text-xs font-normal text-slate-400">{g.rows.length} varyant · {media.length} görsel</span>
                       {differs ? <AdminBadge tone="amber">varyantlarda farklı</AdminBadge> : null}
                     </p>
-                    <MediaGallery folder="products" compact max={20} items={media} primaryId={media[0]?.mediaId ?? null} onChange={(items) => setMedia(items)} onUploadingChange={onUploadingChange} />
+                    <MediaGallery folder="products" compact max={12} items={media} primaryId={media[0]?.mediaId ?? null} onChange={(items) => setMedia(items)} onUploadingChange={onUploadingChange} />
                   </li>
                 );
               })}
@@ -449,7 +449,7 @@ function VariantRow({ v, index, axes, fe, hideAxis, ownMedia, selected, onSelect
             {ownMedia ? (
               <div>
                 <p className={labelCls}>Bu varyantın görselleri <span className="font-normal text-slate-400">— boşsa ortak galeri gösterilir</span></p>
-                <MediaGallery folder="products" compact max={20} items={v.media} primaryId={v.media[0]?.mediaId ?? null} onChange={(items) => onChange({ media: items })} onUploadingChange={onUploadingChange} />
+                <MediaGallery folder="products" compact max={12} items={v.media} primaryId={v.media[0]?.mediaId ?? null} onChange={(items) => onChange({ media: items })} onUploadingChange={onUploadingChange} />
               </div>
             ) : null}
             {v.barcode.trim() ? <p className="text-xs"><BarcodeHint code={v.barcode} /></p> : null}

@@ -30,6 +30,8 @@ export function proxy(request: NextRequest) {
     "style-src": ["'self'", "'unsafe-inline'"],
     "img-src": ["'self'", "data:", "blob:", "https:"],
     "font-src": ["'self'", "data:"],
+    // product videos from /assets; blob: = the panel's preview of a video while it uploads
+    "media-src": ["'self'", "blob:"],
     "connect-src": ["'self'", ...(isDev ? ["ws:", "wss:"] : []), ...CAPTCHA_CSP, ...(isAdmin ? [] : TRACKING_CSP.connectSrc)],
     "frame-src": isAdmin ? ["'self'", ...CAPTCHA_CSP] : [...CAPTCHA_CSP, ...TRACKING_CSP.frameSrc],
     "object-src": ["'none'"],

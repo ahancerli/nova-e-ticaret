@@ -13,6 +13,12 @@ services:
   scheduler:
     env_file: .env.local
 
+  # lets `npm run dev` use the dockerized search engine: `docker compose up -d meilisearch`, then MEILI_URL=http://localhost:7700
+  # in .env.local (no key locally: development mode, reachable from this machine only)
+  meilisearch:
+    ports:
+      - "127.0.0.1:7700:7700"
+
   # lets `npm run dev` use the dockerized Kafka: INTEGRATION_BUS=kafka KAFKA_REST_URL=http://localhost:8082
   kafka-rest:
     ports:

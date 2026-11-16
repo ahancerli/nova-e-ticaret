@@ -12,6 +12,7 @@ import type { ProductEditorData, ProductMeta } from "@/modules/catalog";
 import { AdminConfirmDialog } from "@/components/admin/AdminConfirmDialog";
 import { AdminBadge } from "@/components/admin/ui";
 import { MediaGallery } from "@/features/media/MediaGallery";
+import { MAX_GALLERY_ITEMS } from "@/modules/media/domain/image";
 import { type FormState, type Errors, fromData, toPayload } from "./editor/form-state";
 import { type SectionId, SECTIONS, SECTION_OF, type Ctx, validate } from "./editor/validation";
 import { SectionShell } from "./editor/fields";
@@ -244,9 +245,9 @@ export function ProductEditor({ initial, meta, canPublish, ai = null }: { initia
         {current.id === "general" && <GeneralSection form={form} patch={patch} fe={fe} canPublish={canPublish} wasPublished={ctx.wasPublished} />}
         {current.id === "relations" && <RelationsSection form={form} patch={patch} fe={fe} meta={meta} />}
         {current.id === "media" && (
-          <SectionShell title="Görseller" desc="Ürün galerisi. Sıralama vitrindeki sırayı belirler." required={form.status === "published"}>
+          <SectionShell title="Görseller ve video" desc="Ürün galerisi: en fazla 12 görsel veya video. Sıralama ürün sayfasındaki sırayı belirler." required={form.status === "published"}>
             <div data-invalid={!!fe("media")}>
-              <MediaGallery folder="products" items={form.media} primaryId={form.primaryMediaId}
+              <MediaGallery folder="products" allowVideo max={MAX_GALLERY_ITEMS} items={form.media} primaryId={form.primaryMediaId}
                 onChange={(media, primaryMediaId) => patch({ media, primaryMediaId })} onUploadingChange={setUploading} error={fe("media")} />
             </div>
           </SectionShell>

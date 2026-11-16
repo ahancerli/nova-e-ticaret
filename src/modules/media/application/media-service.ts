@@ -1,8 +1,8 @@
 import { InternalError, PayloadTooLargeError, UnitOfWork, UnsupportedMediaTypeError, ValidationError, type Database, type IdGenerator, type Logger } from "@/core";
 import type { AuditLog } from "@/modules/audit/audit-log";
 import type { Actor } from "@/modules/shared/actor";
-import { ASSET_PREFIX, MAX_IMAGE_BYTES, STORAGE_KEY_PATTERN, altFromFileName, imageSize, isUploadedKey, sniffImage, type MediaFolder } from "../domain/image";
-import type { MediaRepository, ObjectStorage, StoredObject } from "./ports";
+import { ASSET_PREFIX, MAX_IMAGE_BYTES, MAX_VIDEO_BYTES, STORAGE_KEY_PATTERN, VIDEO_FOLDERS, altFromFileName, imageSize, isUploadedKey, sniffImage, sniffVideo, type MediaFolder } from "../domain/image";
+import type { ByteRange, MediaRepository, ObjectStorage, StoredObject } from "./ports";
 
 export interface UploadedImage {
   id: string;
@@ -14,7 +14,10 @@ export interface UploadedImage {
   height: number | null;
 }
 
-/** Command: stores an uploaded image (object first, then row + audit atomically; object removed if the row fails). */
+/**
+ * Command: stores an uploaded image — or, in folders that allow it (product galleries), a short MP4 video. Object
+ * first, then row + audit atomically; the object is removed if the row fails.
+ */
 export class UploadImage {
   constructor(
     private readonly db: Database,
@@ -27,19 +30,28 @@ export class UploadImage {
   async execute(input: { bytes: Uint8Array; fileName: string; folder: MediaFolder }, actor: Actor): Promise<UploadedImage> {
     const { bytes, folder } = input;
     if (bytes.byteLength === 0) throw ValidationError.field("file", "Dosya boş.", "empty_file");
-    if (bytes.byteLength > MAX_IMAGE_BYTES) {
-      throw new PayloadTooLargeError("file_too_large", "Görsel en fazla 5 MB olabilir.", { fieldErrors: { file: ["Görsel en fazla 5 MB olabilir."] } });
+    const videoAllowed = VIDEO_FOLDERS.includes(folder);
+    // size first: an oversized upload is refused without looking inside it
+    if (bytes.byteLength > Math.max(MAX_IMAGE_BYTES, videoAllowed ? MAX_VIDEO_BYTES : 0)) {
+      const message = `${videoAllowed ? "Dosya" : "Görsel"} en fazla 5 MB olabilir.`;
+      throw new PayloadTooLargeError("file_too_large", message, { fieldErrors: { file: [message] } });
     }
-    const kind = sniffImage(bytes);
+    const kind = sniffImage(bytes) ?? (videoAllowed ? sniffVideo(bytes) : null);
     if (!kind) {
-      throw new UnsupportedMediaTypeError("unsupported_image", "Sadece JPG, PNG, WebP veya AVIF yükleyebilirsiniz.", { fieldErrors: { file: ["Desteklenmeyen dosya türü."] } });
+      const message = videoAllowed ? "Sadece JPG, PNG, WebP, AVIF görsel veya MP4 video yükleyebilirsiniz." : "Sadece JPG, PNG, WebP veya AVIF yükleyebilirsiniz.";
+      throw new UnsupportedMediaTypeError("unsupported_image", message, { fieldErrors: { file: ["Desteklenmeyen dosya türü."] } });
+    }
+    const isVideo = kind.mime.startsWith("video/");
+    if (bytes.byteLength > (isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES)) {
+      const message = `${isVideo ? "Video" : "Görsel"} en fazla 5 MB olabilir.`;
+      throw new PayloadTooLargeError("file_too_large", message, { fieldErrors: { file: [message] } });
     }
     if (!this.storage.available) throw new InternalError("storage_unavailable", "Dosya deposu yapılandırılmamış.");
 
     const id = this.ids.newId();
     const storageKey = `${folder}/${id}.${kind.ext}`;
     const publicUrl = `${ASSET_PREFIX}${storageKey}`;
-    const size = imageSize(bytes, kind.mime);
+    const size = isVideo ? null : imageSize(bytes, kind.mime);
     const sha256 = toHex(await crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>));
 
     await this.storage.put(storageKey, bytes, kind.mime, { mediaId: id });
@@ -99,9 +111,10 @@ export class MediaLibraryService implements MediaLibrary {
 export class ReadAsset {
   constructor(private readonly storage: ObjectStorage) {}
 
-  async execute(key: string): Promise<StoredObject | null> {
+  /** `range` = the part a video player asked for (HTTP Range); the storage clamps it to the object. */
+  async execute(key: string, range?: ByteRange): Promise<StoredObject | null> {
     if (!STORAGE_KEY_PATTERN.test(key) || !this.storage.available) return null;
-    return this.storage.get(key);
+    return this.storage.get(key, range);
   }
 }
 
