@@ -2,7 +2,8 @@ import { ClockToken, ConfigToken, DatabaseToken, token, type Container, type Res
 import { AuditLogToken } from "@/modules/audit/audit-log";
 import { MediaLibraryToken } from "@/modules/media";
 import { GenerateProductContent, GetAiIntegration, ListAiModels, RemoveAiIntegration, SaveAiIntegration, TestAiIntegration, type AiDeps } from "./application/ai-use-cases";
-import type { AiClientFactory, AiIntegrationRepository, AiModelRepository } from "./application/ports";
+import { ProviderAiChat } from "./application/ai-chat";
+import type { AiChat, AiClientFactory, AiIntegrationRepository, AiModelRepository } from "./application/ports";
 import { httpAiClients } from "./infrastructure/ai-clients";
 import { D1AiIntegrationRepository } from "./infrastructure/d1-ai-integration.repository";
 import { D1AiModelRepository } from "./infrastructure/d1-ai-model.repository";
@@ -11,6 +12,8 @@ export const AiIntegrationRepositoryToken = token<AiIntegrationRepository>("AiIn
 export const AiModelRepositoryToken = token<AiModelRepository>("AiModelRepository");
 /** Provider HTTP clients; tests replace this token with a fake. */
 export const AiClientFactoryToken = token<AiClientFactory>("AiClientFactory");
+/** Tool-use conversations with the configured provider, for other modules. */
+export const AiChatToken = token<AiChat>("AiChat");
 export const GetAiIntegrationToken = token<GetAiIntegration>("GetAiIntegration");
 export const ListAiModelsToken = token<ListAiModels>("ListAiModels");
 export const SaveAiIntegrationToken = token<SaveAiIntegration>("SaveAiIntegration");
@@ -26,6 +29,7 @@ export function registerAi(c: Container): void {
   c.singleton(AiClientFactoryToken, () => httpAiClients());
   c.scoped(AiIntegrationRepositoryToken, (r) => new D1AiIntegrationRepository(r.resolve(DatabaseToken)));
   c.scoped(AiModelRepositoryToken, (r) => new D1AiModelRepository(r.resolve(DatabaseToken)));
+  c.scoped(AiChatToken, (r) => new ProviderAiChat(deps(r)));
   c.scoped(GetAiIntegrationToken, (r) => new GetAiIntegration(r.resolve(AiIntegrationRepositoryToken)));
   c.scoped(ListAiModelsToken, (r) => new ListAiModels(r.resolve(AiModelRepositoryToken)));
   c.scoped(SaveAiIntegrationToken, (r) => new SaveAiIntegration(deps(r)));

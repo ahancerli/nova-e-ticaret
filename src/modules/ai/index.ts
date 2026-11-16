@@ -2,6 +2,7 @@
 export * from "./domain/providers";
 export { extractJsonObject, parseProductDraft } from "./domain/product-draft";
 export { aiIntegrationDeleteSchema, aiIntegrationSchema, aiProductGenerateSchema } from "./http/schemas";
+export type { AiChat, AiChatMessage, AiChatTurn, AiToolCall, AiToolDef } from "./application/ports";
 export {
-  AiClientFactoryToken, GenerateProductContentToken, GetAiIntegrationToken, ListAiModelsToken, RemoveAiIntegrationToken, SaveAiIntegrationToken, TestAiIntegrationToken, registerAi,
+  AiChatToken, AiClientFactoryToken, GenerateProductContentToken, GetAiIntegrationToken, ListAiModelsToken, RemoveAiIntegrationToken, SaveAiIntegrationToken, TestAiIntegrationToken, registerAi,
 } from "./module";

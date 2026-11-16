@@ -1,0 +1,12 @@
+{
+  "object": "instagram",
+  "entry": [{
+    "id": "17841400008460056",
+    "time": 1794819700123,
+    "changes": [
+      { "field": "messages", "value": { "sender": { "id": "1234567890123456" }, "recipient": { "id": "17841400008460056" }, "timestamp": "1794819700000", "message": { "mid": "aWdfZAG1faXRlbToxOk1TRzAwMDI", "text": "Bu ürün stokta var mı?" } } },
+      { "field": "messages", "value": { "sender": { "id": "17841400008460056" }, "recipient": { "id": "1234567890123456" }, "timestamp": "1794819701000", "message": { "mid": "aWdfZAG1faXRlbToxOkVDSE8wMDI", "text": "Evet", "is_echo": true } } },
+      { "field": "comments", "value": { "id": "180000000001", "text": "yorum" } }
+    ]
+  }]
+}

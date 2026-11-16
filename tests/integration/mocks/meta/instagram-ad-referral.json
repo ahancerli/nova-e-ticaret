@@ -1,0 +1,14 @@
+{
+  "object": "instagram",
+  "entry": [{
+    "id": "17841400008460056",
+    "time": 1794819700123,
+    "messaging": [{
+      "sender": { "id": "2222333344445555" }, "recipient": { "id": "17841400008460056" }, "timestamp": 1794819700000,
+      "message": {
+        "mid": "aWdfZAG1faXRlbToxOkFEMDAwMQ", "text": "Bu hoparlörden var mı?",
+        "referral": { "ref": "kis-kampanyasi", "ad_id": "6501234567890", "source": "ADS", "type": "OPEN_THREAD", "ads_context_data": { "ad_title": "Mini Kablosuz Hoparlör", "photo_url": "https://scontent.example/ig-ad.jpg" } }
+      }
+    }]
+  }]
+}

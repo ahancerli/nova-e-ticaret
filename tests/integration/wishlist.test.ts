@@ -43,7 +43,9 @@ const ids = (userId: string) => resolve(wishlist.GetWishlistProductIdsToken).exe
 const lists = (userId: string) => q1("SELECT COUNT(*) AS n FROM wishlists WHERE user_id = ?", userId).n;
 const later = () => clock.advanceMinutes(1);
 
-// seed: u_customer already has "Favorilerim" with p_speaker; u_cust_2 has no list
+// seed: u_customer already has "Favorilerim" with p_speaker; u_cust_2 has no list. Seed rows are stamped with the real
+// time; pin them before the fixed test clock so "last added first" does not depend on the hour the suite runs.
+run("UPDATE wishlist_items SET created_at = '2026-11-16T09:00:00.000Z'");
 await t("first heart creates the single list; adding again is a no-op; order = last added first", async () => {
   assert(lists("u_cust_2") === 0, "no list yet");
   const a = await add("u_cust_2", "p_pan");
@@ -93,7 +95,8 @@ await t("Hesabım list: cards of published products in list order; unpublished c
 await t("limit: MAX_WISHLIST_ITEMS products per customer", async () => {
   await add("u_cust_3", "p_pan");
   const list = q1("SELECT id FROM wishlists WHERE user_id = 'u_cust_3'").id;
-  const insert = d1.raw.prepare("INSERT INTO wishlist_items (wishlist_id, product_id) SELECT ?, id FROM products WHERE id <> 'p_pan' LIMIT ?");
+  // p_knit stays off the filler: it is the product added past the cap below (one already saved would be a no-op)
+  const insert = d1.raw.prepare("INSERT INTO wishlist_items (wishlist_id, product_id) SELECT ?, id FROM products WHERE id NOT IN ('p_pan', 'p_knit') LIMIT ?");
   insert.run(list, wishlist.MAX_WISHLIST_ITEMS - 1);
   const have = (await ids("u_cust_3")).length;
   if (have < wishlist.MAX_WISHLIST_ITEMS) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ClientApiError } from "@/lib/api-client";
 import { notify } from "@/lib/toast";
@@ -37,6 +37,7 @@ export function WishlistProvider({ signedIn, initialIds, children }: { signedIn:
   });
 
   const signIn = useCallback(() => router.push(`/giris?next=${encodeURIComponent(pathname)}`), [pathname, router]);
+  const latestToggle = useRef<((product: { id: string; name: string }, wantOn?: boolean) => Promise<void>) | null>(null);
 
   const toggle = useCallback(async (product: { id: string; name: string }, wantOn?: boolean) => {
     if (!signedIn) {
@@ -51,7 +52,8 @@ export function WishlistProvider({ signedIn, initialIds, children }: { signedIn:
       const r = on ? await wishlistApi.add(product.id) : await wishlistApi.remove(product.id);
       set(product.id, r.saved);
       if (on) notify.success("Favorilere eklendi", { id: `wl-${product.id}`, description: product.name, action: { label: "Favorilerim", onClick: () => router.push(WISHLIST_HREF) } });
-      else notify.success("Favorilerden çıkarıldı", { id: `wl-${product.id}`, description: product.name, action: { label: "Geri al", onClick: () => void toggle(product, true) } });
+      // The toast outlives this render: undo calls the latest toggle through the ref, not this closure.
+      else notify.success("Favorilerden çıkarıldı", { id: `wl-${product.id}`, description: product.name, action: { label: "Geri al", onClick: () => void latestToggle.current?.(product, true) } });
     } catch (err) {
       set(product.id, !on);
       if (err instanceof ClientApiError && err.isUnauthorized) signIn();
@@ -60,6 +62,7 @@ export function WishlistProvider({ signedIn, initialIds, children }: { signedIn:
       pending.current.delete(product.id);
     }
   }, [ids, router, signIn, signedIn]);
+  useEffect(() => { latestToggle.current = toggle; }, [toggle]);
 
   const value = useMemo<WishlistContext>(() => ({
     signedIn, count: ids.size, has: (id) => ids.has(id), toggle: (p) => void toggle(p),

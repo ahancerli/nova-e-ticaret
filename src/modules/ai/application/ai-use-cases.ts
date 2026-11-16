@@ -32,7 +32,7 @@ const viewOf = (s: StoredAiIntegration): AiIntegrationView => ({
 });
 
 /** The active integration with its decrypted key (server only). */
-async function unlock(deps: AiDeps): Promise<{ stored: StoredAiIntegration; apiKey: string }> {
+export async function unlock(deps: AiDeps): Promise<{ stored: StoredAiIntegration; apiKey: string }> {
   const stored = await deps.repo.find();
   if (!stored) throw AiErrors.notConfigured();
   if (!deps.masterKey) throw AiErrors.masterKeyMissing();

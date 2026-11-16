@@ -30,6 +30,8 @@ export const PERMISSION_GROUPS: { key: string; label: string; permissions: Permi
       { code: "content.write", label: "İçerik yönetimi", description: "Yasal metinler, kurumsal ve yardım sayfaları." },
       { code: "reviews.moderate", label: "Ürün yorumları ve soruları", description: "Yorumları yayınlama / reddetme, mağaza yanıtı, müşteriyle iletişim, yorum ayarları; ürün sorularını yanıtlama." },
       { code: "support.chat", label: "Canlı destek", description: "Üyelerin canlı destek mesajlarını görme ve yanıtlama, konuşma kapatma." },
+      { code: "social_ai.manage", label: "Social AI Marketing yönetimi", description: "WhatsApp / Instagram bağlantıları, bot ayarları ve reklam eşlemeleri." },
+      { code: "social_ai.chat", label: "Social AI Marketing konuşmaları", description: "WhatsApp ve Instagram konuşmalarını görme, devredilen konuşmayı yanıtlama.", sensitive: true },
     ],
   },
   {

@@ -62,6 +62,7 @@ import { registerSettings } from "@/modules/settings";
 import { registerShipping, registerShippingRates } from "@/modules/shipping";
 import { registerShowcase } from "@/modules/showcase";
 import { registerSocialLogin } from "@/modules/social-login";
+import { registerSocialAi } from "@/modules/social-ai";
 import { registerSupport } from "@/modules/support";
 import { registerStaff } from "@/modules/staff";
 import { registerStorefront } from "@/modules/storefront";
@@ -118,6 +119,7 @@ registerIys(container); // İYS: marketing consents (e-mail / SMS) registered at
 registerRecentlyViewed(container); // Son gezilenler: recent_views per member / guest cookie, only with functional cookie consent
 registerNewsletter(container); // E-bülten: footer sign-up with double opt-in e-mail (MailSender), unsubscribe links, panel list
 registerSupport(container); // Canlı destek: member ↔ staff chat, live events via GraphQL subscription over SSE (in-process hub)
+registerSocialAi(container); // Social AI Marketing: AI answers on WhatsApp / Instagram (channel adapters, Meta webhook, tool-use bot on AiChat)
 registerPricing(container);
 registerCampaigns(container);
 registerBulk(container);

@@ -23,7 +23,7 @@ export const AREA_OF_PREFIX: Record<string, Exclude<AuditArea, "all" | "other">>
   campaign: "campaigns", coupon: "campaigns", pricing_policy: "campaigns",
   content: "content", showcase: "content", review: "content", review_settings: "content", question: "content", size_chart: "catalog", delivery_settings: "settings", iys: "settings",
   staff: "accounts", role: "accounts", customer: "accounts", account: "accounts", newsletter: "accounts",
-  search: "catalog", settings: "settings", captcha: "settings", social_login: "settings", notification_rule: "settings", ai_integration: "settings", mail_integration: "settings", payment: "settings", bank_account: "settings", shipping_method: "settings", integration: "settings", marketplace: "settings", consent: "settings", tracking_tag: "settings", ai: "catalog",
+  search: "catalog", settings: "settings", captcha: "settings", social_login: "settings", notification_rule: "settings", ai_integration: "settings", social_ai: "settings", mail_integration: "settings", payment: "settings", bank_account: "settings", shipping_method: "settings", integration: "settings", marketplace: "settings", consent: "settings", tracking_tag: "settings", ai: "catalog",
 };
 
 export const areaOf = (action: string): Exclude<AuditArea, "all"> => AREA_OF_PREFIX[action.split(".")[0] ?? ""] ?? "other";
@@ -31,7 +31,7 @@ export const areaOf = (action: string): Exclude<AuditArea, "all"> => AREA_OF_PRE
 export const ENTITY_LABELS: Record<string, string> = {
   category: "Kategori", brand: "Marka", product: "Ürün", media: "Görsel", order: "Sipariş", campaign: "Kampanya", coupon: "Kupon",
   content_page: "İçerik sayfası", showcase: "Vitrin", user: "Kullanıcı", role: "Rol", site_settings: "Site ayarları", search: "Mağaza araması", captcha_settings: "Bot koruması", social_login: "Sosyal giriş", ai_integration: "AI entegrasyonu", mail_integration: "E-posta (SMTP)",
-  review: "Ürün yorumu", review_settings: "Yorum ayarları", product_question: "Ürün sorusu", size_chart: "Beden tablosu", delivery_settings: "Teslim tahmini", iys_settings: "İYS bağlantısı", notification_rule: "Bildirim ayarları", support_conversation: "Canlı destek konuşması", support_settings: "Canlı destek ayarları",
+  review: "Ürün yorumu", review_settings: "Yorum ayarları", product_question: "Ürün sorusu", size_chart: "Beden tablosu", delivery_settings: "Teslim tahmini", iys_settings: "İYS bağlantısı", notification_rule: "Bildirim ayarları", support_conversation: "Canlı destek konuşması", support_settings: "Canlı destek ayarları", social_ai_channel: "Social AI kanalı", social_ai_settings: "Social AI bot ayarları", social_ai_conversation: "Social AI konuşması", social_ai_referral: "Social AI reklam eşlemesi",
   newsletter_subscriber: "E-bülten abonesi", payment_config: "Ödeme yöntemi", return_request: "İade talebi", invoice: "Fatura", bank_account: "Banka hesabı", shipping_method: "Kargo ücreti", integration: "Entegrasyon", marketplace: "Pazaryeri bağlantısı", pricing_policy: "Kampanya kuralları", bulk_job: "Toplu işlem", attribute: "Özellik", product_feed: "Ürün kaynağı (XML / REST)",
 };
 
@@ -66,6 +66,11 @@ const ACTION_LABELS: Record<string, string> = {
   "ai_integration.create": "AI entegrasyonu eklendi", "ai_integration.update": "AI entegrasyonu güncellendi", "ai_integration.delete": "AI entegrasyonu kaldırıldı",
   "search.synonym_add": "Arama eş anlamlısı eklendi", "search.synonym_delete": "Arama eş anlamlısı silindi", "search.reindex": "Arama dizini yeniden kuruldu", "search.term_hide": "Arama terimi popüler listeden gizlendi", "search.term_show": "Arama terimi yeniden gösterildi", "search.term_delete": "Arama terimi sayacı silindi", "captcha.update": "Bot koruması ayarı güncellendi", "social_login.update": "Sosyal giriş ayarı güncellendi", "customer.social_link": "Hesap sosyal girişe bağlandı", "mail_integration.create": "E-posta (SMTP) ayarı eklendi", "mail_integration.update": "E-posta (SMTP) ayarı güncellendi", "mail_integration.delete": "E-posta (SMTP) ayarı kaldırıldı",
   "ai.product_generate": "AI ile ürün içeriği oluşturuldu",
+  "social_ai.app_update": "Social AI: Meta uygulama bilgileri güncellendi", "social_ai.channel_connect": "Social AI: kanal bağlandı", "social_ai.channel_disconnect": "Social AI: kanal bağlantısı kesildi",
+  "social_ai.channel_update": "Social AI: kanal ayarı değişti", "social_ai.settings_update": "Social AI: bot ayarları güncellendi",
+  "social_ai.referral_create": "Social AI: reklam eşlemesi eklendi", "social_ai.referral_update": "Social AI: reklam eşlemesi güncellendi", "social_ai.referral_delete": "Social AI: reklam eşlemesi silindi",
+  "social_ai.handoff": "Social AI: konuşma personele alındı", "social_ai.resume_bot": "Social AI: konuşma bota geri verildi", "social_ai.close": "Social AI: konuşma kapatıldı",
+  "social_ai.staff_reply": "Social AI: personel yanıtı gönderildi", "social_ai.retention": "Social AI: 30 günden eski konuşma kayıtları silindi",
   "payment.iyzico_keys": "iyzico anahtarları güncellendi", "payment.card_activate": "Kartla ödeme açıldı", "payment.card_deactivate": "Kartla ödeme kapatıldı",
   "payment.bank_transfer_activate": "Havale / EFT açıldı", "payment.bank_transfer_deactivate": "Havale / EFT kapatıldı",
   "payment.cod_update": "Kapıda ödeme ayarları güncellendi",

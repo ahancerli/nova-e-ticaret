@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { CAPTCHA_CSP } from "@/modules/captcha/domain/captcha";
+import { META_SDK_CSP } from "@/modules/social-ai/domain/social-ai";
 import { TRACKING_CSP } from "@/modules/consent/domain/tags";
 
 /**
@@ -24,6 +25,7 @@ export function proxy(request: NextRequest) {
   // storefront pages can only be framed by this origin (clickjacking from other sites stays blocked).
   const isAdmin = request.nextUrl.pathname.startsWith("/admin");
 
+  // Admin also allows Meta's hosts: Social AI Marketing › WhatsApp opens Embedded Signup through the Facebook JS SDK.
   const directives: Record<string, string[]> = {
     "default-src": ["'self'"],
     "script-src": ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'", ...(isDev ? ["'unsafe-eval'"] : [])],
@@ -32,8 +34,8 @@ export function proxy(request: NextRequest) {
     "font-src": ["'self'", "data:"],
     // product videos from /assets; blob: = the panel's preview of a video while it uploads
     "media-src": ["'self'", "blob:"],
-    "connect-src": ["'self'", ...(isDev ? ["ws:", "wss:"] : []), ...CAPTCHA_CSP, ...(isAdmin ? [] : TRACKING_CSP.connectSrc)],
-    "frame-src": isAdmin ? ["'self'", ...CAPTCHA_CSP] : [...CAPTCHA_CSP, ...TRACKING_CSP.frameSrc],
+    "connect-src": ["'self'", ...(isDev ? ["ws:", "wss:"] : []), ...CAPTCHA_CSP, ...(isAdmin ? META_SDK_CSP.connectSrc : TRACKING_CSP.connectSrc)],
+    "frame-src": isAdmin ? ["'self'", ...CAPTCHA_CSP, ...META_SDK_CSP.frameSrc] : [...CAPTCHA_CSP, ...TRACKING_CSP.frameSrc],
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],

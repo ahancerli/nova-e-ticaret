@@ -1,5 +1,5 @@
 import type { AppError } from "@/core";
-import type { AiClientFactory, AiModelInfo, AiRequest, AiTextClient } from "../application/ports";
+import type { AiChatRequest, AiChatTurn, AiClientFactory, AiModelInfo, AiRequest, AiTextClient, AiToolCall } from "../application/ports";
 import { AiErrors } from "../domain/errors";
 import type { AiProvider } from "../domain/providers";
 
@@ -104,6 +104,21 @@ function answerText(text: string, finish: { blocked: boolean; truncated: boolean
 }
 
 const day = (v: unknown) => str(v)?.slice(0, 10) ?? null;
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const obj = (v: unknown): Obj => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : {});
+
+/** Tool arguments arrive as a JSON string (OpenAI) or an object; anything else counts as "no arguments". */
+function toolInput(v: unknown): Obj {
+  if (typeof v !== "string") return obj(v);
+  try { return obj(JSON.parse(v)); } catch { return {}; }
+}
+
+/** Shared ending of `converse`: a turn must carry text or tool calls. */
+function chatTurn(turn: AiChatTurn, finish: { blocked: boolean; truncated: boolean; reason?: unknown }): AiChatTurn {
+  if (finish.blocked) throw AiErrors.contentBlocked({ reason: finish.reason });
+  if (!turn.toolCalls.length && !turn.text.trim()) throw finish.truncated ? AiErrors.outputTruncated({ reason: finish.reason }) : AiErrors.badOutput();
+  return turn;
+}
 
 /** OpenAI Chat Completions: system + user message with image_url data URLs, JSON mode. */
 export class OpenAiClient implements AiTextClient {
@@ -129,6 +144,37 @@ export class OpenAiClient implements AiTextClient {
     const message = choice?.message as Obj | undefined;
     const reason = choice?.finish_reason;
     return answerText(str(message?.content) ?? "", { blocked: !!str(message?.refusal) || reason === "content_filter", truncated: reason === "length", reason }, req.json);
+  }
+
+  /** Chat Completions function calling: `tools[].function`, assistant `tool_calls`, one `role: tool` message per result. */
+  async converse(req: AiChatRequest): Promise<AiChatTurn> {
+    const messages: Obj[] = [{ role: "system", content: req.system }];
+    for (const m of req.messages) {
+      if (m.role === "user") messages.push({ role: "user", content: m.text });
+      else if (m.role === "assistant") {
+        messages.push({
+          role: "assistant", content: m.text || null,
+          ...(m.toolCalls?.length ? { tool_calls: m.toolCalls.map((c) => ({ id: c.id, type: "function", function: { name: c.name, arguments: JSON.stringify(c.input) } })) } : {}),
+        });
+      } else for (const r of m.results) messages.push({ role: "tool", tool_call_id: r.id, content: r.output });
+    }
+    const out = await call(this.fetchFn, "POST", "https://api.openai.com/v1/chat/completions", { authorization: `Bearer ${req.apiKey}` }, {
+      model: req.model, max_completion_tokens: req.maxTokens, messages,
+      ...(req.tools.length ? { tools: req.tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } })) } : {}),
+    }, { delays: this.delays, timeoutMs: GENERATE_TIMEOUT_MS });
+    const choice = arr(out.choices)[0];
+    const message = obj(choice?.message);
+    const reason = choice?.finish_reason;
+    const toolCalls: AiToolCall[] = arr(message.tool_calls).flatMap((c, i) => {
+      const fn = obj(c.function);
+      const name = str(fn.name);
+      return name ? [{ id: str(c.id) ?? `call_${i}`, name, input: toolInput(fn.arguments) }] : [];
+    });
+    const usage = obj(out.usage);
+    return chatTurn(
+      { text: str(message.content) ?? "", toolCalls, usage: { inputTokens: num(usage.prompt_tokens), outputTokens: num(usage.completion_tokens) }, raw: null },
+      { blocked: !!str(message.refusal) || reason === "content_filter", truncated: reason === "length", reason },
+    );
   }
 
   async checkModel(apiKey: string, model: string): Promise<AiModelInfo> {
@@ -163,6 +209,48 @@ export class GeminiClient implements AiTextClient {
     return answerText(text, { blocked: !!blockReason || GEMINI_BLOCKED.includes(String(reason)), truncated: reason === "MAX_TOKENS", reason }, req.json);
   }
 
+  /**
+   * Function calling: `tools[].functionDeclarations`, model `functionCall` parts, `functionResponse` parts back. The
+   * model's parts are replayed untouched inside one tool loop (thinking models attach a thought signature to them).
+   */
+  async converse(req: AiChatRequest): Promise<AiChatTurn> {
+    const contents: Obj[] = [];
+    for (const m of req.messages) {
+      if (m.role === "user") contents.push({ role: "user", parts: [{ text: m.text }] });
+      else if (m.role === "assistant") {
+        const parts = Array.isArray(m.raw) ? m.raw : [
+          ...(m.text ? [{ text: m.text }] : []),
+          ...(m.toolCalls ?? []).map((c) => ({ functionCall: { name: c.name, args: c.input } })),
+        ];
+        if (parts.length) contents.push({ role: "model", parts });
+      } else contents.push({ role: "user", parts: m.results.map((r) => ({ functionResponse: { name: r.name, response: { result: r.output } } })) });
+    }
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel(req.model)}:generateContent`;
+    const out = await call(this.fetchFn, "POST", url, { "x-goog-api-key": req.apiKey }, {
+      systemInstruction: { parts: [{ text: req.system }] },
+      contents,
+      ...(req.tools.length ? { tools: [{ functionDeclarations: req.tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })) }] } : {}),
+      generationConfig: { maxOutputTokens: req.maxTokens },
+    }, { delays: this.delays, timeoutMs: GENERATE_TIMEOUT_MS });
+    const blockReason = obj(out.promptFeedback).blockReason;
+    const candidate = arr(out.candidates)[0];
+    const reason = blockReason ?? candidate?.finishReason;
+    const parts = arr(obj(candidate?.content).parts);
+    const toolCalls: AiToolCall[] = parts.flatMap((p, i) => {
+      const fc = obj(p.functionCall);
+      const name = str(fc.name);
+      return name ? [{ id: str(fc.id) ?? `call_${i}`, name, input: obj(fc.args) }] : [];
+    });
+    const usage = obj(out.usageMetadata);
+    return chatTurn(
+      {
+        text: parts.map((p) => (p.thought === true ? "" : str(p.text) ?? "")).join(""), toolCalls,
+        usage: { inputTokens: num(usage.promptTokenCount), outputTokens: num(usage.candidatesTokenCount) + num(usage.thoughtsTokenCount) }, raw: parts,
+      },
+      { blocked: !!blockReason || GEMINI_BLOCKED.includes(String(reason)), truncated: reason === "MAX_TOKENS", reason },
+    );
+  }
+
   async checkModel(apiKey: string, model: string): Promise<AiModelInfo> {
     const out = await call(this.fetchFn, "GET", `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel(model)}`, { "x-goog-api-key": apiKey }, undefined,
       { delays: [], timeoutMs: CHECK_TIMEOUT_MS });
@@ -195,6 +283,44 @@ export class AnthropicClient implements AiTextClient {
     const text = arr(out.content).filter((b) => b.type === "text").map((b) => str(b.text) ?? "").join("");
     const reason = out.stop_reason;
     return answerText(text, { blocked: reason === "refusal", truncated: reason === "max_tokens", reason }, req.json);
+  }
+
+  /**
+   * Tool use: `tools[].input_schema`, `tool_use` blocks, all `tool_result` blocks of a turn in ONE user message. The
+   * assistant content of the running loop is sent back unchanged — thinking blocks must not be edited or dropped.
+   */
+  async converse(req: AiChatRequest): Promise<AiChatTurn> {
+    const messages: Obj[] = [];
+    for (const m of req.messages) {
+      if (m.role === "user") messages.push({ role: "user", content: m.text });
+      else if (m.role === "assistant") {
+        const content = Array.isArray(m.raw) ? m.raw : [
+          ...(m.text ? [{ type: "text", text: m.text }] : []),
+          ...(m.toolCalls ?? []).map((c) => ({ type: "tool_use", id: c.id, name: c.name, input: c.input })),
+        ];
+        if (content.length) messages.push({ role: "assistant", content });
+      } else {
+        messages.push({ role: "user", content: m.results.map((r) => ({ type: "tool_result", tool_use_id: r.id, content: r.output, ...(r.isError ? { is_error: true } : {}) })) });
+      }
+    }
+    const out = await call(this.fetchFn, "POST", "https://api.anthropic.com/v1/messages", ANTHROPIC_HEADERS(req.apiKey), {
+      model: req.model, max_tokens: req.maxTokens, system: req.system, messages,
+      ...(req.tools.length ? { tools: req.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })) } : {}),
+    }, { delays: this.delays, timeoutMs: GENERATE_TIMEOUT_MS });
+    const content = arr(out.content);
+    const toolCalls: AiToolCall[] = content.flatMap((b) => {
+      const id = str(b.id), name = str(b.name);
+      return b.type === "tool_use" && id && name ? [{ id, name, input: obj(b.input) }] : [];
+    });
+    const reason = out.stop_reason;
+    const usage = obj(out.usage);
+    return chatTurn(
+      {
+        text: content.filter((b) => b.type === "text").map((b) => str(b.text) ?? "").join(""), toolCalls,
+        usage: { inputTokens: num(usage.input_tokens) + num(usage.cache_read_input_tokens) + num(usage.cache_creation_input_tokens), outputTokens: num(usage.output_tokens) }, raw: content,
+      },
+      { blocked: reason === "refusal", truncated: reason === "max_tokens", reason },
+    );
   }
 
   async checkModel(apiKey: string, model: string): Promise<AiModelInfo> {

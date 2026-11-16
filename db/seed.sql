@@ -33,7 +33,9 @@ INSERT OR IGNORE INTO permissions (id, code, description) VALUES
  ('perm_15','content.write','İçerik yönetimi: yasal metinler, kurumsal ve yardım sayfaları'),
  ('perm_16','customers.write','Müşteri hesabı düzenleme, askıya alma, şifre sıfırlama bağlantısı'),
  ('perm_17','reviews.moderate','Ürün yorumlarını onaylama, yanıtlama, müşteriyle iletişim'),
- ('perm_18','support.chat','Canlı destek konuşmalarını yanıtlama');
+ ('perm_18','support.chat','Canlı destek konuşmalarını yanıtlama'),
+ ('perm_19','social_ai.manage','Social AI Marketing kanal bağlantıları ve bot ayarları'),
+ ('perm_20','social_ai.chat','Social AI Marketing konuşmalarını görme ve yanıtlama');
 
 INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES
  ('role_catalog','perm_01'),('role_catalog','perm_02'),('role_catalog','perm_07'),

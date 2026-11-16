@@ -32,6 +32,14 @@ export const NOTIFICATION_TYPES = {
     label: "Yeni canlı destek konuşması", description: "Bir üye canlı destekten yazdı; ilk yanıt verilince bildirim kalkar.",
     permission: "support.chat", severity: "info", defaults: { inApp: true, email: false },
   },
+  "social_ai.handoff": {
+    label: "Sosyal medya konuşması devredildi", description: "WhatsApp veya Instagram'da bot bir konuşmayı personele devretti; Konuşmalar ekranından yanıtlayın.",
+    permission: "social_ai.chat", severity: "warning", defaults: { inApp: true, email: false },
+  },
+  "social_ai.channel_error": {
+    label: "Sosyal medya bağlantı sorunu", description: "WhatsApp veya Instagram bağlantısı koptu ya da erişim anahtarı yenilenemedi; kanalı yeniden bağlayın.",
+    permission: "social_ai.manage", severity: "danger", defaults: { inApp: true, email: true },
+  },
   "order.placed": {
     label: "Yeni sipariş", description: "Mağazadan veya pazaryerinden yeni bir sipariş oluşturuldu.",
     permission: "orders.read", severity: "success", defaults: { inApp: true, email: false },

@@ -18,6 +18,7 @@ const HEARTBEAT_EVERY_MS = 300_000
 
 /** path → interval in seconds (README §2 "Zamanlanmış işler"). */
 const JOBS = [
+	{ path: "/api/cron/social-ai", every: 20 },
 	{ path: "/api/cron/outbox", every: 60 },
 	{ path: "/api/cron/integrations", every: 60 },
 	{ path: "/api/cron/search-sync", every: 60 },
@@ -27,6 +28,7 @@ const JOBS = [
 	{ path: "/api/cron/product-alerts", every: 300 },
 	{ path: "/api/cron/feeds-sync", every: 900 },
 	{ path: "/api/cron/shipping-sync", every: 1200 },
+	{ path: "/api/cron/social-ai-daily", every: 86400 },
 ]
 
 const log = (level, msg, extra = {}) =>

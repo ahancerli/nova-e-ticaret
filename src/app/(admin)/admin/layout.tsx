@@ -40,6 +40,17 @@ const NAV: Array<{ title: string; items: NavEntry[] }> = [
       { type: "link", href: "/admin/yorumlar", label: "Ürün yorumları", perm: "reviews.moderate", icon: "reviews" },
       { type: "link", href: "/admin/sorular", label: "Ürün soruları", perm: "reviews.moderate", icon: "reviews" },
       { type: "link", href: "/admin/canli-destek", label: "Canlı destek", perm: "support.chat", icon: "support" },
+      {
+        type: "nest",
+        label: "Social AI Marketing",
+        icon: "social",
+        children: [
+          { type: "link", href: "/admin/social-ai/whatsapp", label: "WhatsApp", perm: "social_ai.manage", icon: "social" },
+          { type: "link", href: "/admin/social-ai/instagram", label: "Instagram", perm: "social_ai.manage", icon: "social" },
+          { type: "link", href: "/admin/social-ai/konusmalar", label: "Konuşmalar", perm: "social_ai.chat", icon: "social" },
+          { type: "link", href: "/admin/social-ai/bot-ayarlari", label: "Bot ayarları", perm: "social_ai.manage", icon: "social" },
+        ],
+      },
       { type: "link", href: "/admin/bildirimler", label: "Bildirimler", icon: "notifications" },
     ],
   },

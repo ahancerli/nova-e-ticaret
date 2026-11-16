@@ -1,0 +1,21 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [{
+    "id": "102290129340398",
+    "changes": [{
+      "field": "messages",
+      "value": {
+        "messaging_product": "whatsapp",
+        "metadata": { "display_phone_number": "905550001122", "phone_number_id": "106540352242922" },
+        "contacts": [{ "profile": { "name": "Mehmet Demir" }, "wa_id": "905339876543" }],
+        "messages": [{
+          "from": "905339876543", "id": "wamid.AD0001", "timestamp": "1794819660", "type": "text", "text": { "body": "Bu ürünün fiyatı nedir?" },
+          "referral": {
+            "source_url": "https://fb.me/3cr4Wqqkv", "source_id": "120208964364990113", "source_type": "ad", "body": "Kış geldi, trikolar hazır",
+            "headline": "Yarım Balıkçı Yaka Triko", "media_type": "image", "image_url": "https://scontent.example/ad.jpg", "ctwa_clid": "Aff-n8ZTODiE79d22KtAwQKj9e_mIEOOj27vDVwFjN80dp4"
+          }
+        }]
+      }
+    }]
+  }]
+}

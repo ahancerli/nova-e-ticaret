@@ -70,11 +70,11 @@ def setup_checkout(c, cid="co_1", cart="cart_1"):
 
 
 # --- structure ---------------------------------------------------------------
-@test("01 162 tables exist")
+@test("01 169 tables exist")
 def _():
     c = new_db()
     n = c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()[0]
-    assert n == 162, n
+    assert n == 169, n
 
 
 @test("02 all tables are STRICT")
@@ -773,6 +773,49 @@ def _():
     expect_error(c, "INSERT INTO support_messages (id, conversation_id, seq, sender, body, client_id) VALUES ('sm4', 'sc1', 2, 'bot', 'x', 'client-0004')", contains="CHECK")
     c.execute("UPDATE support_conversations SET status = 'closed' WHERE id = 'sc1'")
     c.execute("INSERT INTO support_conversations (id, customer_id) VALUES ('sc2', ?)", (cust,))
+
+
+@test("63 migration 2026-11-16 gives a database without the social ai tables exactly the schema's objects and rows")
+def _():
+    names = "SELECT name, sql FROM sqlite_master WHERE name LIKE '%social_ai%' ORDER BY name"
+    fresh = new_db()
+    expected = fresh.execute(names).fetchall()
+    assert len([n for n, _ in expected if not n.startswith("ix_") and not n.startswith("sqlite_")]) == 7, expected
+    old = new_db()
+    for t in ("social_ai_tool_calls", "social_ai_messages", "social_ai_conversations", "social_ai_referral_maps", "social_ai_settings", "social_ai_channels", "social_ai_app"):
+        old.execute(f"DROP TABLE {t}")
+    old.execute("DELETE FROM permissions WHERE code LIKE 'social_ai.%'")
+    path = ROOT / "migrations" / "2026-11-16-social-ai.sql"
+    probe = path.read_text(encoding="utf-8").splitlines()[0][len("-- probe: "):]
+    expect_error(old, probe, contains="no such table")
+    apply_migration(old, path)
+    assert old.execute(names).fetchall() == expected, "migration DDL differs from schema.sql"
+    old.execute(probe)
+    assert old.execute("SELECT count(*) FROM social_ai_app").fetchone()[0] == 1 and old.execute("SELECT count(*) FROM social_ai_settings").fetchone()[0] == 1
+    assert old.execute("SELECT count(*) FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE p.code LIKE 'social_ai.%' AND rp.role_id = 'role_admin'").fetchone()[0] == 2
+    token = old.execute("SELECT verify_token FROM social_ai_app").fetchone()[0]
+    apply_migration(old, path)  # running it again changes nothing
+    assert old.execute("SELECT verify_token FROM social_ai_app").fetchone()[0] == token and old.execute("SELECT count(*) FROM permissions WHERE code LIKE 'social_ai.%'").fetchone()[0] == 2
+
+
+@test("62 social ai: singletons with defaults, one row per channel, message id unique per channel, cascade, permissions")
+def _():
+    c = new_db()
+    assert len(c.execute("SELECT verify_token FROM social_ai_app WHERE id = 1").fetchone()[0]) == 48
+    assert c.execute("SELECT tone, conversation_limit FROM social_ai_settings WHERE id = 1").fetchone() == ("friendly", 40)
+    expect_error(c, "INSERT INTO social_ai_settings (id) VALUES (2)", contains="CHECK")
+    assert c.execute("SELECT count(*) FROM role_permissions rp JOIN permissions p ON p.id = rp.permission_id WHERE p.code LIKE 'social_ai.%' AND rp.role_id = 'role_admin'").fetchone()[0] == 2
+    c.execute("INSERT INTO social_ai_channels (channel, external_id, token_ciphertext, token_nonce, token_auth_tag, key_version) VALUES ('whatsapp', '1055', 'c', 'n', 't', 'v1')")
+    expect_error(c, "INSERT INTO social_ai_channels (channel, external_id, token_ciphertext, token_nonce, token_auth_tag, key_version) VALUES ('telegram', '1055', 'c', 'n', 't', 'v1')", contains="CHECK")
+    c.execute("INSERT INTO social_ai_conversations (id, channel, contact_id) VALUES ('sa1', 'whatsapp', '905321234567')")
+    expect_error(c, "INSERT INTO social_ai_conversations (id, channel, contact_id) VALUES ('sa2', 'whatsapp', '905321234567')", contains="UNIQUE")
+    c.execute("INSERT INTO social_ai_messages (id, conversation_id, channel, direction, sender, body, external_id, status) VALUES ('m1', 'sa1', 'whatsapp', 'in', 'customer', 'Merhaba', 'wamid.1', 'received')")
+    expect_error(c, "INSERT INTO social_ai_messages (id, conversation_id, channel, direction, sender, body, external_id, status) VALUES ('m2', 'sa1', 'whatsapp', 'in', 'customer', 'Merhaba', 'wamid.1', 'received')", contains="UNIQUE")
+    c.execute("INSERT INTO social_ai_messages (id, conversation_id, channel, direction, sender, body, status) VALUES ('m3', 'sa1', 'whatsapp', 'out', 'bot', 'Selam', 'pending')")
+    c.execute("INSERT INTO social_ai_messages (id, conversation_id, channel, direction, sender, body, status) VALUES ('m4', 'sa1', 'whatsapp', 'out', 'bot', 'Selam', 'pending')")
+    c.execute("INSERT INTO social_ai_tool_calls (id, conversation_id, message_id, name, input_json) VALUES ('t1', 'sa1', 'm3', 'search_products', '{}')")
+    c.execute("DELETE FROM social_ai_conversations WHERE id = 'sa1'")
+    assert c.execute("SELECT (SELECT count(*) FROM social_ai_messages) + (SELECT count(*) FROM social_ai_tool_calls)").fetchone()[0] == 0
 
 
 @test("60 cash on delivery: provider value, order payment method + fee; migration 2026-11-15 rebuilds the payment tables of the previous schema")

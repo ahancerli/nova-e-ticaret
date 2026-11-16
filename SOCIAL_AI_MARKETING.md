@@ -13,6 +13,8 @@ Aktif kanala gelen **bütün** mesajlara (Instagram DM'leri ve WhatsApp mesajlar
 - **Ürün sorusuysa:** Katalogdan ürünü bulur, stok, fiyat ve varyant bilgisini verir, ürün linkini gönderir.
 - **Genel bir soruysa** (kargo, iade, ödeme, beden, mağaza bilgisi gibi): Sitenin içeriklerinden ve mağaza ayarlarından bakarak cevap verir.
 
+Sistemde AI entegrasyonları diye bir modül var, bu modülde entegrasyon yapılınca Social AI Marketing aktif olacaktır ve entegre edilen LLM modeli kullanılacak. Eğer api key eklenmediyse bu modül de kullanılamayacaktır. Kullanıcı buraya girdiğinde syfa açılsın poup ta hata bilgi verilsin şuradan key girmeniz gerekiyor diye ve o sayfaya yönlendirsin.
+
 Konuşma, mağazada çalışan bir insanın yazdığı kadar doğal olmalıdır.
 
 Temel senaryo: Mağaza Instagram'da sponsorlu bir ürün paylaşır, insanlar da DM'den yazar. Bot hangi reklamdan ya da gönderiden gelindiğini bilir ve o ürünle konuşmaya başlar. Müşteriye soru sorar, birden fazla ürünü karşılaştırır, ürün linkleri gönderir, stok, fiyat ve kargo sorularını cevaplar. Gerektiğinde konuşmayı bir insana devreder.
@@ -96,6 +98,7 @@ Social AI Marketing            (ana menü)
 URL'ler ve menü etiketleri projenin mevcut Türkçe URL düzenine göre netleştirilebilir.
 
 Her kanal sayfasının iki hâli vardır:
+
 - **Kurulmamış:** Kurulum sihirbazı (§5.1) gösterilir.
 - **Kurulu:** Durum ekranı gösterilir: bağlı hesap, aktif/pasif anahtarı, bugünkü mesaj sayısı, son hatalar, "bağlantıyı kes". Kurulum ekranı bir daha görünmez.
 
@@ -104,6 +107,7 @@ Her kanal sayfasının iki hâli vardır:
 Hedef: Teknik bilgisi olmayan bir mağaza sahibi kurulumu birkaç dakikada, hiçbir token ya da ID kopyalamadan bitirebilmeli.
 
 **Instagram:**
+
 1. Ön koşul kontrol listesi. Örnek: "Instagram hesabın Business/Creator olmalı ve bir Facebook sayfasına bağlı olmalı." Bu adımları anlatan kısa görsel yardım da eklenir.
 2. "Instagram ile bağlan" butonu: Facebook Login for Business (OAuth) penceresi açılır.
 3. Birden fazla hesap varsa hesap seçimi yapılır.
@@ -111,23 +115,27 @@ Hedef: Teknik bilgisi olmayan bir mağaza sahibi kurulumu birkaç dakikada, hiç
 5. "Hazır" ekranı: "Kendi hesabından DM atıp dene" yönlendirmesi.
 
 **WhatsApp:**
+
 1. Ön koşul kontrol listesi: Meta Business hesabı ve WhatsApp'ta kullanılmayan bir numara.
 2. "WhatsApp ile bağlan" butonu: Meta Embedded Signup açılır. WABA ve numara ID'si otomatik alınır.
 3. Bağlantı test edilir ve webhook aboneliği otomatik açılır.
 4. "Hazır" ekranı ve test mesajı.
 
 **Ortak kurallar:**
+
 - Token'lar sealed olarak saklanır.
 - AI entegrasyonu (`ai_integration`) hazır değilse sihirbazın ilk adımı bunu bildirir ve ilgili sayfaya yönlendirir.
 - Hatalar Türkçe ve ne yapılması gerektiğini söyleyen cümlelerle gösterilir.
 - Yalnızca geliştirme/yedek amaçlı gizli bir "manuel bilgi gir" seçeneği olabilir.
 
 **Kurulumdan sonra:**
+
 - Kanal **kapatılana kadar aktif** kalır.
 - Token süresi dolacaksa otomatik yenilenir; yenilenemiyorsa panelde bildirim çıkar.
 - Bağlantı koparsa kanal durum ekranında ve panel bildirimlerinde uyarı gösterilir.
 
 ### 5.2 Bot ayarları
+
 - Bot açık/kapalı (kanal başına) ve çalışma saatleri, saat dışında verilecek mesaj.
 - **Marka sesi:** Hazır seçenekler (samimi, kurumsal, genç) ve serbest metin. Örnek soru-cevap çiftleri (few-shot) eklenebilir.
 - **Karşılama/intro mesajı:** Kanal başına ayrı.
@@ -140,6 +148,7 @@ Hedef: Teknik bilgisi olmayan bir mağaza sahibi kurulumu birkaç dakikada, hiç
 Ayarların hepsi hazır varsayılanlarla gelir. Kurulumdan hemen sonra, mağaza sahibi hiçbir ayara dokunmasa bile bot makul cevaplar verebilmeli.
 
 ### 5.3 Konuşmalar ekranı
+
 - Kanal, tarih, durum (bot / devredildi / kapandı) ve reklam kaynağına göre filtrelenebilen liste. Konuşma detayında mesajlar ve hangi araçların çağrıldığı görünür.
 - Devredilen konuşmaya admin panelden insan cevabı yazılabilir (24 saat ve human agent kurallarına uyarak).
 
