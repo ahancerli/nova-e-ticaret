@@ -1,4 +1,4 @@
-import { UnitOfWork, hmacHex, randomToken, safeEqual, sha256Hex, type Clock, type Database, type IdGenerator, type Logger } from "@/core";
+import { UnitOfWork, hmacHex, randomToken, safeEqual, sha256Hex, type Clock, type Database, type IdGenerator, type Logger, type Statement } from "@/core";
 import type { AuditLog } from "@/modules/audit/audit-log";
 import type { MailSender } from "@/modules/mail";
 import type { Actor } from "@/modules/shared/actor";
@@ -16,6 +16,8 @@ export interface NewsletterDeps {
   ids: IdGenerator;
   /** SESSION_SECRET: signs unsubscribe links and keys the guest consent hash. */
   secret: string;
+  /** İYS queue: the e-mail consent and its withdrawal reach İYS (same transaction). */
+  iys: { statements(d: { consentId: string; purpose: string; granted: boolean; at: string; email?: string | null }): Statement[] };
 }
 
 const unsubscribeSig = (secret: string, id: string) => hmacHex(secret, `newsletter-unsub:${id}`);
@@ -83,11 +85,13 @@ export class ConfirmNewsletter {
     const now = clock.nowIso();
     const sub = await repo.findByToken(tokenHash, now);
     if (!sub) throw NewsletterErrors.linkInvalid();
+    const consentId = ids.newId();
     await new UnitOfWork(db)
       .add(repo.confirmStatement(sub.id, tokenHash, now)).expectChanges(1, NewsletterErrors.linkInvalid)
       .add(repo.consentStatement({
-        id: ids.newId(), userId: sub.userId, guestHash: sub.userId ? null : await guestHash(secret, sub.email), version: await this.consentVersion(), granted: true, now,
+        id: consentId, userId: sub.userId, guestHash: sub.userId ? null : await guestHash(secret, sub.email), version: await this.consentVersion(), granted: true, now,
       }))
+      .add(...this.deps.iys.statements({ consentId, purpose: "marketing_email", granted: true, at: now, email: sub.email }))
       .commit();
     return { email: maskAddress(sub.email) };
   }
@@ -106,9 +110,11 @@ export class UnsubscribeNewsletter {
     const now = clock.nowIso();
     const uow = new UnitOfWork(db).add(repo.unsubscribeStatement(id, now));
     if (sub.status === "subscribed") {
+      const consentId = ids.newId();
       uow.add(repo.consentStatement({
-        id: ids.newId(), userId: sub.userId, guestHash: sub.userId ? null : await guestHash(secret, sub.email), version: await this.consentVersion(), granted: false, now,
+        id: consentId, userId: sub.userId, guestHash: sub.userId ? null : await guestHash(secret, sub.email), version: await this.consentVersion(), granted: false, now,
       }));
+      uow.add(...this.deps.iys.statements({ consentId, purpose: "marketing_email", granted: false, at: now, email: sub.email }));
     }
     await uow.commit();
     return { email: maskAddress(sub.email) };

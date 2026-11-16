@@ -50,6 +50,7 @@ media.registerMedia(root);
 settings.registerSettings(root);
 content.registerContent(root);
 newsletter.registerNewsletter(root);
+(await import(`${ROOT}/src/modules/iys/index.ts`)).registerIys(root);
 root.singleton(mail.MailSenderToken, () => fakeMail);
 const SECRET = "s3cret";
 const resolve = (tok: any): any => root.createScope().provide(EnvToken, { DB: d1, SESSION_SECRET: SECRET, PUBLIC_SITE_URL: "https://magaza.test" }).resolve(tok);

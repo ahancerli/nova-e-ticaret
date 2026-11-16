@@ -14,6 +14,8 @@ export interface ActionResult {
   shipmentId?: string;
   refundId?: string;
   refundStatus?: string;
+  /** cancel_items: what was cancelled and refunded (or no longer collected). */
+  cancellation?: { amountMinor: number; paidShareMinor: number; campaignDiffMinor: number; shippingDiffMinor: number; restoredMinor: number; channel: "card" | "transfer" | "cod"; emptiesOrder: boolean };
 }
 
 /** Payment settlement as orders need it (checkout's SettlePayment). */

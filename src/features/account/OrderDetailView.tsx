@@ -25,7 +25,7 @@ export function OrderDetailView({ order, email }: { order: CustomerOrderDetail; 
             <p className="font-semibold">Kapıda ödeme</p>
             <p className="mt-1 text-ink-soft">
               {order.status === "pending_payment" ? "Siparişinizi doğruladıktan sonra hazırlamaya başlayacağız. " : ""}
-              <strong className="text-ink">{formatMinor(order.totalMinor)}</strong> tutarını teslimatta kargo görevlisine ödeyeceksiniz.
+              <strong className="text-ink">{formatMinor(order.netTotalMinor)}</strong> tutarını teslimatta kargo görevlisine ödeyeceksiniz.
             </p>
           </section>
         ) : null}
@@ -50,7 +50,11 @@ export function OrderDetailView({ order, email }: { order: CustomerOrderDetail; 
           <ul className="divide-y divide-line text-sm">
             {order.items.map((it, i) => (
               <li key={i} className="flex justify-between gap-4 py-2.5">
-                <span className="min-w-0"><span className="block font-medium">{it.name}</span><span className="text-xs text-muted">{it.quantity} adet{it.variant ? ` · ${it.variant}` : ""} · adet {formatMinor(it.unitPriceMinor)}</span></span>
+                <span className="min-w-0">
+                  <span className={`block font-medium ${it.cancelledQuantity >= it.quantity ? "text-muted line-through" : ""}`}>{it.name}</span>
+                  <span className="text-xs text-muted">{it.quantity} adet{it.variant ? ` · ${it.variant}` : ""} · adet {formatMinor(it.unitPriceMinor)}</span>
+                  {it.cancelledQuantity ? <span className="mt-1 block w-fit rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-danger">{it.cancelledQuantity >= it.quantity ? "İptal edildi" : `${it.cancelledQuantity} adet iptal edildi`}</span> : null}
+                </span>
                 <span className="text-right tabular-nums">
                   {it.discountMinor > 0 ? <span className="block text-xs text-muted line-through">{formatMinor(it.totalMinor + it.discountMinor)}</span> : null}
                   <span className="font-semibold">{formatMinor(it.totalMinor)}</span>
@@ -63,8 +67,25 @@ export function OrderDetailView({ order, email }: { order: CustomerOrderDetail; 
             {order.discounts.map((d) => <div key={d.label} className="flex justify-between text-success"><dt>{d.label}</dt><dd className="tabular-nums">−{formatMinor(d.amountMinor)}</dd></div>)}
             <div className="flex justify-between"><dt className="text-ink-soft">Kargo</dt><dd className="tabular-nums">{order.shippingMinor - order.paymentFeeMinor ? formatMinor(order.shippingMinor - order.paymentFeeMinor) : "Ücretsiz"}</dd></div>
             {order.paymentFeeMinor ? <div className="flex justify-between"><dt className="text-ink-soft">Kapıda ödeme bedeli</dt><dd className="tabular-nums">{formatMinor(order.paymentFeeMinor)}</dd></div> : null}
-            <div className="flex justify-between border-t border-line pt-2 text-base font-bold"><dt>Toplam</dt><dd className="tabular-nums">{formatMinor(order.totalMinor)}</dd></div>
+            <div className={`flex justify-between border-t border-line pt-2 ${order.cancellations.length ? "text-ink-soft" : "text-base font-bold"}`}><dt>{order.cancellations.length ? "Sipariş toplamı" : "Toplam"}</dt><dd className="tabular-nums">{formatMinor(order.totalMinor)}</dd></div>
+            {order.cancellations.length ? (
+              <>
+                <div className="flex justify-between text-danger"><dt>İptal edilen ürünler</dt><dd className="tabular-nums">−{formatMinor(order.totalMinor - order.netTotalMinor)}</dd></div>
+                <div className="flex justify-between border-t border-line pt-2 text-base font-bold"><dt>Güncel toplam</dt><dd className="tabular-nums">{formatMinor(order.netTotalMinor)}</dd></div>
+              </>
+            ) : null}
           </dl>
+          {order.cancellations.length ? (
+            <ul className="mt-4 space-y-1.5 border-t border-line pt-4 text-xs text-ink-soft" aria-label="İptaller">
+              {order.cancellations.map((c, i) => (
+                <li key={i}>
+                  {when.format(new Date(c.at))} · {c.items.map((x) => `${x.quantity}× ${x.name}`).join(", ")} {c.byCustomer ? "tarafınızdan" : "mağaza tarafından"} iptal edildi
+                  {order.paymentMethod === "cash_on_delivery" ? ` · ödenecek tutardan ${formatMinor(c.amountMinor)} düşüldü` : c.amountMinor ? ` · ${formatMinor(c.amountMinor)} iade${c.refundStatus === "succeeded" ? " edildi" : " ediliyor"}` : ""}
+                  {c.deductedMinor ? ` (kampanya / kargo farkı ${formatMinor(c.deductedMinor)})` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </section>
 
         {order.shipping ? (

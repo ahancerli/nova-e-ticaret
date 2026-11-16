@@ -16,15 +16,24 @@ export interface CheckoutFormDetail {
   basketId?: string;
   paymentId?: string;
   conversationId?: string;
+  token?: string;
+  /** Response signature (hex HMAC-SHA256, docs: "Response Signature Validation"). */
+  signature?: string;
+  /** Basket items with iyzico's transaction id (needed for Refund V1). */
+  itemTransactions?: { itemId: string; paymentTransactionId: string; price?: number | string; paidPrice?: number | string }[];
+  /** Set by the gateway: null = no signature in the response, false = it did not match. */
+  signatureValid?: boolean | null;
 }
 
 /**
  * The provider's word is only trusted when it matches OUR order exactly (spec §07): success status,
- * same basket (order number), same currency, same price; paidPrice may be higher (installment interest).
+ * same basket (order number), same currency, same price; paidPrice may be higher (installment interest). A response
+ * signature that does not match (docs: Response Signature Validation) is a failure.
  */
 export function detailMatchesPayment(detail: CheckoutFormDetail, payment: { orderNumber: string; currency: string; amountMinor: number }): boolean {
   return (
     detail.status === "success" &&
+    detail.signatureValid !== false &&
     detail.paymentStatus === "SUCCESS" &&
     detail.basketId === payment.orderNumber &&
     (detail.currency ?? "TRY") === payment.currency &&

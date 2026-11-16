@@ -3,9 +3,9 @@
  * The provider catalog lives in `integration_providers` (db/schema.sql); adapters in ../infrastructure/connectors.
  */
 
-export const INTEGRATION_KINDS = ["sms", "shipping"] as const;
+export const INTEGRATION_KINDS = ["sms", "shipping", "accounting"] as const;
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
-export const KIND_LABEL: Record<IntegrationKind, string> = { sms: "SMS", shipping: "Kargo" };
+export const KIND_LABEL: Record<IntegrationKind, string> = { sms: "SMS", shipping: "Kargo", accounting: "e-Fatura / e-Arşiv" };
 
 export type SupportStatus = "ready" | "planned";
 
@@ -96,7 +96,25 @@ export interface SmsEventSetting {
 export interface IntegrationSettings {
   /** SMS only: which order events send an SMS, with their text. */
   events?: Partial<Record<SmsEvent, SmsEventSetting>>;
+  /** Accounting only: when invoices are issued automatically. */
+  invoicing?: InvoicingSettings;
 }
+
+// --- e-Fatura / e-Arşiv (accounting) ---------------------------------------------------------------------------------
+
+/** paid = as soon as the payment is in; shipped = when the parcel leaves (the invoice travels with the goods). */
+export const INVOICE_TRIGGERS = { paid: "Ödeme alınınca", shipped: "Kargoya verilince" } as const;
+export type InvoiceTrigger = keyof typeof INVOICE_TRIGGERS;
+
+export interface InvoicingSettings {
+  /** Issue invoices without staff action (cron). Off = only the panel's "Entegratörle kes" button. */
+  auto: boolean;
+  trigger: InvoiceTrigger;
+  /** Set when automation is switched on: only orders placed from then on are invoiced automatically (no backlog). */
+  since?: string | null;
+}
+
+export const DEFAULT_INVOICING: InvoicingSettings = { auto: false, trigger: "shipped" };
 
 export const defaultSmsEvents = (): Record<SmsEvent, SmsEventSetting> =>
   Object.fromEntries(SMS_EVENTS.map((e) => [e, { enabled: SMS_EVENT_INFO[e].enabled, template: SMS_EVENT_INFO[e].template }])) as Record<SmsEvent, SmsEventSetting>;

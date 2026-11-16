@@ -42,6 +42,7 @@ content.registerContent(root);
 staff.registerStaff(root);
 (await mod("geo/index")).registerGeo(root);
 customers.registerCustomers(root);
+(await import(`${ROOT}/src/modules/iys/index.ts`)).registerIys(root);
 root.singleton(identityModule.SessionCookiesToken, () => cookies);
 const scope = () => root.createScope().provide(EnvToken, { DB: d1, SESSION_SECRET: "test-secret", PUBLIC_SITE_URL: "https://nova.test" });
 const resolve = (tok: any): any => scope().resolve(tok);

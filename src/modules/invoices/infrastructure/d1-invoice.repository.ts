@@ -52,7 +52,11 @@ export class D1InvoiceRepository extends Repository {
   }
 
   async order(orderId: string): Promise<{ id: string; totalMinor: number; invoiceable: boolean } | null> {
-    const r = await this.db.first<{ id: string; total_minor: number; ok: number }>(`SELECT o.id, o.total_minor, (${INVOICEABLE}) AS ok FROM orders o WHERE o.id = ?`, orderId);
+    // Item cancellations (kısmi iptal) lower what is invoiced; the order snapshot itself stays as placed.
+    const r = await this.db.first<{ id: string; total_minor: number; ok: number }>(
+      `SELECT o.id, o.total_minor - COALESCE((SELECT SUM(c.amount_minor) FROM order_cancellations c WHERE c.order_id = o.id), 0) AS total_minor, (${INVOICEABLE}) AS ok
+         FROM orders o WHERE o.id = ?`, orderId,
+    );
     return r ? { id: r.id, totalMinor: r.total_minor, invoiceable: r.ok === 1 } : null;
   }
 
@@ -61,11 +65,11 @@ export class D1InvoiceRepository extends Repository {
   }
 
   /** Inserted only while the order has no valid invoice (also enforced by ux_invoices_order_active). */
-  insertStatement(r: { id: string; orderId: string; kind: InvoiceKind; invoiceNumber: string; ettn: string | null; invoiceDate: string; totalMinor: number; storageKey: string | null; actorId: string; now: string }): Statement {
+  insertStatement(r: { id: string; orderId: string; kind: InvoiceKind; invoiceNumber: string; ettn: string | null; invoiceDate: string; totalMinor: number; storageKey: string | null; actorId: string | null; now: string; provider?: string; providerRef?: string | null }): Statement {
     return this.db.statement(
-      `INSERT INTO invoices (id, order_id, kind, invoice_number, ettn, invoice_date, total_minor, provider, pdf_storage_key, issued_by, created_at, updated_at)
-       SELECT ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM invoices WHERE order_id = ? AND status = 'issued')`,
-      r.id, r.orderId, r.kind, r.invoiceNumber, r.ettn, r.invoiceDate, r.totalMinor, r.storageKey, r.actorId, r.now, r.now, r.orderId,
+      `INSERT INTO invoices (id, order_id, kind, invoice_number, ettn, invoice_date, total_minor, provider, provider_ref, pdf_storage_key, issued_by, created_at, updated_at)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM invoices WHERE order_id = ? AND status = 'issued')`,
+      r.id, r.orderId, r.kind, r.invoiceNumber, r.ettn, r.invoiceDate, r.totalMinor, r.provider ?? "manual", r.providerRef ?? null, r.storageKey, r.actorId, r.now, r.now, r.orderId,
     );
   }
 

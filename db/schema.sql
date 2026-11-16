@@ -1526,6 +1526,33 @@ CREATE TABLE IF NOT EXISTS refunds (
 -- e-Arşiv / e-Fatura records (2026-11-14). One active invoice per order. Today the PDF comes from the accounting
 -- provider's portal (uploaded in the panel); an integrator adapter (integration_providers kind 'accounting') will
 -- fill the same row. PDFs live in private storage ("invoices/…"), never under the public /assets route.
+-- iyzico basket item transactions of a card payment (Checkout Form retrieve `itemTransactions`). iyzico refunds per
+-- basket item (Refund V1, paymentTransactionId); V2 (paymentId) is not recommended for baskets with several products.
+CREATE TABLE IF NOT EXISTS payment_item_transactions (
+  -- TABLO: Kart ödemesinin iyzico sepet kalemi işlemleri. İade kalem bazında (paymentTransactionId) yapılır, bu yüzden
+  --        ödeme onaylanınca her kalemin işlem numarası saklanır.
+  payment_id             TEXT NOT NULL REFERENCES payments(id) ON DELETE RESTRICT,  -- Ödeme
+  item_id                TEXT NOT NULL CHECK (length(item_id) BETWEEN 1 AND 64),  -- Sepet kalemi (sipariş kalemi id si veya shipping)
+  payment_transaction_id TEXT NOT NULL UNIQUE CHECK (length(payment_transaction_id) BETWEEN 1 AND 64),  -- iyzico kalem işlem numarası
+  price_minor            INTEGER NOT NULL CHECK (price_minor >= 0),  -- Kalem tutarı (kuruş)
+  paid_price_minor       INTEGER NOT NULL CHECK (paid_price_minor >= 0),  -- Müşterinin ödediği (taksit vade farkı dahil, kuruş)
+  created_at             TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Oluşturulma zamanı (UTC ISO-8601)
+  PRIMARY KEY (payment_id, item_id)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS refund_parts (
+  -- TABLO: Bir kart iadesinin iyzico ya gönderilen kalem parçaları. Yeniden denemede başarılı parça tekrar gönderilmez.
+  id                     TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
+  refund_id              TEXT NOT NULL REFERENCES refunds(id) ON DELETE RESTRICT,  -- İade
+  payment_transaction_id TEXT NOT NULL REFERENCES payment_item_transactions(payment_transaction_id) ON DELETE RESTRICT,  -- iyzico kalem işlem numarası
+  amount_minor           INTEGER NOT NULL CHECK (amount_minor > 0),  -- Bu kalemden iade edilen tutar (kuruş)
+  status                 TEXT NOT NULL CHECK (status IN ('succeeded','failed')),  -- succeeded iyzico onayladı / failed reddetti
+  provider_ref           TEXT CHECK (provider_ref IS NULL OR length(provider_ref) <= 120),  -- iyzico iade referansı
+  failure_code           TEXT CHECK (failure_code IS NULL OR length(failure_code) <= 120),  -- iyzico hata kodu
+  created_at             TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Oluşturulma zamanı (UTC ISO-8601)
+  UNIQUE (refund_id, payment_transaction_id)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS invoices (
   -- TABLO: Siparişlerin e-Arşiv / e-Fatura kayıtları. Sipariş başına tek geçerli fatura; PDF gizli depoda durur ve
   --        yalnız sipariş sahibine (üye girişi veya sipariş no + e-posta) ve personele indirilir.
@@ -1547,8 +1574,79 @@ CREATE TABLE IF NOT EXISTS invoices (
   CHECK ((status = 'cancelled') = (cancel_reason IS NOT NULL))
 ) STRICT;
 
+-- Automatic invoicing through the accounting integration (Paraşüt today): one job per order walks the provider steps
+-- (contact → sales invoice → e-Fatura / e-Arşiv → job polling → PDF) across cron runs; the result becomes an invoices row.
+CREATE TABLE IF NOT EXISTS invoice_jobs (
+  -- TABLO: Otomatik fatura kesim işleri (muhasebe entegrasyonu, örn. Paraşüt). Sipariş başına bir iş adım adım ilerler:
+  --        müşteri, satış faturası, e-Fatura veya e-Arşiv, sonuç, PDF. Bitince invoices satırı oluşur.
+  id              TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
+  order_id        TEXT NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,  -- Sipariş
+  provider_code   TEXT NOT NULL CHECK (length(provider_code) BETWEEN 2 AND 40),  -- Entegratör (parasut)
+  status          TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','issued','failed','cancelled')),  -- queued sırada / running entegratörde işleniyor / issued kesildi / failed hata / cancelled vazgeçildi
+  step            TEXT NOT NULL DEFAULT 'create' CHECK (step IN ('create','formalize','poll','pdf','done')),  -- Sıradaki adım
+  state_json      TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(state_json)),  -- Entegratördeki kayıt numaraları (fatura id, iş id, belge id)
+  kind            TEXT CHECK (kind IS NULL OR kind IN ('e_arsiv','e_fatura')),  -- Belge türü (karar verilince)
+  attempts        INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),  -- Hata sonrası deneme sayısı
+  next_attempt_at TEXT NOT NULL,  -- Bir sonraki çalışma zamanı
+  last_error      TEXT CHECK (last_error IS NULL OR length(last_error) <= 1000),  -- Son hata (entegratörün mesajı)
+  invoice_id      TEXT REFERENCES invoices(id) ON DELETE SET NULL,  -- Oluşan fatura
+  source          TEXT NOT NULL DEFAULT 'auto' CHECK (source IN ('auto','manual')),  -- auto zamanlanmış / manual panelden
+  created_by      TEXT REFERENCES users(id) ON DELETE SET NULL,  -- Elle başlatan personel
+  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Oluşturulma zamanı (UTC ISO-8601)
+  updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Son güncelleme zamanı (uygulama yazar)
+) STRICT;
+
+-- Ids of our records at a provider (Paraşüt contact per customer, product per SKU …), so they are not created twice.
+CREATE TABLE IF NOT EXISTS integration_refs (
+  -- TABLO: Kayıtlarımızın entegratördeki karşılığı (müşteri, ürün). Aynı kayıt entegratörde iki kez oluşturulmaz.
+  provider_code TEXT NOT NULL CHECK (length(provider_code) BETWEEN 2 AND 40),  -- Entegratör (parasut)
+  ref_type      TEXT NOT NULL CHECK (ref_type IN ('contact','product')),  -- contact müşteri / product ürün
+  local_key     TEXT NOT NULL CHECK (length(local_key) BETWEEN 1 AND 200),  -- Bizdeki anahtar (VKN, e-posta, SKU)
+  external_id   TEXT NOT NULL CHECK (length(external_id) BETWEEN 1 AND 64),  -- Entegratördeki id
+  updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Son güncelleme zamanı (uygulama yazar)
+  PRIMARY KEY (provider_code, ref_type, local_key)
+) STRICT;
+
+
 -- Return / cancellation-right requests (2026-11-14): the customer asks, staff approve / reject, receive the goods
 -- and refund through the order refund action. A request's lines may never exceed what was ordered.
+-- Item cancellation (kısmi iptal): units of a paid / confirmed order cancelled before they ship. Order and line amounts
+-- stay frozen; what changed is recorded here. amount_minor = paid share of the cancelled units − campaign difference −
+-- shipping difference (the kept units re-priced with the order's own campaigns), unless staff waived the difference;
+-- cumulative, so a later cancellation can give back a difference deducted earlier (restored_minor).
+-- Card / transfer orders get a refunds row (refund_id); cash on delivery lowers the amount the carrier collects.
+CREATE TABLE IF NOT EXISTS order_cancellations (
+  -- TABLO: Sipariş kalem iptalleri (kısmi iptal). Gönderilmemiş ürünler iptal edilir, stoğa döner, tutar iade edilir
+  --        (kapıda ödemede tahsil edilecek tutar düşer). Kampanya koşulu bozulursa fark iadeden düşülür.
+  id                  TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
+  order_id            TEXT NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,  -- Sipariş
+  source              TEXT NOT NULL CHECK (source IN ('admin','customer')),  -- admin panelden personel / customer müşteri Hesabım dan
+  reason              TEXT NOT NULL CHECK (length(reason) BETWEEN 3 AND 500),  -- İptal nedeni
+  paid_share_minor    INTEGER NOT NULL CHECK (paid_share_minor >= 0),  -- İptal edilen ürünlerin ödenen payı (indirim düşülmüş)
+  campaign_diff_minor INTEGER NOT NULL DEFAULT 0 CHECK (campaign_diff_minor >= 0),  -- Kalan ürünlerin kaybettiği kampanya indirimi (iadeden düşülen)
+  shipping_diff_minor INTEGER NOT NULL DEFAULT 0 CHECK (shipping_diff_minor >= 0),  -- Ücretsiz kargo eşiği altına düşünce doğan kargo ücreti (iadeden düşülen)
+  restored_minor      INTEGER NOT NULL DEFAULT 0 CHECK (restored_minor >= 0),  -- Ödenen paydan fazla geri verilen: önceki iptallerde düşülen farkın dönen kısmı, sipariş boşalınca kargo ve kapıda ödeme bedeli
+  amount_minor        INTEGER NOT NULL CHECK (amount_minor >= 0),  -- İade edilen tutar (kapıda ödemede tahsilattan düşen tutar)
+  waived              INTEGER NOT NULL DEFAULT 0 CHECK (waived IN (0,1)),  -- 1 = personel kampanya ve kargo farkını düşmedi
+  estimate            TEXT NOT NULL DEFAULT 'repriced' CHECK (estimate IN ('repriced','proportional')),  -- repriced kampanyalarla yeniden hesaplandı / proportional kampanya değiştiği için orantılı
+  refund_id           TEXT REFERENCES refunds(id) ON DELETE RESTRICT,  -- Oluşan iade kaydı (kart / havale)
+  invoice_attention   INTEGER NOT NULL DEFAULT 0 CHECK (invoice_attention IN (0,1)),  -- 1 = iptal anında geçerli fatura vardı, faturanın düzeltilmesi gerekir
+  actor_id            TEXT REFERENCES users(id) ON DELETE SET NULL,  -- İptali yapan personel veya müşteri
+  created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Oluşturulma zamanı (UTC ISO-8601)
+  CHECK (amount_minor <= paid_share_minor + restored_minor)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS order_cancellation_items (
+  -- TABLO: Kalem iptalindeki ürünler ve adetleri. Bir kalemin gönderilen + iptal edilen adedi sipariş adedini geçemez
+  --        (uygulama batch içinde kontrol eder).
+  cancellation_id TEXT NOT NULL REFERENCES order_cancellations(id) ON DELETE RESTRICT,  -- Kalem iptali
+  order_id        TEXT NOT NULL,  -- Sipariş (kalemle birlikte doğrulanır)
+  order_item_id   TEXT NOT NULL,  -- İptal edilen sipariş kalemi
+  quantity        INTEGER NOT NULL CHECK (quantity > 0),  -- İptal edilen adet
+  PRIMARY KEY (cancellation_id, order_item_id),
+  FOREIGN KEY (order_item_id, order_id) REFERENCES order_items(id, order_id) ON DELETE RESTRICT
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS return_requests (
   -- TABLO: Müşterinin iade (cayma hakkı) talepleri. Müşteri açar, personel onaylar/reddeder, ürün gelince sipariş iadesi
   --        ile parası ödenir. Sipariş başına aynı anda tek açık talep.
@@ -1970,6 +2068,114 @@ CREATE TABLE IF NOT EXISTS review_settings (
   updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Son güncelleme zamanı (uygulama yazar)
 ) STRICT;
 
+-- Product Q&A (Trendyol-style "Ürün soruları"): only answered questions reach the shop; the asker gets the answer by e-mail.
+CREATE TABLE IF NOT EXISTS product_questions (
+  -- TABLO: Ürün soru-cevap. Üye müşteri ürün sayfasından sorar, mağaza panelden yanıtlar. Yalnız answered olanlar
+  --        vitrinde görünür. pending → answered / rejected. Panel Ürün soruları.
+  id           TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
+  product_id   TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,  -- Ürün
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,  -- Soruyu soran müşteri
+  body         TEXT NOT NULL CHECK (length(body) BETWEEN 5 AND 500),  -- Soru metni
+  is_anonymous INTEGER NOT NULL DEFAULT 0 CHECK (is_anonymous IN (0,1)),  -- 1 = vitrinde isim gösterilmez
+  status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','answered','rejected')),  -- pending yanıt bekliyor / answered yanıtlandı (vitrinde) / rejected yayınlanmadı
+  answer_body  TEXT CHECK (answer_body IS NULL OR length(answer_body) BETWEEN 1 AND 2000),  -- Mağaza yanıtı (vitrinde görünür)
+  answered_by  TEXT REFERENCES users(id) ON DELETE SET NULL,  -- Yanıtlayan personel
+  answered_at  TEXT,  -- İlk yanıt zamanı
+  reject_note  TEXT CHECK (reject_note IS NULL OR length(reject_note) <= 500),  -- Yayınlamama notu (iç not, müşteriye gösterilmez)
+  notified_at  TEXT,  -- Yanıt e-postasının müşteriye gittiği zaman (NULL = gitmedi)
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Oluşturulma zamanı (UTC ISO-8601)
+  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Son güncelleme zamanı (uygulama yazar)
+  CHECK (status <> 'answered' OR answer_body IS NOT NULL)
+) STRICT;
+
+-- Size charts: a measurement table shown in the product page "Beden tablosu" dialog. Product link wins over category
+-- link; a category chart also covers its sub-categories (nearest one wins).
+CREATE TABLE IF NOT EXISTS size_charts (
+  -- TABLO: Beden tabloları (ölçü tablosu): sütun başlıkları ve satırlar. Kategoriye veya ürüne bağlanır, ürün sayfasında
+  --        Beden tablosu penceresinde görünür. Panel Katalog › Beden tabloları.
+  id           TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
+  name         TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),  -- Tablo adı (panelde ve pencere başlığında)
+  columns_json TEXT NOT NULL CHECK (json_valid(columns_json) AND json_type(columns_json) = 'array'),  -- Sütun başlıkları (JSON dizi, ilk sütun beden)
+  rows_json    TEXT NOT NULL CHECK (json_valid(rows_json) AND json_type(rows_json) = 'array'),  -- Satırlar (JSON dizi, her satır sütun sayısı kadar metin)
+  note         TEXT CHECK (note IS NULL OR length(note) <= 500),  -- Ölçü alma notu (tablonun altında)
+  is_active    INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Oluşturulma zamanı (UTC ISO-8601)
+  updated_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Son güncelleme zamanı (uygulama yazar)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS size_chart_categories (
+  -- TABLO: Beden tablosunun bağlı olduğu kategoriler. Alt kategoriler de alır, en yakın kategorinin tablosu geçerlidir.
+  category_id   TEXT PRIMARY KEY REFERENCES categories(id) ON DELETE CASCADE,  -- Kategori (kategori başına tek tablo)
+  size_chart_id TEXT NOT NULL REFERENCES size_charts(id) ON DELETE CASCADE  -- Beden tablosu
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS size_chart_products (
+  -- TABLO: Beden tablosunun doğrudan bağlı olduğu ürünler. Ürün bağlantısı kategori bağlantısından önce gelir.
+  product_id    TEXT PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,  -- Ürün (ürün başına tek tablo)
+  size_chart_id TEXT NOT NULL REFERENCES size_charts(id) ON DELETE CASCADE  -- Beden tablosu
+) STRICT;
+
+-- Delivery promise rules (single row) behind the product page line "Bugün sipariş verirsen yarın kargoda".
+-- Pure calculation: src/modules/delivery/domain/delivery.ts. Times are Turkey time (UTC+3, no DST).
+CREATE TABLE IF NOT EXISTS delivery_settings (
+  -- TABLO: Tahmini teslim kuralları (tek satır): son sipariş saati, kargoya verilen günler, hazırlık ve kargo süresi,
+  --        tatiller. Ürün sayfasındaki kargoya veriliş ve teslim tahminini hesaplar. Panel Kargo ücretleri.
+  id               INTEGER PRIMARY KEY CHECK (id = 1),  -- Hep 1
+  is_enabled       INTEGER NOT NULL DEFAULT 1 CHECK (is_enabled IN (0,1)),  -- 1 = ürün sayfasında tahmin gösterilir
+  cutoff_minutes   INTEGER NOT NULL DEFAULT 900 CHECK (cutoff_minutes BETWEEN 0 AND 1439),  -- Aynı gün kargo için son sipariş saati (gece yarısından dakika, 900 = 15.00)
+  ship_days        TEXT NOT NULL DEFAULT '[1,2,3,4,5]' CHECK (json_valid(ship_days) AND json_type(ship_days) = 'array'),  -- Kargoya verilen günler (JSON dizi, 1 Pazartesi … 7 Pazar)
+  handling_days    INTEGER NOT NULL DEFAULT 0 CHECK (handling_days BETWEEN 0 AND 10),  -- Hazırlık süresi (kargo günü, 0 = son saatten önce gelen sipariş aynı gün kargoda)
+  transit_min_days INTEGER NOT NULL DEFAULT 1 CHECK (transit_min_days BETWEEN 1 AND 15),  -- Kargo süresi en az (teslimat günü)
+  transit_max_days INTEGER NOT NULL DEFAULT 3 CHECK (transit_max_days BETWEEN 1 AND 20),  -- Kargo süresi en çok (teslimat günü)
+  holidays         TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(holidays) AND json_type(holidays) = 'array'),  -- Kargo çıkmayan tatil günleri (JSON dizi, YYYY-AA-GG)
+  updated_by       TEXT REFERENCES users(id) ON DELETE SET NULL,  -- Son değiştiren personel
+  updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Son güncelleme zamanı (uygulama yazar)
+  CHECK (transit_max_days >= transit_min_days)
+) STRICT;
+
+-- İYS (İleti Yönetim Sistemi): commercial e-mail / SMS consents must be registered at İYS (6563 law, İYS rules) within
+-- 3 business days. Settings are one row (password sealed with SECRETS_MASTER_KEY); every consent change becomes a queue
+-- row sent by cron, changes recipients make directly at İYS are pulled back (changes_cursor).
+CREATE TABLE IF NOT EXISTS iys_settings (
+  -- TABLO: İYS (İleti Yönetim Sistemi) bağlantısı (tek satır): İYS ve marka kodu, API kullanıcısı, şifreli parola,
+  --        değişiklik çekme imleci. Panel Entegrasyonlar › İYS.
+  id                  INTEGER PRIMARY KEY CHECK (id = 1),  -- Hep 1
+  is_active           INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0,1)),  -- 1 = izinler İYS ye gönderilir
+  environment         TEXT NOT NULL DEFAULT 'sandbox' CHECK (environment IN ('sandbox','production')),  -- sandbox test / production canlı
+  iys_code            TEXT CHECK (iys_code IS NULL OR length(iys_code) BETWEEN 1 AND 20),  -- İYS numarası (hizmet sağlayıcı kodu)
+  brand_code          TEXT CHECK (brand_code IS NULL OR length(brand_code) BETWEEN 1 AND 20),  -- Marka kodu
+  username            TEXT CHECK (username IS NULL OR length(username) <= 120),  -- API kullanıcı adı
+  password_ciphertext TEXT,  -- API şifresi (AES-256-GCM şifreli)
+  password_nonce      TEXT,  -- Şifreleme nonce değeri
+  password_auth_tag   TEXT,  -- GCM doğrulama etiketi
+  password_key_version TEXT,  -- Ana anahtar sürümü
+  changes_cursor      TEXT CHECK (changes_cursor IS NULL OR length(changes_cursor) <= 200),  -- İYS değişiklik listesinde kalınan yer (after)
+  last_push_at        TEXT,  -- Son gönderim zamanı
+  last_pull_at        TEXT,  -- Son değişiklik çekme zamanı
+  last_error          TEXT CHECK (last_error IS NULL OR length(last_error) <= 1000),  -- Son bağlantı hatası
+  updated_by          TEXT REFERENCES users(id) ON DELETE SET NULL,  -- Son değiştiren personel
+  updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Son güncelleme zamanı (uygulama yazar)
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS iys_queue (
+  -- TABLO: İYS ye gönderilecek izin hareketleri (ONAY / RET). Her izin kaydı en fazla bir kez gönderilir; geçici
+  --        hatada tekrar denenir, İYS reddederse hata saklanır.
+  id               TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
+  user_consent_id  TEXT UNIQUE REFERENCES user_consents(id) ON DELETE SET NULL,  -- Kaynak izin kaydı
+  channel          TEXT NOT NULL CHECK (channel IN ('EPOSTA','MESAJ')),  -- EPOSTA e-posta / MESAJ SMS
+  recipient        TEXT NOT NULL CHECK (length(recipient) BETWEEN 5 AND 254),  -- Alıcı (e-posta veya +90 ile başlayan cep telefonu)
+  status           TEXT NOT NULL CHECK (status IN ('ONAY','RET')),  -- ONAY izin verdi / RET izni geri aldı
+  consent_at       TEXT NOT NULL,  -- İznin alındığı an (UTC ISO-8601)
+  source           TEXT NOT NULL DEFAULT 'HS_WEB' CHECK (length(source) BETWEEN 3 AND 40),  -- İzin kaynağı (HS_WEB internet sitesi)
+  state            TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','sent','failed','skipped')),  -- pending bekliyor / sent gönderildi / failed reddedildi / skipped gönderilmez
+  attempts         INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),  -- Deneme sayısı
+  next_attempt_at  TEXT NOT NULL,  -- Bir sonraki deneme zamanı
+  transaction_id   TEXT CHECK (transaction_id IS NULL OR length(transaction_id) <= 120),  -- İYS işlem numarası
+  error            TEXT CHECK (error IS NULL OR length(error) <= 1000),  -- İYS hata mesajı
+  sent_at          TEXT,  -- İYS nin kabul ettiği zaman
+  created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Oluşturulma zamanı (UTC ISO-8601)
+) STRICT;
+
 -- Panel notifications (bell + Bildirimler): one row per event, visible to staff holding `permission` (NULL = all
 -- staff). Read / archived state is per staff member. `dedupe_key` makes producers (outbox handlers) idempotent.
 CREATE TABLE IF NOT EXISTS admin_notifications (
@@ -2341,6 +2547,13 @@ CREATE INDEX IF NOT EXISTS ix_orders_email               ON orders(customer_emai
 CREATE INDEX IF NOT EXISTS ix_order_items_order          ON order_items(order_id);
 CREATE INDEX IF NOT EXISTS ix_order_events_order         ON order_events(order_id, created_at);
 CREATE INDEX IF NOT EXISTS ix_payments_order             ON payments(order_id, status);
+CREATE INDEX IF NOT EXISTS ix_refund_parts_tx            ON refund_parts(payment_transaction_id, status);
+CREATE INDEX IF NOT EXISTS ix_invoice_jobs_due           ON invoice_jobs(status, next_attempt_at);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_invoice_jobs_open     ON invoice_jobs(order_id) WHERE status IN ('queued','running');
+CREATE INDEX IF NOT EXISTS ix_iys_queue_due              ON iys_queue(state, next_attempt_at);
+CREATE INDEX IF NOT EXISTS ix_iys_queue_recipient        ON iys_queue(recipient, channel, created_at);
+CREATE INDEX IF NOT EXISTS ix_order_cancellations_order ON order_cancellations(order_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_order_cancel_items_item    ON order_cancellation_items(order_item_id);
 CREATE INDEX IF NOT EXISTS ix_bank_transfers_status      ON bank_transfers(status, expires_at);
 CREATE INDEX IF NOT EXISTS ix_refunds_payment            ON refunds(payment_id, status);
 CREATE INDEX IF NOT EXISTS ix_shipments_order            ON shipments(order_id);
@@ -2356,7 +2569,13 @@ CREATE INDEX IF NOT EXISTS ix_product_alerts_user         ON product_alerts(user
 CREATE INDEX IF NOT EXISTS ix_admin_notifications_created ON admin_notifications(created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_admin_notifications_type    ON admin_notifications(type, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_admin_notif_states_user     ON admin_notification_states(user_id, read_at);
+CREATE INDEX IF NOT EXISTS ix_wishlists_user             ON wishlists(user_id, created_at);
 CREATE INDEX IF NOT EXISTS ix_recent_views_visitor       ON recent_views(visitor_key_hash, viewed_at DESC);
+CREATE INDEX IF NOT EXISTS ix_product_questions_product  ON product_questions(product_id, status, answered_at DESC);
+CREATE INDEX IF NOT EXISTS ix_product_questions_status   ON product_questions(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_product_questions_user     ON product_questions(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_size_chart_categories_chart ON size_chart_categories(size_chart_id);
+CREATE INDEX IF NOT EXISTS ix_size_chart_products_chart  ON size_chart_products(size_chart_id);
 CREATE INDEX IF NOT EXISTS ix_external_offers_product    ON external_offers(product_id, observed_at DESC);
 CREATE INDEX IF NOT EXISTS ix_outbox_pending             ON outbox_events(status, next_attempt_at);
 CREATE INDEX IF NOT EXISTS ix_audit_entity               ON audit_logs(entity_type, entity_id, created_at);
@@ -2536,6 +2755,12 @@ CREATE TRIGGER IF NOT EXISTS trg_inv_movements_no_update BEFORE UPDATE ON invent
 BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS trg_inv_movements_no_delete BEFORE DELETE ON inventory_movements
 BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_order_cancellations_no_update BEFORE UPDATE ON order_cancellations
+BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_order_cancellations_no_delete BEFORE DELETE ON order_cancellations
+BEGIN SELECT RAISE(ABORT, 'append_only'); END;
+CREATE TRIGGER IF NOT EXISTS trg_order_cancel_items_no_update BEFORE UPDATE ON order_cancellation_items
+BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS trg_order_events_no_update BEFORE UPDATE ON order_events
 BEGIN SELECT RAISE(ABORT, 'append_only'); END;
 CREATE TRIGGER IF NOT EXISTS trg_order_events_no_delete BEFORE DELETE ON order_events
@@ -2648,7 +2873,9 @@ INSERT INTO integration_providers (code, kind, name, description, website, suppo
  ('vatansms','sms','Vatan SMS','Toplu ve bilgilendirme SMS''i.','https://www.vatansms.com','planned','[]','[]',60),
  ('organiksms','sms','Organik SMS','Toplu ve bilgilendirme SMS''i.','https://www.organikhaberlesme.com','planned','[]','[]',70),
  ('twilio','sms','Twilio','Uluslararası SMS.','https://www.twilio.com','planned','[]','[]',80),
- ('parasut','accounting','Paraşüt','e-Arşiv / e-Fatura kesimi ve muhasebe kaydı.','https://www.parasut.com','planned','[]','[]',10),
+ ('parasut','accounting','Paraşüt','Siparişlerden otomatik e-Arşiv / e-Fatura (alıcı e-Fatura mükellefiyse e-Fatura), PDF ve tahsilat kaydı (API v4).','https://www.parasut.com','ready',
+  '[{"key":"client_id","label":"Client ID","type":"text","required":true,"secret":false,"maxLength":120,"hint":"Paraşüt API erişimi için destek@parasut.com adresinden alınır."},{"key":"client_secret","label":"Client secret","type":"password","required":true,"secret":true,"maxLength":200},{"key":"username","label":"Paraşüt kullanıcı e-postası","type":"text","required":true,"secret":false,"maxLength":160,"placeholder":"muhasebe@firma.com","hint":"Faturaları kesecek Paraşüt kullanıcısı (API yetkili)."},{"key":"password","label":"Paraşüt şifresi","type":"password","required":true,"secret":true,"maxLength":200},{"key":"company_id","label":"Firma numarası","type":"text","required":true,"secret":false,"maxLength":20,"pattern":"^[0-9]{1,20}$","placeholder":"123456","hint":"Paraşüt adres çubuğundaki firma numarası (uygulama.parasut.com/123456/...)."},{"key":"account_id","label":"Tahsilat hesabı numarası","type":"text","required":false,"secret":false,"maxLength":20,"pattern":"^[0-9]{1,20}$","hint":"Doluysa ödemesi alınmış siparişlerin tahsilatı bu Kasa / Banka hesabına işlenir. Boş = tahsilat işlenmez."},{"key":"shipment_title","label":"Kargo firmasının unvanı","type":"text","required":false,"secret":false,"maxLength":160,"placeholder":"Yurtiçi Kargo Servisi A.Ş.","hint":"e-Arşiv gönderi bilgisi (internet satışında zorunlu). Boşsa siparişin kargo yöntemi adı yazılır."},{"key":"shipment_vkn","label":"Kargo firmasının VKN si","type":"text","required":false,"secret":false,"maxLength":10,"pattern":"^[0-9]{10}$"}]',
+  '["e_archive","e_invoice","pdf","payment"]',10),
  ('birfatura','accounting','BirFatura','Pazaryeri ve e-ticaret siparişlerinden otomatik e-Arşiv / e-Fatura.','https://www.birfatura.com','planned','[]','[]',20),
  ('uyumsoft','accounting','Uyumsoft','Özel entegratör: e-Arşiv / e-Fatura.','https://www.uyumsoft.com','planned','[]','[]',30),
  ('qnb_efinans','accounting','QNB eSolutions (eFinans)','Özel entegratör: e-Arşiv / e-Fatura.','https://www.qnbesolutions.com.tr','planned','[]','[]',40),
@@ -2794,6 +3021,8 @@ INSERT OR IGNORE INTO barcode_sequences (id, prefix, next_value) VALUES ('defaul
 
 -- Reviews / notifications reference rows (insert only: the panel owns the values afterwards).
 INSERT OR IGNORE INTO review_settings (id) VALUES (1);
+INSERT OR IGNORE INTO delivery_settings (id) VALUES (1);
+INSERT OR IGNORE INTO iys_settings (id) VALUES (1);
 INSERT OR IGNORE INTO consent_settings (id) VALUES (1);
 
 -- Live support reference rows (insert only). The permission is also added here so existing databases get it from

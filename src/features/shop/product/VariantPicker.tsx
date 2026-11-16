@@ -8,10 +8,16 @@ import { RotateCcw, ShieldCheck, Truck } from "lucide-react";
 import { MinusIcon, PlusIcon } from "@/components/icons";
 import { PromoBadge } from "@/components/ui/PromoBadge";
 import { CompareToggle } from "../compare/CompareToggle";
+import { WishlistHeart } from "../wishlist/WishlistHeart";
 import { ExternalCompare } from "../compare/ExternalCompare";
 import { Stars, formatAverage } from "../reviews/Stars";
 import { PriceAlertButton, StockAlertButton, useProductAlerts } from "./ProductAlerts";
+import type { DeliveryRules } from "@/modules/delivery/domain/delivery";
+import type { PublicSizeChart } from "@/modules/size-charts/domain/size-chart";
+import { DeliveryPromise } from "./DeliveryPromise";
+import { Installments } from "./Installments";
 import { ProductGallery } from "./ProductGallery";
+import { SizeChartButton } from "./SizeChartButton";
 
 /**
  * Variant selection updates gallery, price and stock together; impossible combinations are disabled (spec §04).
@@ -26,7 +32,18 @@ const TRUST = [
   { icon: RotateCcw, text: "14 gün içinde cayma hakkı", color: "var(--color-dept-2)" },
 ];
 
-export function VariantPicker({ product, signedIn }: { product: ProductDetail; signedIn: boolean }) {
+/** Size-like axis that carries the "Beden tablosu" link (falls back to below the last axis). */
+const SIZE_AXIS = /^(size|beden|numara|olcu|ölçü)$/i;
+const isSizeAxis = (a: ProductDetail["axes"][number]) => SIZE_AXIS.test(a.code) || /beden|numara/i.test(a.label);
+
+export function VariantPicker({ product, signedIn, delivery, sizeChart, installments = false }: {
+  product: ProductDetail; signedIn: boolean;
+  /** Delivery promise rules (null = switched off) and the request time the server rendered for. */
+  delivery?: { rules: DeliveryRules; serverNow: string } | null;
+  sizeChart?: PublicSizeChart | null;
+  /** Card payments are on: offer the installment table. */
+  installments?: boolean;
+}) {
   const { add, busy, error } = useCart();
   const alerts = useProductAlerts(product.id, product.slug, signedIn);
   const initial = product.variants.find((v) => v.isDefault) ?? product.variants[0];
@@ -47,6 +64,7 @@ export function VariantPicker({ product, signedIn }: { product: ProductDetail; s
   /** Thumbnail of a swatch value: the first photo of a variant with that value (Trendyol-style colour pictures). */
   const thumbOf = (code: string, value: string) => product.variants.map((v) => (v.options[code] === value ? ownMedia(v.id)[0] : undefined)).find(Boolean);
   const max = Math.min(variant?.available ?? 0, 20);
+  const sizeAxis = product.axes.find(isSizeAxis);
 
   return (
     <div className="grid gap-6 md:grid-cols-2 md:gap-10 lg:gap-14">
@@ -75,14 +93,19 @@ export function VariantPicker({ product, signedIn }: { product: ProductDetail; s
             <p className="mt-1 text-lg font-bold tabular-nums text-brand">Sepette {formatMinor(variant.campaignPriceMinor)}</p>
           )}
           {product.promotions.length > 0 && <p className="mt-1 text-xs text-muted">Kampanya indirimi sepette otomatik uygulanır.</p>}
+          {installments && variant?.priceMinor != null && variant.available > 0 ? <div><Installments priceMinor={variant.campaignPriceMinor != null && variant.campaignPriceMinor < variant.priceMinor ? variant.campaignPriceMinor : variant.priceMinor} /></div> : null}
           <p className={`mt-3 inline-flex items-center gap-1.5 text-sm font-semibold ${variant && variant.available > 0 ? "text-success" : "text-danger"}`}><span aria-hidden className="size-2 rounded-full bg-current" />
             {!variant ? "Lütfen seçim yapın" : variant.available > 0 ? (variant.available <= 3 ? `Son ${variant.available} ürün` : "Stokta") : "Bu seçenek tükendi"}
           </p>
         </div>
+        {delivery && (!variant || variant.available > 0) && <DeliveryPromise rules={delivery.rules} serverNow={delivery.serverNow} />}
 
         {product.axes.map((axis) => (
-          <fieldset key={axis.code} className="mt-6">
+          <fieldset key={axis.code} className="relative mt-6">
             <legend className="mb-2 text-sm font-semibold">{axis.label}: <span className="font-normal text-ink-soft">{axis.options.find((o) => o.value === sel[axis.code])?.label ?? "Seçiniz"}</span></legend>
+            {sizeChart && axis === sizeAxis && (
+              <div className="absolute right-0 top-0"><SizeChartButton chart={sizeChart} selected={axis.options.find((o) => o.value === sel[axis.code])?.label} /></div>
+            )}
             {axis.style === "dropdown" ? (
               <select aria-label={axis.label} className="input max-w-xs" value={sel[axis.code] ?? ""}
                 onChange={(e) => { setSel((s) => ({ ...s, [axis.code]: e.target.value })); setQty(1); }}>
@@ -117,6 +140,7 @@ export function VariantPicker({ product, signedIn }: { product: ProductDetail; s
             )}
           </fieldset>
         ))}
+        {sizeChart && !sizeAxis && <div className="mt-4"><SizeChartButton chart={sizeChart} /></div>}
 
         <div className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t border-line bg-white p-3 md:static md:mt-8 md:border-0 md:p-0">
           <div className="flex items-center rounded-full border border-line">
@@ -132,6 +156,7 @@ export function VariantPicker({ product, signedIn }: { product: ProductDetail; s
         </div>
         {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
         <div className="mt-4 flex flex-wrap gap-2">
+          <WishlistHeart variant="button" product={{ id: product.id, name: product.name }} />
           <CompareToggle item={{ id: product.id, slug: product.slug, name: product.name, imageUrl: gallery.find((m) => m.kind === "image")?.url ?? null }} />
           {variant?.priceMinor != null && <PriceAlertButton variantId={variant.id} alerts={alerts} />}
           <ExternalCompare productName={product.name} />

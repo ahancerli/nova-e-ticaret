@@ -5,6 +5,7 @@ import { ChangePasswordForm } from "@/features/account/ChangePasswordForm";
 import { LogoutButton } from "@/features/account/LogoutButton";
 import { MyProductAlerts } from "@/features/account/MyProductAlerts";
 import { MyReviews } from "@/features/account/MyReviews";
+import { MyWishlist } from "@/features/account/MyWishlist";
 import { OrderStatusPill } from "@/features/account/order-status";
 import { ACCOUNT_TABS, accountHref, accountTabOf, type AccountTab } from "@/features/account/tabs";
 import { PageHero } from "@/features/shop";
@@ -14,6 +15,7 @@ import { ListMyProductAlertsToken } from "@/modules/alerts";
 import { GetCustomerProfileToken } from "@/modules/identity";
 import { ListCustomerOrdersToken } from "@/modules/orders";
 import { ListMyReviewsToken } from "@/modules/reviews";
+import { ListMyWishlistToken } from "@/modules/wishlist";
 import { currentPrincipal, resolveService } from "@/server/app";
 
 export const metadata = { title: "Hesabım", robots: { index: false } };
@@ -76,6 +78,10 @@ async function Section({ tab, userId, email, displayName, profile }: { tab: Acco
     case "degerlendirmeler": {
       const mine = await resolveService(ListMyReviewsToken).then((q) => q.execute(userId));
       return <MyReviews reviews={mine.reviews} reviewable={mine.reviewable} />;
+    }
+    case "favoriler": {
+      const mine = await resolveService(ListMyWishlistToken).then((q) => q.execute(userId));
+      return <MyWishlist initial={mine.items} unavailable={mine.unavailable} />;
     }
     case "haber-ver": return <MyProductAlerts initial={await resolveService(ListMyProductAlertsToken).then((q) => q.execute(userId))} />;
     case "sifre": return (

@@ -23,7 +23,6 @@ export class D1ShowcaseRepository extends Repository implements ShowcaseReposito
          FROM home_sections h
          LEFT JOIN media_assets m ON m.id = h.media_id
          LEFT JOIN media_assets mm ON mm.id = h.mobile_media_id
-        WHERE h.section_type <> 'recently_viewed'
         ORDER BY h.sort_order, h.id`,
     );
     return rows.map((r) => ({

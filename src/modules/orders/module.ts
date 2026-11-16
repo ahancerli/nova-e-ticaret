@@ -1,11 +1,14 @@
 import { ClockToken, DatabaseToken, IdGeneratorToken, token, type Container } from "@/core";
+import { NotificationPublisherToken } from "@/modules/notifications";
+import { RepriceLinesToken } from "@/modules/pricing";
 import { AuditLogToken } from "@/modules/audit/audit-log";
 import { SettlePaymentToken } from "@/modules/checkout";
 import { OrderActionKit } from "./application/actions/order-action";
-import { CancelAction, ConfirmCodAction, DeliverAction, NoteAction, ReconcileAction, TransitionAction } from "./application/actions/status-actions";
+import { CancelAction, CancelItemsAction, ConfirmCodAction, DeliverAction, NoteAction, ReconcileAction, TransitionAction } from "./application/actions/status-actions";
+import { ItemCancellations } from "./application/item-cancellations";
 import { RefundAction, ShipAction } from "./application/actions/fulfilment-actions";
 import { BulkOrderAction, GetOrderDetail, ListOrders, ListShippingMethods, RunOrderAction, SettleRefund, type OrderReadModel } from "./application/order-use-cases";
-import { GetCustomerOrder, ListCustomerOrders, LookupGuestOrder } from "./application/customer-orders";
+import { CancelMyOrderItems, GetCustomerOrder, ListCustomerOrders, LookupGuestOrder, QuoteMyCancellation } from "./application/customer-orders";
 import type { OrderRepository } from "./application/ports";
 import { D1CustomerOrderReadModel } from "./infrastructure/d1-customer-orders";
 import { D1OrderReadModel } from "./infrastructure/d1-order.read-model";
@@ -23,6 +26,9 @@ export const SettleRefundToken = token<SettleRefund>("SettleRefund");
 export const OrderActionKitToken = token<OrderActionKit>("OrderActionKit");
 export const RunOrderActionToken = token<RunOrderAction>("RunOrderAction");
 export const BulkOrderActionToken = token<BulkOrderAction>("BulkOrderAction");
+export const ItemCancellationsToken = token<ItemCancellations>("ItemCancellations");
+export const QuoteMyCancellationToken = token<QuoteMyCancellation>("QuoteMyCancellation");
+export const CancelMyOrderItemsToken = token<CancelMyOrderItems>("CancelMyOrderItems");
 
 export function registerOrders(c: Container): void {
   c.scoped(OrderRepositoryToken, (r) => new D1OrderRepository(r.resolve(DatabaseToken)));
@@ -39,6 +45,9 @@ export function registerOrders(c: Container): void {
     { settle: (paymentId, opts) => r.resolve(SettlePaymentToken).execute(paymentId, opts) },
     r.resolve(SettleRefundToken),
   ));
+  c.scoped(ItemCancellationsToken, (r) => new ItemCancellations(r.resolve(OrderActionKitToken), r.resolve(RepriceLinesToken), r.resolve(NotificationPublisherToken)));
+  c.scoped(QuoteMyCancellationToken, (r) => new QuoteMyCancellation(new D1CustomerOrderReadModel(r.resolve(DatabaseToken)), r.resolve(ItemCancellationsToken)));
+  c.scoped(CancelMyOrderItemsToken, (r) => new CancelMyOrderItems(new D1CustomerOrderReadModel(r.resolve(DatabaseToken)), r.resolve(ItemCancellationsToken)));
   // One command per state-machine action (ORDER_ACTIONS in lib/order-rules.ts).
   c.scoped(RunOrderActionToken, (r) => {
     const kit = r.resolve(OrderActionKitToken);
@@ -50,6 +59,7 @@ export function registerOrders(c: Container): void {
       new DeliverAction(kit),
       new TransitionAction("complete", kit),
       new CancelAction(kit),
+      new CancelItemsAction(() => r.resolve(ItemCancellationsToken)),
       new RefundAction(kit),
       new NoteAction(kit),
     ]);

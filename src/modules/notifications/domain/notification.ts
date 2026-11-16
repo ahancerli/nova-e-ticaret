@@ -24,6 +24,10 @@ export const NOTIFICATION_TYPES = {
     label: "Düşük puanlı yorum", description: "1 veya 2 yıldızlı yorum geldi — müşteriyle iletişime geçmek için iyi bir an.",
     permission: "reviews.moderate", severity: "warning", defaults: { inApp: true, email: false },
   },
+  "question.pending": {
+    label: "Yanıt bekleyen ürün sorusu", description: "Müşteri ürün sayfasından soru sordu; yanıtlanınca mağazada görünür ve müşteriye e-posta gider.",
+    permission: "reviews.moderate", severity: "info", defaults: { inApp: true, email: false },
+  },
   "support.waiting": {
     label: "Yeni canlı destek konuşması", description: "Bir üye canlı destekten yazdı; ilk yanıt verilince bildirim kalkar.",
     permission: "support.chat", severity: "info", defaults: { inApp: true, email: false },
@@ -31,6 +35,18 @@ export const NOTIFICATION_TYPES = {
   "order.placed": {
     label: "Yeni sipariş", description: "Mağazadan veya pazaryerinden yeni bir sipariş oluşturuldu.",
     permission: "orders.read", severity: "success", defaults: { inApp: true, email: false },
+  },
+  "order.items_cancelled": {
+    label: "Siparişte ürün iptali", description: "Müşteri siparişinden ürün iptal etti veya faturası kesilmiş bir siparişte ürün iptal edildi (fatura düzeltilmeli).",
+    permission: "orders.write", severity: "warning", defaults: { inApp: true, email: false },
+  },
+  "iys.failed": {
+    label: "İYS izin kaydı reddedildi", description: "Ticari ileti izni İYS'ye kaydedilemedi; düzeltilmezse bu kişiye kampanya gönderilmemeli.",
+    permission: "integrations.write", severity: "warning", defaults: { inApp: true, email: true },
+  },
+  "invoice.failed": {
+    label: "Otomatik fatura kesilemedi", description: "e-Fatura entegratörü (Paraşüt) bir siparişin faturasını reddetti veya ulaşılamadı; Faturalar ekranından tekrar deneyin ya da elle kaydedin.",
+    permission: "orders.write", severity: "danger", defaults: { inApp: true, email: true },
   },
   "return.requested": {
     label: "Yeni iade talebi", description: "Müşteri cayma hakkıyla iade talebi açtı; onaylanması veya reddedilmesi gerekiyor.",

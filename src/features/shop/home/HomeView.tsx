@@ -1,5 +1,6 @@
 import type { HomeData, HomeSection } from "@/lib/types";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { RecentlyViewed } from "../product/RecentlyViewed";
 import { ProductGridSkeleton } from "../ui/ProductGrid";
 import { HeroSlider } from "./HeroSlider";
 import { Banner, BrandStrip, CategoryTiles, ProductsSection, StoryStrip } from "./sections";
@@ -32,14 +33,22 @@ export function HomeView({ data }: { data: HomeData }) {
     }
     blocks.push({ key: s.id, tight: s.type === "story_strip", node: <Guard s={s}><Section s={s} index={k} /></Guard> });
   }
+  const band = (i: number) => (i % 2 ? "bg-ground" : "border-b border-line/60 bg-white");
   return (
     // -mb-16 cancels the footer's top margin: the last band meets the footer directly.
     <div className="-mb-16">
-      {blocks.map((b, i) => (
-        <div key={b.key} data-band={i % 2 ? "grey" : "white"} className={i % 2 ? "bg-ground" : "border-b border-line/60 bg-white"}>
-          <div className={`container-page ${b.tight ? "py-4 md:py-5" : "py-7 md:py-10"}`}>{b.node}</div>
-        </div>
-      ))}
+      {blocks.map((b, i) => {
+        // Son gezilenler draws its own band: it stays out of the page entirely while the visitor has no history.
+        const s = list.find((x) => x.id === b.key);
+        if (s?.type === "recently_viewed") {
+          return <Guard key={b.key} s={s}><RecentlyViewed title={s.title} subtitle={s.subtitle} limit={s.limit} className={band(i)} innerClassName="container-page py-7 md:py-10" /></Guard>;
+        }
+        return (
+          <div key={b.key} data-band={i % 2 ? "grey" : "white"} className={band(i)}>
+            <div className={`container-page ${b.tight ? "py-4 md:py-5" : "py-7 md:py-10"}`}>{b.node}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -56,6 +65,7 @@ function Section({ s, index }: { s: HomeSection; index: number }) {
     case "brand_strip": return <BrandStrip s={s} />;
     case "banner": return <Banner s={s} />;
     case "products": return <ProductsSection s={s} eager={index < 4} />;
+    case "recently_viewed": return null;
   }
 }
 

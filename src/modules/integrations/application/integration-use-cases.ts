@@ -4,11 +4,11 @@ import type { SecretVault } from "@/modules/platform/secrets";
 import type { Actor } from "@/modules/shared/actor";
 import { IntegrationErrors as E } from "../domain/errors";
 import {
-  KIND_LABEL, defaultSmsEvents, trMobile, validateValues,
-  type IntegrationKind, type IntegrationPageView, type IntegrationSettings, type IntegrationView, type ProviderView, type SmsEvent, type SmsEventSetting,
+  DEFAULT_INVOICING, KIND_LABEL, defaultSmsEvents, trMobile, validateValues,
+  type IntegrationKind, type InvoicingSettings, type IntegrationPageView, type IntegrationSettings, type IntegrationView, type ProviderView, type SmsEvent, type SmsEventSetting,
 } from "../domain/providers";
 import type {
-  CarrierConnector, Connector, ConnectorContext, ConnectorRegistry, IntegrationRepository, IntegrationRow, ProviderRow, SmsConnector,
+  AccountingConnector, CarrierConnector, Connector, ConnectorContext, ConnectorRegistry, IntegrationRepository, IntegrationRow, ProviderRow, SmsConnector,
 } from "./ports";
 
 const KEY_VERSION = "v1";
@@ -33,13 +33,24 @@ const providerView = (p: ProviderRow, registry: ConnectorRegistry): ProviderView
   status: isReady(p, registry) ? "ready" : "planned", fields: isReady(p, registry) ? p.fields : [], capabilities: p.capabilities,
 });
 
+/** Switching automatic invoicing on stamps `since`; switching it off clears it (the panel never sends it). */
+function invoicingWithSince(previous: InvoicingSettings | undefined, input: InvoicingSettings | undefined, now: string): InvoicingSettings {
+  const merged = { ...DEFAULT_INVOICING, ...(previous ?? {}), ...(input ?? {}) };
+  const since = !merged.auto ? null : previous?.auto && previous.since ? previous.since : now;
+  return { auto: merged.auto, trigger: merged.trigger, since };
+}
+
+/** Kind-specific settings with defaults filled in. */
+const settingsOf = (kind: IntegrationKind, s: IntegrationSettings): IntegrationSettings =>
+  kind === "sms" ? { events: { ...defaultSmsEvents(), ...(s.events ?? {}) } } : kind === "accounting" ? { invoicing: { ...DEFAULT_INVOICING, ...(s.invoicing ?? {}) } } : {};
+
 function integrationView(row: IntegrationRow, provider: ProviderRow | null): IntegrationView {
   const secretKeys = new Set((provider?.fields ?? []).filter((f) => f.secret).map((f) => f.key));
   return {
     kind: row.kind, providerCode: row.providerCode, providerName: provider?.name ?? row.providerCode, isActive: row.isActive,
     values: Object.fromEntries(Object.entries(row.values).filter(([k]) => !secretKeys.has(k))),
     secretsSet: row.secrets.filter((s) => secretKeys.has(s)),
-    settings: row.kind === "sms" ? { events: { ...defaultSmsEvents(), ...(row.settings.events ?? {}) } } : {},
+    settings: settingsOf(row.kind, row.settings),
     updatedAt: row.updatedAt,
   };
 }
@@ -59,6 +70,7 @@ export interface SaveIntegrationInput {
   providerCode: string;
   values: Record<string, string>;
   events?: Partial<Record<SmsEvent, SmsEventSetting>>;
+  invoicing?: InvoicingSettings;
   expectedUpdatedAt: string | null;
 }
 
@@ -86,7 +98,9 @@ export class SaveIntegration {
     const secretFields = provider.fields.filter((f) => f.secret && values[f.key]);
     if (secretFields.length && !deps.masterKey) throw E.masterKeyMissing();
     const publicValues = Object.fromEntries(provider.fields.filter((f) => !f.secret).map((f) => [f.key, values[f.key] || f.default || ""]));
-    const settings: IntegrationSettings = kind === "sms" ? { events: { ...defaultSmsEvents(), ...(sameProvider ? current!.settings.events : {}), ...(input.events ?? {}) } } : {};
+    const previous = sameProvider ? current!.settings : {};
+    const settings: IntegrationSettings = kind === "sms" ? { events: { ...defaultSmsEvents(), ...(previous.events ?? {}), ...(input.events ?? {}) } }
+      : kind === "accounting" ? { invoicing: invoicingWithSince(previous.invoicing, input.invoicing, deps.clock.nowIso()) } : {};
     const publicConfig = { values: publicValues, settings };
 
     const now = deps.clock.nowIso();
@@ -107,6 +121,7 @@ export class SaveIntegration {
           provider: provider.code, ...(current && !sameProvider ? { replaced: current.providerCode } : {}), values: publicValues,
           secretsChanged: secretFields.map((f) => f.key),
           ...(settings.events ? { smsEvents: Object.entries(settings.events).filter(([, e]) => e?.enabled).map(([k]) => k) } : {}),
+          ...(settings.invoicing ? { invoicing: settings.invoicing } : {}),
         },
       }))
       .commit();
@@ -153,6 +168,10 @@ export class IntegrationRuntime {
     return this.active("sms") as Promise<ActiveIntegration<SmsConnector> | null>;
   }
 
+  accounting(): Promise<ActiveIntegration<AccountingConnector> | null> {
+    return this.active("accounting") as Promise<ActiveIntegration<AccountingConnector> | null>;
+  }
+
   /** Like `active`, but explains why there is none (panel test button). */
   async require(kind: IntegrationKind): Promise<ActiveIntegration<Connector>> {
     const current = await this.repo.current(kind);
@@ -174,7 +193,7 @@ export class IntegrationRuntime {
       if (v === null) { if (f.required) return null; continue; }
       secrets[f.key] = v;
     }
-    return { integrationId: current.id, providerCode: current.providerCode, providerName: provider.name, connector, ctx: { values: current.values, secrets }, settings: current.settings };
+    return { integrationId: current.id, providerCode: current.providerCode, providerName: provider.name, connector, ctx: { values: current.values, secrets }, settings: settingsOf(kind, current.settings) };
   }
 }
 

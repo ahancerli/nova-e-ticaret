@@ -1,4 +1,4 @@
-import { AppError, UnitOfWork, hmacHex, type Authenticator, type Clock, type Database, type IdGenerator, type Logger, type Statement } from "@/core";
+import { AppError, UnitOfWork, encryptSecret, hmacHex, type Authenticator, type Clock, type Database, type IdGenerator, type Logger, type Statement } from "@/core";
 import type { Quote } from "@/lib/types";
 import type { GeoDirectory } from "@/modules/geo";
 import { cashOnDeliveryOffer, parseCashOnDelivery, type CashOnDeliveryOffer } from "@/modules/payments/domain/cash-on-delivery";
@@ -24,6 +24,8 @@ export interface CheckoutDeps {
   ids: IdGenerator;
   geo: GeoDirectory;
   secret: string;
+  /** SECRETS_MASTER_KEY: seals the corporate buyer's VKN / TCKN. */
+  masterKey: string;
 }
 
 /** Command: prices the cart on the server and opens a short-lived checkout session (older ones are superseded). */
@@ -128,7 +130,16 @@ export class ConfirmCheckout {
       ...a, ...(await geo.region(path, a)),
       phone: a.phone === input.phone ? phone : await geo.phone(`${path}.phone`, a.phone, input.phoneCountry ?? a.countryCode),
     });
-    return { ...input, phone, shipping: await address("shipping", input.shipping), billing: input.billing && (await address("billing", input.billing)) };
+    const billing = input.billing && (await address("billing", input.billing));
+    // A corporate invoice to the shipping address arrives as shipping + company fields: keep them on the billing copy.
+    const sealed = async (a: AddressInput | undefined) => {
+      const tax = a?.taxNumber;
+      if (!a || !tax) return a;
+      if (!this.deps.masterKey) throw CheckoutErrors.taxNumberUnavailable();
+      // the clear VKN / TCKN never goes further than this line
+      return { ...a, taxNumber: undefined, taxIdentifierEncrypted: JSON.stringify(await encryptSecret(this.deps.masterKey, tax)) };
+    };
+    return { ...input, phone, shipping: (await sealed(await address("shipping", input.shipping)))!, billing: await sealed(billing) };
   }
 }
 

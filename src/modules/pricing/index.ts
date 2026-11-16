@@ -3,5 +3,5 @@ export { CAMPAIGN_RULES, evaluateCampaign, type Campaign, type CampaignRule } fr
 export {
   DEFAULT_POLICY, EMPTY_QUOTE, priceCart, productPromotions, type CartLineSnapshot, type CouponSnapshot, type PricingInput, type PricingPolicySnapshot,
 } from "./domain/pricing-engine";
-export { normalizeCouponCode, type GetProductPromotions, type PromotionItem } from "./application/pricing";
-export { BuildQuoteToken, FindUsableCouponToken, GetProductPromotionsToken, registerPricing } from "./module";
+export { normalizeCouponCode, type GetProductPromotions, type PromotionItem, type RepriceInput, type RepriceLine, type RepriceLines } from "./application/pricing";
+export { BuildQuoteToken, FindUsableCouponToken, GetProductPromotionsToken, RepriceLinesToken, registerPricing } from "./module";

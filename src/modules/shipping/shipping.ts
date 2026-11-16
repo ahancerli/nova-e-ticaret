@@ -58,7 +58,7 @@ export class ShippingRepository extends Repository {
               -- kapıda ödeme: the whole amount is collected with the first parcel of the order
               CASE WHEN o.payment_method = 'cash_on_delivery' AND o.payment_status = 'pending'
                     AND NOT EXISTS (SELECT 1 FROM shipments s2 WHERE s2.order_id = o.id AND (s2.created_at < s.created_at OR (s2.created_at = s.created_at AND s2.id < s.id)))
-                   THEN o.total_minor END AS cod_amount,
+                   THEN o.total_minor - COALESCE((SELECT SUM(c.amount_minor) FROM order_cancellations c WHERE c.order_id = o.id), 0) END AS cod_amount,
               a.recipient_name, a.phone_e164, a.province, a.district, a.line1, a.line2,
               (SELECT COALESCE(SUM(si.quantity), 0) FROM shipment_items si WHERE si.shipment_id = s.id) AS pieces,
               (SELECT cs.status FROM carrier_shipments cs WHERE cs.shipment_id = s.id) AS booking

@@ -34,7 +34,7 @@ const readGuest = () => {
 };
 
 const METHODS: { value: PaymentMethod; label: string; hint: string }[] = [
-  { value: "iyzico", label: "Kredi / banka kartı (iyzico)", hint: "Güvenli ödeme sayfasına yönlendirilirsiniz." },
+  { value: "iyzico", label: "Kredi / banka kartı (iyzico)", hint: "Güvenli ödeme sayfasına yönlendirilirsiniz; taksit seçeneklerini kart numaranızı girince orada seçersiniz." },
   { value: "bank_transfer", label: "Havale / EFT", hint: "Siparişiniz, ödemeniz banka hesabımızda doğrulandıktan sonra hazırlanır." },
   { value: "cash_on_delivery", label: "Kapıda ödeme", hint: "Siparişinizi telefonla doğruladıktan sonra hazırlarız; ödemeyi teslimatta yaparsınız." },
 ];
@@ -63,6 +63,7 @@ export function CheckoutClient({ legal, payment, customer, addresses = [], socia
     return () => { live = false; };
   }, [payment.cashOnDelivery, cart.totalMinor, cart.lines.length]);
   const [sameBilling, setSameBilling] = useState(true);
+  const [corporate, setCorporate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const errors = useFieldErrors();
@@ -104,6 +105,9 @@ export function CheckoutClient({ legal, payment, customer, addresses = [], socia
       recipientName: s(`${p}name`), phone: s("phone"), countryCode: s(`${p}country`) || undefined, province: s(`${p}province`), district: s(`${p}district`),
       line1: s(`${p}line1`), postalCode: s(`${p}postal`) || undefined,
     });
+    // Kurumsal fatura: company, tax office and VKN ride on the billing address (the shipping one when it is the same).
+    const corp = corporate ? { companyName: s("c_company"), taxOffice: s("c_tax_office"), taxNumber: s("c_tax_number") } : {};
+    const billingOf = () => (sameBilling ? (corporate ? { ...addr("s_"), ...corp } : undefined) : { ...addr("b_"), ...corp });
     try {
       const quote = await checkoutApi.quote();
       if (quote.data.quote.totalMinor !== cart.totalMinor) {
@@ -113,7 +117,7 @@ export function CheckoutClient({ legal, payment, customer, addresses = [], socia
       }
       const res = await checkoutApi.confirm({
         checkoutId: quote.data.checkoutId, paymentMethod: method, paymentFeeMinor: method === "cash_on_delivery" ? feeMinor : undefined, email: s("email"), phone: s("phone"), phoneCountry: s("phoneCountry") || undefined,
-        shipping: addr("s_"), billing: sameBilling ? undefined : addr("b_"), note: s("note") || undefined,
+        shipping: addr("s_"), billing: billingOf(), note: s("note") || undefined,
         acceptedTermsVersion: legal.termsVersion,
       }, idemKey);
       // The server converted the cart in the same transaction as the order: show the empty cart before leaving
@@ -179,6 +183,20 @@ export function CheckoutClient({ legal, payment, customer, addresses = [], socia
             <AddressFields p="b_" kind="billing" fe={fe} />
           </section>
         )}
+        <section className="card space-y-4 p-5" aria-labelledby="c-corp">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" className="h-4 w-4 accent-brand" checked={corporate} onChange={(e) => setCorporate(e.target.checked)} aria-controls="c-corp-fields" />
+            <span id="c-corp">Kurumsal fatura istiyorum</span>
+          </label>
+          {corporate && (
+            <div id="c-corp-fields" className="grid gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2"><Field name="c_company" label="Firma unvanı" auto="organization" err={fe("billing.companyName")} /></div>
+              <Field name="c_tax_office" label="Vergi dairesi" err={fe("billing.taxOffice")} />
+              <Field name="c_tax_number" label="Vergi numarası (şahıs firmasında T.C. kimlik no)" err={fe("billing.taxNumber")} inputMode="numeric" />
+              <p className="text-xs text-muted sm:col-span-2">Faturanız bu bilgilerle kesilir; e-Fatura mükellefiyseniz e-Fatura olarak gelen kutunuza düşer. Vergi numaranız şifreli saklanır.</p>
+            </div>
+          )}
+        </section>
         <section className="card space-y-3 p-5" aria-labelledby="c-pay">
           <h2 id="c-pay" className="font-semibold">Ödeme yöntemi</h2>
           {methods.length === 0 && (
@@ -248,12 +266,12 @@ export function CheckoutClient({ legal, payment, customer, addresses = [], socia
   );
 }
 
-function Field({ name, label, type = "text", auto, err, defaultValue, readOnly }: { name: string; label: string; type?: string; auto?: string; err?: string; defaultValue?: string; readOnly?: boolean }) {
+function Field({ name, label, type = "text", auto, err, defaultValue, readOnly, inputMode }: { name: string; label: string; type?: string; auto?: string; err?: string; defaultValue?: string; readOnly?: boolean; inputMode?: "numeric" }) {
   return (
     <div>
       <label htmlFor={name} className="mb-1 block text-sm font-medium">{label}</label>
       <input id={name} name={name} type={type} required={name !== "s_postal" && name !== "b_postal"} autoComplete={auto} className={`input${readOnly ? " bg-ground text-ink-soft" : ""}`}
-        defaultValue={defaultValue} readOnly={readOnly}
+        defaultValue={defaultValue} readOnly={readOnly} inputMode={inputMode}
         aria-invalid={!!err} aria-describedby={err ? `${name}-err` : undefined} />
       {err && <p id={`${name}-err`} className="mt-1 text-xs text-danger">{err}</p>}
     </div>

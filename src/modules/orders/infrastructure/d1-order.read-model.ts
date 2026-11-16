@@ -77,7 +77,7 @@ export class D1OrderReadModel extends Repository {
   }
 
   async detail(orderId: string, opts: { canSeeCustomer: boolean }) {
-    const [orderQ, addressesQ, itemsQ, adjQ, paymentsQ, shipmentsQ, shipItemsQ, eventsQ, methodsQ, refundsQ] = await this.db.batch([
+    const [orderQ, addressesQ, itemsQ, adjQ, paymentsQ, shipmentsQ, shipItemsQ, eventsQ, methodsQ, refundsQ, cancelsQ, cancelItemsQ, invoiceQ] = await this.db.batch([
       this.db.statement(`SELECT o.*, u.display_name AS account_name,
                          (SELECT COUNT(*) FROM orders x WHERE x.customer_email = o.customer_email) AS customer_order_count,
                          (SELECT COUNT(*) FROM stock_reservations r WHERE r.checkout_id = o.checkout_id AND r.status = 'reserved') AS reserved_lines,
@@ -96,7 +96,8 @@ export class D1OrderReadModel extends Repository {
                          COALESCE((SELECT SUM(si.quantity) FROM shipment_items si JOIN shipments s ON s.id = si.shipment_id
                                     WHERE si.order_item_id = i.id AND s.status <> 'cancelled'), 0) AS shipped_qty,
                          COALESCE((SELECT SUM(m.on_hand_delta) FROM inventory_movements m
-                                    WHERE m.kind = 'return' AND m.reference_type = 'order_item' AND m.reference_id = i.id), 0) AS restocked_qty
+                                    WHERE m.kind = 'return' AND m.reference_type = 'order_item' AND m.reference_id = i.id), 0) AS restocked_qty,
+                         COALESCE((SELECT SUM(ci.quantity) FROM order_cancellation_items ci WHERE ci.order_item_id = i.id), 0) AS cancelled_qty
                     FROM order_items i LEFT JOIN product_variants v ON v.id = i.variant_id LEFT JOIN products p ON p.id = v.product_id
                    WHERE i.order_id = ? ORDER BY i.rowid`).bind(orderId),
       this.db.statement(`SELECT a.label_snapshot, a.amount_minor, a.target, a.order_item_id, c.code_normalized AS coupon_code
@@ -118,6 +119,12 @@ export class D1OrderReadModel extends Repository {
       this.db.statement(`SELECT rf.id, rf.amount_minor, rf.reason, rf.status, rf.created_at, rf.updated_at, p.provider, u.display_name AS requested_by
                     FROM refunds rf JOIN payments p ON p.id = rf.payment_id LEFT JOIN users u ON u.id = rf.requested_by
                    WHERE p.order_id = ? ORDER BY rf.created_at DESC`).bind(orderId),
+      this.db.statement(`SELECT c.id, c.source, c.reason, c.paid_share_minor, c.campaign_diff_minor, c.shipping_diff_minor, c.restored_minor, c.amount_minor, c.waived, c.estimate,
+                         c.invoice_attention, c.created_at, rf.status AS refund_status, u.display_name AS actor_name
+                    FROM order_cancellations c LEFT JOIN refunds rf ON rf.id = c.refund_id LEFT JOIN users u ON u.id = c.actor_id
+                   WHERE c.order_id = ? ORDER BY c.created_at DESC, c.rowid DESC`).bind(orderId),
+      this.db.statement("SELECT cancellation_id, order_item_id, quantity FROM order_cancellation_items WHERE order_id = ?").bind(orderId),
+      this.db.statement("SELECT invoice_number, total_minor FROM invoices WHERE order_id = ? AND status = 'issued' LIMIT 1").bind(orderId),
     ]);
 
     type O = { id: string; order_number: string; checkout_id: string; user_id: string | null; account_name: string | null; customer_email: string; customer_phone: string | null; currency: string; status: string; payment_status: string; subtotal_minor: number; discount_minor: number; shipping_minor: number; tax_minor: number; total_minor: number; customer_note: string | null; placed_at: string; updated_at: string; customer_order_count: number; reserved_lines: number; reservation_expires_at: string | null };
@@ -133,7 +140,7 @@ export class D1OrderReadModel extends Repository {
     };
     const addresses = (addressesQ!.results ?? []) as A[];
 
-    type I = { id: string; variant_id: string; sku_snapshot: string; product_name_snapshot: string; variant_snapshot_json: string; quantity: number; unit_price_minor: number; subtotal_minor: number; discount_minor: number; tax_rate_bps: number; tax_minor: number; total_minor: number; product_id: string | null; product_slug: string | null; image_url: string | null; shipped_qty: number; restocked_qty: number };
+    type I = { id: string; variant_id: string; sku_snapshot: string; product_name_snapshot: string; variant_snapshot_json: string; quantity: number; unit_price_minor: number; subtotal_minor: number; discount_minor: number; tax_rate_bps: number; tax_minor: number; total_minor: number; product_id: string | null; product_slug: string | null; image_url: string | null; shipped_qty: number; restocked_qty: number; cancelled_qty: number };
     type P = { id: string; provider: string; status: string; amount_minor: number; currency: string; paid_at: string | null; failure_code: string | null; created_at: string; provider_payment_id: string | null; bt_id: string | null; reference_code: string | null; expected_minor: number | null; received_minor: number | null; bt_status: string | null; bt_expires_at: string | null; matched_at: string | null; matched_by_name: string | null; bank_name: string | null; iban_normalized: string | null };
     type S = { id: string; method_name: string; tracking_number: string | null; tracking_url: string | null; status: string; shipped_at: string | null; delivered_at: string | null; created_at: string };
     const shipItems = (shipItemsQ!.results ?? []) as { shipment_id: string; order_item_id: string; quantity: number }[];
@@ -142,6 +149,7 @@ export class D1OrderReadModel extends Repository {
       try { variant = (JSON.parse(i.variant_snapshot_json) as { label?: string }).label || null; } catch { /* legacy snapshot */ }
       return {
         id: i.id, sku: i.sku_snapshot, productName: i.product_name_snapshot, variant, quantity: i.quantity, shippedQty: Number(i.shipped_qty), restockedQty: Number(i.restocked_qty),
+        cancelledQty: Number(i.cancelled_qty),
         unitPriceMinor: i.unit_price_minor, subtotalMinor: i.subtotal_minor, discountMinor: i.discount_minor, taxRateBps: i.tax_rate_bps,
         taxMinor: i.tax_minor, totalMinor: i.total_minor, productId: i.product_id, productSlug: i.product_slug, imageUrl: i.image_url,
       };
@@ -153,6 +161,16 @@ export class D1OrderReadModel extends Repository {
     const capturedMinor = payments.filter((p) => ["paid", "partially_refunded", "refunded"].includes(p.status)).reduce((a, p) => a + p.amount_minor, 0);
     const refundedMinor = refunds.filter((r) => r.status === "succeeded").reduce((a, r) => a + r.amountMinor, 0);
     const pendingRefundMinor = refunds.filter((r) => r.status === "requested" || r.status === "processing").reduce((a, r) => a + r.amountMinor, 0);
+    type C = { id: string; source: "admin" | "customer"; reason: string; paid_share_minor: number; campaign_diff_minor: number; shipping_diff_minor: number; restored_minor: number; amount_minor: number; waived: number; estimate: string; invoice_attention: number; created_at: string; refund_status: string | null; actor_name: string | null };
+    const cancelLines = (cancelItemsQ!.results ?? []) as { cancellation_id: string; order_item_id: string; quantity: number }[];
+    const cancellations = ((cancelsQ!.results ?? []) as C[]).map((c) => ({
+      id: c.id, source: c.source, reason: c.reason, paidShareMinor: c.paid_share_minor, campaignDiffMinor: c.campaign_diff_minor, shippingDiffMinor: c.shipping_diff_minor,
+      restoredMinor: c.restored_minor, amountMinor: c.amount_minor, waived: c.waived === 1, estimate: c.estimate, invoiceAttention: c.invoice_attention === 1,
+      createdAt: c.created_at, refundStatus: c.refund_status, actor: c.actor_name,
+      items: cancelLines.filter((x) => x.cancellation_id === c.id).map((x) => ({ name: itemName.get(x.order_item_id) ?? x.order_item_id, quantity: x.quantity })),
+    }));
+    const cancelledMinor = cancellations.reduce((a, c) => a + c.amountMinor, 0);
+    const inv = ((invoiceQ!.results ?? []) as { invoice_number: string; total_minor: number }[])[0];
 
     return {
       id: o.id, orderNumber: o.order_number, status: o.status, paymentStatus: o.payment_status, currency: o.currency,
@@ -165,8 +183,12 @@ export class D1OrderReadModel extends Repository {
       money: {
         subtotalMinor: o.subtotal_minor, discountMinor: o.discount_minor, shippingMinor: o.shipping_minor, taxMinor: o.tax_minor, totalMinor: o.total_minor,
         capturedMinor, refundedMinor, pendingRefundMinor, refundableMinor: Math.max(0, capturedMinor - refundedMinor - pendingRefundMinor),
+        /** Item cancellations: refunded / no longer collected; net = what the order is worth now (invoice, COD collection). */
+        cancelledMinor, netTotalMinor: o.total_minor - cancelledMinor,
       },
       refunds,
+      cancellations,
+      invoice: inv ? { number: inv.invoice_number, totalMinor: inv.total_minor } : null,
       shippingAddress: mapAddr(addresses.find((a) => a.kind === "shipping")),
       billingAddress: mapAddr(addresses.find((a) => a.kind === "billing")),
       items,

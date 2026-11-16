@@ -70,11 +70,11 @@ def setup_checkout(c, cid="co_1", cart="cart_1"):
 
 
 # --- structure ---------------------------------------------------------------
-@test("01 149 tables exist")
+@test("01 162 tables exist")
 def _():
     c = new_db()
     n = c.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()[0]
-    assert n == 149, n
+    assert n == 162, n
 
 
 @test("02 all tables are STRICT")
@@ -461,7 +461,7 @@ def _():
 def _():
     c = new_db()
     ready = c.execute("SELECT code FROM integration_providers WHERE support_status = 'ready' ORDER BY code").fetchall()
-    assert [r[0] for r in ready] == ["netgsm", "yurtici"], ready
+    assert [r[0] for r in ready] == ["netgsm", "parasut", "yurtici"], ready
     ins = "INSERT INTO integration_providers (code, kind, name, support_status, credential_fields_json) VALUES (?, ?, ?, ?, ?)"
     expect_error(c, ins, ("newsms", "sms", "Yeni", "ready", "[]"), "CHECK")
     expect_error(c, ins, ("Bad-Code", "sms", "Yeni", "planned", "[]"), "CHECK")

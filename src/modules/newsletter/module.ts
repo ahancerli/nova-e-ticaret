@@ -1,3 +1,4 @@
+import { IysQueueToken } from "@/modules/iys";
 import { ClockToken, ConfigToken, DatabaseToken, IdGeneratorToken, LoggerToken, token, type Container, type Resolver } from "@/core";
 import { AuditLogToken } from "@/modules/audit/audit-log";
 import { GetSignupLegalToken } from "@/modules/content";
@@ -19,7 +20,7 @@ export const RemoveSubscriberToken = token<RemoveSubscriber>("RemoveSubscriber")
 export function registerNewsletter(c: Container): void {
   const deps = (r: Resolver): NewsletterDeps => ({
     db: r.resolve(DatabaseToken), repo: r.resolve(NewsletterRepositoryToken), clock: r.resolve(ClockToken), ids: r.resolve(IdGeneratorToken),
-    secret: r.resolve(ConfigToken).sessionSecret,
+    secret: r.resolve(ConfigToken).sessionSecret, iys: r.resolve(IysQueueToken),
   });
   // the KVKK notice version shown next to the form (same document as sign-up)
   const consentVersion = (r: Resolver) => async () => (await r.resolve(GetSignupLegalToken).execute()).consentVersion;

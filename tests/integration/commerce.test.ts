@@ -48,9 +48,13 @@ const gateway = {
   },
   checkoutFormDetail: async (token: string) => {
     const form = gateway.forms.get(token);
-    return { status: "success", paymentStatus: "SUCCESS", basketId: form?.basketId, currency: "TRY", price: form.amountMinor / 100, paidPrice: form.amountMinor / 100, paymentId: `iyz-${token}` };
+    return { status: "success", paymentStatus: "SUCCESS", basketId: form?.basketId, currency: "TRY", price: form.amountMinor / 100, paidPrice: form.amountMinor / 100, paymentId: `iyz-${token}`,
+      itemTransactions: (form?.basketItems ?? []).map((b: any) => ({ itemId: b.id, paymentTransactionId: `ptx-${token}-${b.id}`, price: b.priceMinor / 100, paidPrice: b.priceMinor / 100 })) };
   },
-  refund: async (r: any) => ({ ok: true, providerRefundId: `rf-${r.providerPaymentId}` }),
+  refundItem: async (r: any) => ({ ok: true, providerRef: `rf-${r.paymentTransactionId}` }),
+  paymentItems: async () => null,
+  installments: async () => null,
+  webhookSignatureValid: async () => null,
 };
 const sent: any[] = [];
 let mailMode: "sent" | "not_configured" | "throw" = "sent";

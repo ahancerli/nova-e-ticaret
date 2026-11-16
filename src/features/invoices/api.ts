@@ -13,4 +13,6 @@ export const invoicesApi = {
   },
   cancel: (id: string, reason: string) => api<InvoiceView>(`/api/admin/invoices/${encodeURIComponent(id)}/cancel`, { method: "POST", json: { reason } }),
   pdfUrl: (id: string) => `/api/admin/invoices/${encodeURIComponent(id)}/pdf`,
+  /** Issue through the connected e-invoice integrator (Paraşüt). */
+  queue: (orderId: string) => api<{ jobId: string }>("/api/admin/invoices/queue", { method: "POST", json: { orderId } }),
 };

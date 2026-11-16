@@ -3,8 +3,10 @@ import type { ReturnIdentity, ReturnOrder, ReturnRepository } from "../applicati
 import { lineRefundMinor, type AdminReturnRow, type ReturnLine, type ReturnReason, type ReturnRequestSummary, type ReturnStatus } from "../domain/returns";
 
 /** Units of a line held by requests that still count (everything but rejected / cancelled). */
-const HELD = (item: string) => `(SELECT COALESCE(SUM(ri.quantity), 0) FROM return_request_items ri JOIN return_requests rr ON rr.id = ri.return_request_id
-                                  WHERE ri.order_item_id = ${item} AND rr.status NOT IN ('rejected','cancelled'))`;
+/** Units already in a return request, plus units cancelled before shipping (never delivered, so never returnable). */
+const HELD = (item: string) => `((SELECT COALESCE(SUM(ri.quantity), 0) FROM return_request_items ri JOIN return_requests rr ON rr.id = ri.return_request_id
+                                  WHERE ri.order_item_id = ${item} AND rr.status NOT IN ('rejected','cancelled'))
+                               + (SELECT COALESCE(SUM(ci.quantity), 0) FROM order_cancellation_items ci WHERE ci.order_item_id = ${item}))`;
 const variantText = (json: string) => {
   try { return Object.values(JSON.parse(json) as Record<string, unknown>).filter((v) => typeof v === "string" && v).join(" / "); } catch { return ""; }
 };

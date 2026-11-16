@@ -2,7 +2,8 @@
 export * from "./domain/providers";
 export type { ActiveIntegration, IntegrationRuntime, SaveIntegrationInput } from "./application/integration-use-cases";
 export type {
-  CarrierBooking, CarrierConnector, CarrierStatus, CarrierTracking, Connector, ConnectorContext, ConnectorRegistry, SmsConnector,
+  AccountingConnector, CarrierBooking, CarrierConnector, CarrierStatus, CarrierTracking, Connector, ConnectorContext, ConnectorRegistry, IntegrationRefs,
+  InvoiceLineInput, InvoiceProgressState, InvoiceRequest, InvoiceStepResult, SmsConnector,
 } from "./application/ports";
 export { integrationDeleteSchema, integrationKindParams, integrationSaveSchema, integrationTestSchema } from "./http/schemas";
 export {

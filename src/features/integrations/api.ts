@@ -3,6 +3,7 @@
 import { api } from "@/lib/api-client";
 import type { AiHealthReport, AiIntegrationInput, AiIntegrationView } from "@/modules/ai";
 import type { IntegrationKind, IntegrationPageView, SaveIntegrationInput } from "@/modules/integrations";
+import type { IysOverview, IysSettingsInput } from "@/modules/iys";
 import type { MailSettingsInput, MailSettingsView } from "@/modules/mail";
 
 const AI = "/api/admin/integrations/ai";
@@ -20,6 +21,12 @@ export const integrationsApi = {
     save: (input: MailSettingsInput) => api<MailSettingsView>(MAIL, { method: "PUT", json: input }),
     remove: (expectedUpdatedAt: string) => api<{ removed: true }>(MAIL, { method: "DELETE", json: { expectedUpdatedAt } }),
     test: () => api<{ to: string; latencyMs: number; host: string }>(`${MAIL}/test`, { method: "POST", json: {}, timeoutMs: 40_000 }),
+  },
+  iys: {
+    save: (input: IysSettingsInput) => api<IysOverview>("/api/admin/iys", { method: "PUT", json: input, timeoutMs: 40_000 }),
+    test: () => api<{ ok: true; environment: string }>("/api/admin/iys/test", { method: "POST", json: {}, timeoutMs: 40_000 }),
+    retry: () => api<{ requeued: number }>("/api/admin/iys/retry", { method: "POST", json: {} }),
+    backfill: () => api<{ queued: number }>("/api/admin/iys/backfill", { method: "POST", json: {}, timeoutMs: 60_000 }),
   },
   /** SMS and cargo firms (catalog-driven). */
   provider: {

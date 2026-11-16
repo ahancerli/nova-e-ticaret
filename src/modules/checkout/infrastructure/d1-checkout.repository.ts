@@ -78,9 +78,10 @@ export class D1CheckoutRepository extends Repository implements CheckoutReposito
     ));
 
     const address = (kind: "shipping" | "billing", a: AddressInput) => st(
-      `INSERT INTO order_addresses (id, order_id, kind, recipient_name, phone_e164, country_code, province, district, line1, line2, postal_code, company_name, tax_office)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO order_addresses (id, order_id, kind, recipient_name, phone_e164, country_code, province, district, line1, line2, postal_code, company_name, tax_office, tax_identifier_encrypted)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       newId(), o.orderId, kind, a.recipientName, a.phone, a.countryCode ?? "TR", a.province, a.district, a.line1, a.line2 ?? null, a.postalCode ?? null, a.companyName ?? null, a.taxOffice ?? null,
+      kind === "billing" ? a.taxIdentifierEncrypted ?? null : null,
     );
     out.push(address("shipping", o.shipping), address("billing", o.billing));
 

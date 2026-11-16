@@ -1,6 +1,6 @@
 import { z } from "zod";
 import "@/modules/shared/schemas";
-import { INTEGRATION_KINDS, SMS_EVENTS, SMS_TEMPLATE_MAX, type IntegrationKind, type SmsEvent } from "../domain/providers";
+import { INTEGRATION_KINDS, INVOICE_TRIGGERS, SMS_EVENTS, SMS_TEMPLATE_MAX, type IntegrationKind, type InvoiceTrigger, type SmsEvent } from "../domain/providers";
 
 export const integrationKindParams = z.object({ kind: z.enum(INTEGRATION_KINDS as unknown as [IntegrationKind, ...IntegrationKind[]]) });
 
@@ -13,6 +13,7 @@ export const integrationSaveSchema = z.object({
   providerCode: z.string().min(2).max(40).regex(/^[a-z0-9_]+$/, "Geçersiz sağlayıcı."),
   values: z.record(z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,39}$/), z.string().max(500)).refine((v) => Object.keys(v).length <= 20, "Çok fazla alan."),
   events: z.partialRecord(z.enum(SMS_EVENTS as unknown as [SmsEvent, ...SmsEvent[]]), smsEvent).optional(),
+  invoicing: z.object({ auto: z.boolean(), trigger: z.enum(Object.keys(INVOICE_TRIGGERS) as [InvoiceTrigger, ...InvoiceTrigger[]]) }).strict().optional(),
   expectedUpdatedAt: z.string().max(40).nullable(),
 }).strict();
 

@@ -25,6 +25,7 @@ const deps = (r: Resolver): CheckoutDeps => ({
   ids: r.resolve(IdGeneratorToken),
   geo: r.resolve(GeoDirectoryToken),
   secret: r.resolve(ConfigToken).sessionSecret,
+  masterKey: r.resolve(ConfigToken).secretsMasterKey,
 });
 
 export function registerCheckout(c: Container): void {

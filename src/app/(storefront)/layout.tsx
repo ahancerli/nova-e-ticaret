@@ -3,13 +3,14 @@ import { CartProvider } from "@/features/cart/CartProvider";
 import { CartDrawer } from "@/features/cart/CartDrawer";
 import { CaptchaProvider } from "@/features/captcha/useCaptcha";
 import { ConsentRoot } from "@/features/consent/ConsentRoot";
-import { CompareBar, Footer, Header, SupportWidget } from "@/features/shop";
+import { CompareBar, Footer, Header, SupportWidget, WishlistProvider } from "@/features/shop";
 import { GetPublicCaptchaConfigToken } from "@/modules/captcha";
 import { GetConsentConfigToken } from "@/modules/consent";
 import { GetFooterLinksToken, GetSignupLegalToken } from "@/modules/content";
 import { GetPublicSettingsToken } from "@/modules/settings";
 import { GetShellToken } from "@/modules/storefront";
 import { GetCustomerSupportBadgeToken, GetPublicSupportConfigToken } from "@/modules/support";
+import { GetWishlistProductIdsToken } from "@/modules/wishlist";
 import { currentPrincipal, resolveService } from "@/server/app";
 
 // Self-hosted at build time (no request to Google from the browser); Turkish needs latin-ext.
@@ -37,10 +38,15 @@ export default async function StorefrontLayout({ children }: { children: React.R
     resolveService(GetSignupLegalToken).then((q) => q.execute()),
   ]);
   // live support badge: one indexed row for signed-in members, nothing for visitors
-  const supportBadge = support.enabled && user ? await resolveService(GetCustomerSupportBadgeToken).then((q) => q.execute(user.id)) : null;
+  const [supportBadge, wishlistIds] = await Promise.all([
+    support.enabled && user ? resolveService(GetCustomerSupportBadgeToken).then((q) => q.execute(user.id)) : null,
+    // filled hearts on every card without a browser request; visitors have none
+    user ? resolveService(GetWishlistProductIdsToken).then((q) => q.execute(user.id)) : [],
+  ]);
   const accent = accentCss(settings.accentColor);
   return (
     <CartProvider>
+      <WishlistProvider key={user?.id ?? "guest"} signedIn={Boolean(user)} initialIds={wishlistIds}>
       {accent && <style>{accent}</style>}
       {/* font-sans here (not on body): the font variables exist only below this wrapper */}
       <div className={`${display.variable} ${body.variable} bg-white font-sans`}>
@@ -58,6 +64,7 @@ export default async function StorefrontLayout({ children }: { children: React.R
         {/* cookie banner + preferences + tag manager: no analytics / ad tag loads before the visitor's consent */}
         <ConsentRoot config={consent} />
       </div>
+      </WishlistProvider>
     </CartProvider>
   );
 }

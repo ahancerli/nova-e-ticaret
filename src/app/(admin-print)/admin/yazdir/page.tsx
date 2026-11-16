@@ -120,7 +120,7 @@ function InvoiceSheet({ o, seller }: { o: OrderDetail; seller: Seller }) {
             <tr key={i.id} className="border-b border-slate-200 align-top">
               <td className="px-2 py-2 text-slate-400">{idx + 1}</td>
               <td className="px-2 py-2"><p className="font-medium">{i.productName}</p><p className="text-[11px] text-slate-500">{i.variant ? `${i.variant} · ` : ""}{i.sku}</p></td>
-              <td className="px-2 py-2 text-right tabular-nums">{i.quantity}</td>
+              <td className="px-2 py-2 text-right tabular-nums">{i.quantity}{i.cancelledQty ? <span className="block text-[11px] text-red-600">{i.cancelledQty} iptal</span> : null}</td>
               <td className="px-2 py-2 text-right tabular-nums">{formatMinor(i.unitPriceMinor)}</td>
               <td className="px-2 py-2 text-right tabular-nums">%{i.taxRateBps / 100}</td>
               <td className="px-2 py-2 text-right tabular-nums">{i.discountMinor ? `−${formatMinor(i.discountMinor)}` : "—"}</td>
@@ -144,6 +144,12 @@ function InvoiceSheet({ o, seller }: { o: OrderDetail; seller: Seller }) {
             <div key={rate} className="flex justify-between text-xs text-slate-500"><dt>Dahil KDV %{rate / 100}</dt><dd className="tabular-nums">{formatMinor(v)}</dd></div>
           ))}
           <div className="mt-2 flex justify-between border-t-2 border-slate-900 pt-2 text-base font-bold"><dt>Genel toplam</dt><dd className="tabular-nums">{formatMinor(o.money.totalMinor)}</dd></div>
+          {o.money.cancelledMinor ? (
+            <>
+              <div className="flex justify-between text-red-600"><dt>İptal edilen ürünler</dt><dd className="tabular-nums">−{formatMinor(o.money.cancelledMinor)}</dd></div>
+              <div className="flex justify-between font-bold"><dt>Güncel toplam</dt><dd className="tabular-nums">{formatMinor(o.money.netTotalMinor)}</dd></div>
+            </>
+          ) : null}
         </dl>
       </section>
     </Sheet>
@@ -172,13 +178,13 @@ function WaybillSheet({ o, seller }: { o: OrderDetail; seller: Seller }) {
           </tr>
         </thead>
         <tbody>
-          {o.items.map((i, idx) => (
+          {o.items.filter((i) => i.cancelledQty < i.quantity).map((i, idx) => (
             <tr key={i.id} className="border-b border-slate-200">
               <td className="px-2 py-2.5 text-slate-400">{idx + 1}</td>
               <td className="px-2 py-2.5"><p className="font-medium">{i.productName}</p>{i.variant ? <p className="text-[11px] text-slate-500">{i.variant}</p> : null}</td>
               <td className="px-2 py-2.5 font-mono text-xs">{i.sku}</td>
-              <td className="px-2 py-2.5 text-right tabular-nums">{i.quantity}</td>
-              <td className="px-2 py-2.5 text-right font-semibold tabular-nums">{i.shippedQty || i.quantity}</td>
+              <td className="px-2 py-2.5 text-right tabular-nums">{i.quantity - i.cancelledQty}</td>
+              <td className="px-2 py-2.5 text-right font-semibold tabular-nums">{i.shippedQty || i.quantity - i.cancelledQty}</td>
               <td className="px-2 py-2.5 text-center"><span className="inline-block size-4 rounded border border-slate-400" /></td>
             </tr>
           ))}

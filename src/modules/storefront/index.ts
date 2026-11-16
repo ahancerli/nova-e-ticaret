@@ -5,5 +5,5 @@ export { COMPARE_MAX, SIMILAR_PAGE_SIZE } from "./application/storefront-queries
 export { PAGE_SIZE } from "./infrastructure/product-cards";
 export {
   GetBrandPageToken, GetCategoryPageToken, GetComparisonToken, GetFacetsToken, GetHomeToken, GetProductDetailToken, GetShellToken, GetSimilarProductsToken,
-  GetPopularSearchesToken, GetSitemapToken, ProductSearchToken, ListActiveBrandsToken, ListActiveCategoriesToken, ListCatalogProductsToken, SearchSuggestToken, registerStorefront,
+  GetPopularSearchesToken, GetProductCardsToken, GetSitemapToken, ProductSearchToken, ListActiveBrandsToken, ListActiveCategoriesToken, ListCatalogProductsToken, SearchSuggestToken, registerStorefront,
 } from "./module";

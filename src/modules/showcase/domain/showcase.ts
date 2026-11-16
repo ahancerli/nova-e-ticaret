@@ -8,6 +8,7 @@ export const SECTION_TYPES = {
   category_tiles: { label: "Kategori kutuları", hint: "Seçili kategorilere kısayollar" },
   brand_strip: { label: "Marka şeridi", hint: "Seçili markaların logoları" },
   banner: { label: "Banner", hint: "Tek görsel, başlık ve bağlantı" },
+  recently_viewed: { label: "Son gezilenler", hint: "Ziyaretçinin son baktığı ürünler; geçmişi olmayana görünmez" },
 } as const;
 export type SectionType = keyof typeof SECTION_TYPES;
 export const SECTION_TYPE_KEYS = Object.keys(SECTION_TYPES) as SectionType[];

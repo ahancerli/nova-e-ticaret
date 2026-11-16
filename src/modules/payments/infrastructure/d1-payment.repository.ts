@@ -1,5 +1,6 @@
-import { Repository } from "@/core";
-import type { Address, CardPaymentByToken, CardPaymentToStart, PaymentRepository } from "../application/ports";
+import { Repository, type Statement } from "@/core";
+import type { Address, CardPaymentByToken, CardPaymentToStart, PaymentRepository, ProviderItemTransaction } from "../application/ports";
+import type { ItemTransaction } from "../domain/iyzico";
 
 type AddrRow = { recipient_name: string; country_code: string; province: string; district: string; line1: string; line2: string | null; postal_code: string | null };
 const toAddress = (a: AddrRow): Address => ({ recipientName: a.recipient_name, countryCode: a.country_code, province: a.province, district: a.district, line1: a.line1, line2: a.line2, postalCode: a.postal_code });
@@ -53,11 +54,11 @@ export class D1PaymentRepository extends Repository implements PaymentRepository
     return r ? { orderNumber: r.order_number } : null;
   }
 
-  async recordEvent(e: { id: string; paymentId: string | null; providerEventId: string; eventType: string; payloadSha256: string }): Promise<boolean> {
+  async recordEvent(e: { id: string; paymentId: string | null; providerEventId: string; eventType: string; payloadSha256: string; signatureValid?: boolean }): Promise<boolean> {
     const res = await this.db.run(
       `INSERT INTO payment_events (id, payment_id, provider, provider_event_id, event_type, payload_sha256, signature_valid, processing_status)
-       VALUES (?, ?, 'iyzico', ?, ?, ?, 0, 'received') ON CONFLICT(provider, provider_event_id) DO NOTHING`,
-      e.id, e.paymentId, e.providerEventId, e.eventType, e.payloadSha256,
+       VALUES (?, ?, 'iyzico', ?, ?, ?, ?, 'received') ON CONFLICT(provider, provider_event_id) DO NOTHING`,
+      e.id, e.paymentId, e.providerEventId, e.eventType, e.payloadSha256, e.signatureValid ? 1 : 0,
     );
     return res.changes === 1;
   }
@@ -72,10 +73,48 @@ export class D1PaymentRepository extends Repository implements PaymentRepository
   }
 
   async refundToProcess(refundId: string) {
-    const r = await this.db.first<{ status: string; amount_minor: number; provider: string; provider_payment_id: string | null }>(
-      "SELECT rf.status, rf.amount_minor, p.provider, p.provider_payment_id FROM refunds rf JOIN payments p ON p.id = rf.payment_id WHERE rf.id = ?",
+    const r = await this.db.first<{ status: string; amount_minor: number; provider: string; provider_payment_id: string | null; payment_id: string }>(
+      "SELECT rf.status, rf.amount_minor, p.provider, p.provider_payment_id, p.id AS payment_id FROM refunds rf JOIN payments p ON p.id = rf.payment_id WHERE rf.id = ?",
       refundId,
     );
-    return r ? { status: r.status, amountMinor: r.amount_minor, provider: r.provider, providerPaymentId: r.provider_payment_id } : null;
+    return r ? { status: r.status, amountMinor: r.amount_minor, provider: r.provider, providerPaymentId: r.provider_payment_id, paymentId: r.payment_id } : null;
+  }
+
+  itemTransactionStatements(paymentId: string, items: ProviderItemTransaction[]): Statement[] {
+    return items.map((t) => this.db.statement(
+      `INSERT INTO payment_item_transactions (payment_id, item_id, payment_transaction_id, price_minor, paid_price_minor) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT DO NOTHING`,
+      paymentId, t.itemId, t.paymentTransactionId, t.priceMinor, t.paidPriceMinor,
+    ));
+  }
+
+  async itemTransactions(paymentId: string): Promise<ItemTransaction[]> {
+    const rows = await this.db.all<{ item_id: string; payment_transaction_id: string; price_minor: number; refunded: number }>(
+      `SELECT t.item_id, t.payment_transaction_id, t.price_minor,
+              COALESCE((SELECT SUM(rp.amount_minor) FROM refund_parts rp WHERE rp.payment_transaction_id = t.payment_transaction_id AND rp.status = 'succeeded'), 0) AS refunded
+         FROM payment_item_transactions t WHERE t.payment_id = ? ORDER BY t.rowid`,
+      paymentId,
+    );
+    return rows.map((r) => ({ itemId: r.item_id, paymentTransactionId: r.payment_transaction_id, priceMinor: r.price_minor, refundedMinor: Number(r.refunded) }));
+  }
+
+  async refundItemIds(refundId: string): Promise<string[]> {
+    return (await this.db.all<{ order_item_id: string }>(
+      `SELECT ci.order_item_id FROM order_cancellations c JOIN order_cancellation_items ci ON ci.cancellation_id = c.id WHERE c.refund_id = ? ORDER BY ci.rowid`, refundId,
+    )).map((r) => r.order_item_id);
+  }
+
+  async refundParts(refundId: string) {
+    return this.db.all<{ paymentTransactionId: string; amountMinor: number; status: "succeeded" | "failed" }>(
+      "SELECT payment_transaction_id AS paymentTransactionId, amount_minor AS amountMinor, status FROM refund_parts WHERE refund_id = ?", refundId,
+    );
+  }
+
+  async recordRefundPart(p: { id: string; refundId: string; paymentTransactionId: string; amountMinor: number; status: "succeeded" | "failed"; providerRef: string | null; failureCode: string | null }): Promise<void> {
+    await this.db.run(
+      `INSERT INTO refund_parts (id, refund_id, payment_transaction_id, amount_minor, status, provider_ref, failure_code) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (refund_id, payment_transaction_id) DO NOTHING`,
+      p.id, p.refundId, p.paymentTransactionId, p.amountMinor, p.status, p.providerRef, p.failureCode,
+    );
   }
 }

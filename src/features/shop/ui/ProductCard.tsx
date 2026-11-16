@@ -2,13 +2,14 @@ import Link from "next/link";
 import type { ProductCard as Card } from "@/lib/types";
 import { PromoBadge } from "@/components/ui/PromoBadge";
 import { CompareToggle } from "../compare/CompareToggle";
+import { WishlistHeart } from "../wishlist/WishlistHeart";
 import { AddToCartButton } from "./AddToCartButton";
 import { Price, discountPercent } from "./Price";
 import { Rating } from "./Rating";
 
 /**
  * The one product card of the storefront (home rails, listings, search, related products). Server-renderable;
- * only the add-to-cart button hydrates. `priority` = above-the-fold image (no lazy loading).
+ * only the heart, compare and add-to-cart buttons hydrate. `priority` = above-the-fold image (no lazy loading).
  */
 export function ProductCard({ p, priority = false }: { p: Card; priority?: boolean }) {
   const pct = discountPercent(p.priceMinor, p.compareAtMinor);
@@ -26,9 +27,12 @@ export function ProductCard({ p, priority = false }: { p: Card; priority?: boole
         )}
         {!p.inStock && <span className="absolute inset-x-0 bottom-0 bg-ink/70 py-1 text-center text-xs font-semibold text-white">Tükendi</span>}
       </Link>
-      {/* z-10: above the card-wide link overlay; always visible on touch, on hover / focus from md */}
-      <div className="absolute right-2 top-2 z-10 transition md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
-        <CompareToggle variant="icon" item={{ id: p.id, slug: p.slug, name: p.name, imageUrl: p.imageUrl }} />
+      {/* z-10: above the card-wide link overlay. Heart always visible (saved = state); compare on touch, on hover / focus from md */}
+      <div className="absolute right-2 top-2 z-10 flex flex-col gap-1.5">
+        <WishlistHeart product={{ id: p.id, name: p.name }} />
+        <div className="transition md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+          <CompareToggle variant="icon" item={{ id: p.id, slug: p.slug, name: p.name, imageUrl: p.imageUrl }} />
+        </div>
       </div>
       <div className="flex flex-1 flex-col gap-1.5 px-3 pb-3">
         <h3 className="line-clamp-2 min-h-10 text-[13.5px] leading-5 text-ink-soft">

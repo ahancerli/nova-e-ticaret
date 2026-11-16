@@ -46,7 +46,71 @@ export interface SmsConnector {
   send(ctx: ConnectorContext, message: { to: string[]; text: string }): Promise<{ providerRef: string | null }>;
 }
 
-export type Connector = CarrierConnector | SmsConnector;
+/** One invoice line, VAT-inclusive kuruş as charged (discounts already in the price). */
+export interface InvoiceLineInput {
+  sku: string;
+  name: string;
+  quantity: number;
+  /** Line total paid for these units (VAT included, after discounts). */
+  totalMinor: number;
+  taxRateBps: number;
+}
+
+export interface InvoiceRequest {
+  orderNumber: string;
+  orderDate: string;
+  /** Issue date (YYYY-MM-DD, Turkey time). */
+  issueDate: string;
+  currency: "TRY";
+  buyer: {
+    name: string;
+    email: string;
+    phone: string | null;
+    /** Company name for a corporate invoice. */
+    companyName: string | null;
+    /** VKN (10 digits) or TCKN (11 digits); null = individual without TCKN (11111111111 is sent). */
+    taxNumber: string | null;
+    taxOffice: string | null;
+    address: string;
+    district: string;
+    city: string;
+    country: string;
+  };
+  lines: InvoiceLineInput[];
+  /** Shipping + COD fee (VAT-inclusive kuruş, 20 % VAT). */
+  shippingMinor: number;
+  payment: { method: "card" | "transfer" | "cash_on_delivery"; platform: string | null; paidAt: string | null; amountMinor: number };
+  shipment: { carrier: string | null; date: string | null };
+  siteUrl: string;
+}
+
+/** Provider ids of a job between cron runs (opaque to the invoices module). */
+export type InvoiceProgressState = Record<string, string | number | null>;
+
+export type InvoiceStepResult =
+  | { status: "running"; state: InvoiceProgressState; kind?: "e_arsiv" | "e_fatura" }
+  | { status: "issued"; state: InvoiceProgressState; kind: "e_arsiv" | "e_fatura"; invoiceNumber: string; ettn: string | null; invoiceDate: string; totalMinor: number | null; pdf: Uint8Array | null }
+  | { status: "failed"; state: InvoiceProgressState; error: string };
+
+/**
+ * Strategy: one adapter per e-invoice integrator. `advance` performs the next provider step for an order and
+ * returns; the invoices module calls it again on the next cron run until "issued" / "failed". Throws on network
+ * errors (retried with backoff).
+ */
+export interface AccountingConnector {
+  readonly kind: "accounting";
+  readonly code: string;
+  advance(ctx: ConnectorContext & { refs: IntegrationRefs }, request: InvoiceRequest, state: InvoiceProgressState): Promise<InvoiceStepResult>;
+  test(ctx: ConnectorContext): Promise<void>;
+}
+
+/** Remembered provider ids (contact per buyer, product per SKU). */
+export interface IntegrationRefs {
+  get(type: "contact" | "product", key: string): Promise<string | null>;
+  set(type: "contact" | "product", key: string, externalId: string): Promise<void>;
+}
+
+export type Connector = CarrierConnector | SmsConnector | AccountingConnector;
 /** Adapters shipped with the app, by provider code (tests replace the registry). */
 export type ConnectorRegistry = ReadonlyMap<string, Connector>;
 

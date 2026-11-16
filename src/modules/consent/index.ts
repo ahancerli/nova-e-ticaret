@@ -7,6 +7,6 @@ export type { ConsentRecordRow, ConsentStats } from "./application/ports";
 export { META_GRAPH_VERSION, type TrackingHttp } from "./application/server-tracking";
 export { consentRecordSchema, consentRecordsQuery, consentSettingsSchema, tagCodeParams, trackingTagDeleteSchema, trackingTagSaveSchema } from "./http/schemas";
 export {
-  CaptureOrderTrackingToken, GetConsentAdminToken, GetConsentConfigToken, TrackingHttpToken, ListConsentRecordsToken, RecordConsentToken, RemoveTrackingTagToken, RenewConsentToken, SaveTrackingTagToken,
+  CaptureOrderTrackingToken, GetConsentAdminToken, HasFunctionalConsentToken, GetConsentConfigToken, TrackingHttpToken, ListConsentRecordsToken, RecordConsentToken, RemoveTrackingTagToken, RenewConsentToken, SaveTrackingTagToken,
   UpdateConsentSettingsToken, registerConsent,
 } from "./module";

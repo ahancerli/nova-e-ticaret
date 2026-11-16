@@ -5,7 +5,7 @@ import type { NavItem } from "@/modules/storefront";
 import type { PublicSettings } from "@/modules/settings";
 import { UserIcon } from "@/components/icons";
 import { currentPrincipal } from "@/server/app";
-import { Bell, KeyRound, MapPin, Package, Star, UserRound } from "lucide-react";
+import { Bell, Heart, KeyRound, MapPin, Package, Star, UserRound } from "lucide-react";
 import { LogoutButton } from "@/features/account/LogoutButton";
 import { accountHref, type AccountTab } from "@/features/account/tabs";
 import { CartButton } from "./CartButton";
@@ -13,6 +13,7 @@ import { CategoryNav } from "./CategoryNav";
 import { MobileMenu } from "./MobileMenu";
 import { SearchBox } from "./SearchBox";
 import { Wordmark } from "./Wordmark";
+import { WishlistLink } from "../wishlist/WishlistLink";
 
 const UTILITY_LINKS = [
   { href: "/hesabim", label: "Siparişlerim" },
@@ -58,6 +59,7 @@ export async function Header({ nav, categories, settings }: { nav: NavItem[]; ca
           <div className="hidden max-w-2xl flex-1 md:block"><Suspense><SearchBox /></Suspense></div>
           <div className="ml-auto flex items-center gap-2 md:gap-3">
             <AccountMenu user={user ? { name: user.displayName, email: user.email } : null} />
+            <WishlistLink />
             <CartButton />
           </div>
         </div>
@@ -73,6 +75,7 @@ const ACCOUNT_LINKS: { tab: AccountTab; label: string; icon: typeof Package }[] 
   { tab: "siparisler", label: "Siparişlerim", icon: Package },
   { tab: "bilgiler", label: "Kişisel bilgilerim", icon: UserRound },
   { tab: "adresler", label: "Adreslerim", icon: MapPin },
+  { tab: "favoriler", label: "Favorilerim", icon: Heart },
   { tab: "degerlendirmeler", label: "Değerlendirmelerim", icon: Star },
   { tab: "haber-ver", label: "Haber ver listem", icon: Bell },
   { tab: "sifre", label: "Şifre ve güvenlik", icon: KeyRound },

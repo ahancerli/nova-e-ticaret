@@ -3,6 +3,7 @@ import { ORDER_ACTIONS } from "@/lib/order-rules";
 import type { OrderActionInput } from "../../http/schemas";
 import { OrderErrors } from "../../domain/orders";
 import type { OrderHeader } from "../ports";
+import type { ItemCancellations } from "../item-cancellations";
 import type { ActionResult, OrderAction, OrderActionKit, OrderActor } from "./order-action";
 
 type Input<A extends OrderActionInput["action"]> = Extract<OrderActionInput, { action: A }>;
@@ -139,5 +140,22 @@ export class ReconcileAction implements OrderAction<Input<"reconcile">> {
     if (input.note) extra.push(kit.event(order, actor, "note", null, input.note, now));
     await kit.payments.settle(bt.paymentId, { actorId: actor.userId, extra, allowLate: false });
     return { status: "paid" };
+  }
+}
+
+/** cancel_items (kısmi iptal): delegates to ItemCancellations (shared with the customer's own cancellation). */
+export class CancelItemsAction implements OrderAction<Input<"cancel_items">> {
+  readonly id = "cancel_items" as const;
+  constructor(private readonly cancellations: () => ItemCancellations) {}
+
+  async run(order: OrderHeader, input: Input<"cancel_items">, actor: OrderActor): Promise<ActionResult> {
+    const r = await this.cancellations().cancel(order.id, input, actor, "admin");
+    return {
+      status: r.status, refundId: r.refundId ?? undefined, refundStatus: r.refundStatus ?? undefined,
+      cancellation: {
+        amountMinor: r.amountMinor, paidShareMinor: r.paidShareMinor, campaignDiffMinor: r.campaignDiffMinor, shippingDiffMinor: r.shippingDiffMinor,
+        restoredMinor: r.restoredMinor, channel: r.channel, emptiesOrder: r.emptiesOrder,
+      },
+    };
   }
 }

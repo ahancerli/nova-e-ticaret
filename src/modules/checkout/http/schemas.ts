@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { COUNTRY_CODE, DEFAULT_COUNTRY } from "@/modules/geo/domain/geo";
+import { cleanTaxNumber, isTaxNumber } from "@/lib/tax-number";
 import { entityId } from "@/modules/shared/schemas";
 import { PAYMENT_METHODS } from "../domain/checkout";
 
@@ -19,7 +20,12 @@ const address = z.object({
   postalCode: z.string().trim().max(10).optional(),
   companyName: z.string().trim().max(160).optional(),
   taxOffice: z.string().trim().max(80).optional(),
-}).strict();
+  /** Corporate invoice: VKN (10) or, for a sole proprietor, TCKN (11) — checked by its check digits, stored encrypted. */
+  taxNumber: z.string().trim().max(20).transform(cleanTaxNumber).refine((v) => !v || isTaxNumber(v), "Geçerli bir vergi numarası (10 hane) veya T.C. kimlik numarası (11 hane) girin.").optional(),
+}).strict().superRefine((a, ctx) => {
+  if (a.companyName && !a.taxNumber) ctx.addIssue({ code: "custom", path: ["taxNumber"], message: "Kurumsal fatura için vergi numarasını girin." });
+  if (a.companyName && !a.taxOffice) ctx.addIssue({ code: "custom", path: ["taxOffice"], message: "Vergi dairesini girin." });
+});
 
 export const confirmSchema = z.object({
   checkoutId: entityId,

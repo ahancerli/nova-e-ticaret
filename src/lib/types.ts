@@ -69,6 +69,8 @@ export type HomeSection =
   | { id: string; type: "hero_slider"; title: string; slides: { id: string; title: string; subtitle: string | null; ctaLabel: string | null; href: string | null; desktopUrl: string; mobileUrl: string | null; alt: string }[] }
   | { id: string; type: "story_strip"; title: string; stories: { id: string; title: string; brandSlug: string; coverUrl: string | null; frames: { mediaUrl: string; href: string | null; durationMs: number }[] }[] }
   | { id: string; type: "products"; title: string; subtitle: string | null; layout: "carousel" | "grid"; products: ProductCard[]; moreHref: string }
+  /** Per visitor, loaded in the browser (Son gezilenler). */
+  | { id: string; type: "recently_viewed"; title: string; subtitle: string | null; limit: number }
   | { id: string; type: "category_tiles"; title: string; subtitle: string | null; categories: { id: string; name: string; href: string; imageUrl: string | null }[] }
   | { id: string; type: "brand_strip"; title: string; subtitle: string | null; brands: { id: string; name: string; href: string; logoUrl: string | null }[] }
   | { id: string; type: "banner"; title: string; subtitle: string | null; imageUrl: string; mobileImageUrl: string | null; alt: string; href: string | null; ctaLabel: string | null };

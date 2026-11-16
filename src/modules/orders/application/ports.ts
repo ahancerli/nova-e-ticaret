@@ -22,6 +22,35 @@ export interface OrderEvent {
   idempotencyKey: string;
 }
 
+/** Everything a partial cancellation (quote or run) needs, read in one go. */
+export interface CancellationContext {
+  order: OrderHeader & { userId: string | null; salesChannel: string; shippingMinor: number; paymentFeeMinor: number };
+  lines: { id: string; variantId: string; productId: string; name: string; quantity: number; unitPriceMinor: number; taxRateBps: number; totalMinor: number; shipped: number; cancelled: number }[];
+  adjustments: { campaignId: string | null; couponId: string | null; target: "item" | "order" | "shipping"; amountMinor: number; ruleVersion: number | null; strategy: "priority" | "best_deal" | null }[];
+  /** Sum of earlier cancellations' amounts. */
+  previousMinor: number;
+  /** Total of the valid (issued) invoice, null = none. */
+  invoiceTotalMinor: number | null;
+}
+
+export interface CancellationRow {
+  id: string;
+  orderId: string;
+  source: "admin" | "customer";
+  reason: string;
+  paidShareMinor: number;
+  campaignDiffMinor: number;
+  shippingDiffMinor: number;
+  restoredMinor: number;
+  amountMinor: number;
+  waived: boolean;
+  estimate: "repriced" | "proportional";
+  refundId: string | null;
+  invoiceAttention: boolean;
+  actorId: string | null;
+  now: string;
+}
+
 /**
  * Orders write side. Reads feed the business checks; statements go into one UnitOfWork per action.
  * Statements documented as "guarded" match 0 rows when the checked condition no longer holds — the
@@ -57,6 +86,17 @@ export interface OrderRepository {
   returnCommittedStockStatements(order: OrderHeader, actorId: string, now: string): Statement[];
   /** Cash collected at delivery: pending payment → paid, order payment_status paid (guard: 1), history + order.paid outbox. */
   collectCashStatements(order: OrderHeader, actorId: string, now: string): [Statement, ...Statement[]];
+
+  cancellationContext(orderId: string): Promise<CancellationContext | null>;
+  cheapestShipping(): Promise<{ feeMinor: number; freeAboveMinor: number | null } | null>;
+  cancellationStatement(c: CancellationRow): Statement;
+  /** Guarded: inserts only while shipped + cancelled + quantity ≤ ordered quantity. */
+  cancellationItemStatement(cancellationId: string, orderId: string, orderItemId: string, quantity: number): Statement;
+  /** Cancelled units back on the shelf (movement; pair with restockBalanceStatement). */
+  cancelRestockStatement(r: { cancellationId: string; orderItemId: string; variantId: string; quantity: number; reason: string; actorId: string | null }): Statement;
+  /** Guarded (COD, open payment): lowers the amount to collect. */
+  codReduceStatement(orderId: string, byMinor: number, now: string): Statement;
+  codVoidStatement(orderId: string, now: string): Statement;
 
   bankTransferMismatchStatement(transferId: string, receivedMinor: number): Statement;
   bankTransferMatchedStatement(transferId: string, receivedMinor: number, actorId: string, now: string): Statement;

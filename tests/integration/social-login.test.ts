@@ -174,6 +174,7 @@ settings.registerSettings(root);
 content.registerContent(root);
 (await mod("geo/index")).registerGeo(root);
 customers.registerCustomers(root);
+(await import(`${ROOT}/src/modules/iys/index.ts`)).registerIys(root);
 social.registerSocialLogin(root);
 root.singleton(identityModule.SessionCookiesToken, () => cookies);
 root.singleton(social.OidcClientToken, () => fakeOidc);

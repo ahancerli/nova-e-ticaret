@@ -49,9 +49,21 @@ const gateway = {
   checkoutFormDetail: async (token: string) => {
     const form = gateway.forms.get(token);
     if (gateway.detailOverride) return gateway.detailOverride(token, form);
-    return { status: "success", paymentStatus: "SUCCESS", basketId: form?.basketId, currency: "TRY", price: (form?.amountMinor ?? 0) / 100, paidPrice: (form?.amountMinor ?? 0) / 100, paymentId: `iyz-${token}` };
+    return { status: "success", paymentStatus: "SUCCESS", basketId: form?.basketId, currency: "TRY", price: (form?.amountMinor ?? 0) / 100, paidPrice: (form?.amountMinor ?? 0) / 100, paymentId: `iyz-${token}`,
+      itemTransactions: (form?.basketItems ?? []).map((b: any) => ({ itemId: b.id, paymentTransactionId: `ptx-${token}-${b.id}`, price: b.priceMinor / 100, paidPrice: b.priceMinor / 100 })) };
   },
-  refund: async (r: any) => { gateway.refunds.push(r); return gateway.refundOk ? { ok: true, providerRefundId: `rf-${r.providerPaymentId}` } : { ok: false, failureCode: "BANK_DECLINED" }; },
+  /** Refund V1: per basket item; `refundFail` = iyzico refuses, `refundThrowOnce` = network error once (retry). */
+  refundFail: null as null | string,
+  refundThrowOnce: false,
+  refundItem: async (r: any) => {
+    if (gateway.refundThrowOnce) { gateway.refundThrowOnce = false; throw new Error("network down"); }
+    gateway.refunds.push(r);
+    if (gateway.refundFail && r.paymentTransactionId.endsWith(gateway.refundFail)) return { ok: false, failureCode: "BANK_DECLINED" };
+    return gateway.refundOk ? { ok: true, providerRef: `rf-${r.paymentTransactionId}` } : { ok: false, failureCode: "BANK_DECLINED" };
+  },
+  paymentItems: async () => null,
+  installments: async () => null,
+  webhookSignatureValid: async () => null,
 };
 
 const root = new Container()
@@ -129,13 +141,48 @@ await t("outbox: card refund goes to the provider and is finalised; provider dec
   assert(r.refundStatus === "processing", "queued");
   const s1 = await resolve(outbox.ProcessOutboxToken).execute(50);
   const ok = one<any>("SELECT status, provider_refund_id FROM refunds WHERE id = ?", r.refundId);
-  assert(ok.status === "succeeded" && ok.provider_refund_id === `rf-iyz-${paid.token}` && gateway.refunds[0].amountMinor === 1000 && s1.errors.length === 0, JSON.stringify({ ok, s1 }));
+  assert(ok.status === "succeeded" && ok.provider_refund_id?.startsWith(`rf-ptx-${paid.token}-`) && gateway.refunds[0].amountMinor === 1000 && s1.errors.length === 0, JSON.stringify({ ok, s1 }));
+  assert(one<any>("SELECT COUNT(*) AS n FROM payment_item_transactions WHERE payment_id = ?", paid.paymentId).n >= 1, "item transactions stored at settlement");
+  assert(gateway.refunds[0].paymentTransactionId !== `ptx-${paid.token}-shipping`, "a product item is refunded before shipping");
   gateway.refundOk = false;
   const r2 = await resolve(orders.RunOrderActionToken).execute(paid.orderId, { action: "refund", amountMinor: captured - 1000, reason: "Kalan", restock: [] }, staff);
   await resolve(outbox.ProcessOutboxToken).execute(50);
   gateway.refundOk = true;
   assert(one<any>("SELECT status FROM refunds WHERE id = ?", r2.refundId).status === "failed", "declined → failed");
   assert(one<any>("SELECT payment_status FROM orders WHERE id = ?", paid.orderId).payment_status === "partially_refunded", "partial refund only");
+});
+await t("card refund V1: two basket items — network error retried without double refund; a refused item fails the refund as partial", async () => {
+  jar.clear();
+  await resolve(cart.AddCartItemToken).execute("v_bed", 1);
+  await resolve(cart.AddCartItemToken).execute("v_atlas", 1);
+  const { checkoutId } = await resolve(checkout.CreateCheckoutQuoteToken).execute();
+  const o = await resolve(checkout.ConfirmCheckoutToken).execute({ checkoutId, paymentMethod: "iyzico", email: "kart@example.com", phone: "+905551112233", shipping: addr, acceptedTermsVersion: "v1" });
+  const { token } = await resolve(payments.StartCardPaymentToken).execute(o.paymentId, "203.0.113.5");
+  await resolve(payments.VerifyCardPaymentToken).execute(token, "callback");
+  // basket order = the stored item transactions (products before shipping in the plan)
+  const items = d1.raw.prepare("SELECT item_id FROM payment_item_transactions WHERE payment_id = ? AND item_id <> 'shipping' ORDER BY rowid").all(o.paymentId) as any[];
+  const total = (id: string) => one<any>("SELECT total_minor FROM order_items WHERE id = ?", id).total_minor as number;
+  const [first, second] = [items[0].item_id as string, items[1].item_id as string];
+  const amount = total(first) + 1000;
+  const r = await resolve(orders.RunOrderActionToken).execute(o.orderId, { action: "refund", amountMinor: amount, reason: "İki kalem", restock: [] }, staff);
+  gateway.refunds.length = 0;
+  gateway.refundThrowOnce = true;
+  let threw = false;
+  try { await resolve(payments.ProcessCardRefundToken).execute(r.refundId); } catch { threw = true; }
+  assert(threw && count("SELECT COUNT(*) AS n FROM refund_parts WHERE refund_id = ?", r.refundId) === 0, "network error → retried later, nothing recorded");
+  gateway.refundFail = `-${second}`;
+  await resolve(payments.ProcessCardRefundToken).execute(r.refundId);
+  gateway.refundFail = null;
+  const parts = d1.raw.prepare("SELECT payment_transaction_id, amount_minor, status FROM refund_parts WHERE refund_id = ? ORDER BY rowid").all(r.refundId) as any[];
+  assert(parts.length === 2 && parts[0].status === "succeeded" && parts[0].amount_minor === total(first) && parts[1].status === "failed" && parts[1].amount_minor === 1000, JSON.stringify(parts));
+  const rf = one<any>("SELECT status FROM refunds WHERE id = ?", r.refundId);
+  const ev = one<any>("SELECT note FROM order_events WHERE order_id = ? AND event_type = 'refund_failed'", o.orderId);
+  assert(rf.status === "failed" && ev.note.includes(`partial:${total(first)}:BANK_DECLINED`), JSON.stringify({ rf, ev }));
+  // a new refund goes to the item not yet paid back, never again to the first
+  gateway.refunds.length = 0;
+  const r2 = await resolve(orders.RunOrderActionToken).execute(o.orderId, { action: "refund", amountMinor: 1000, reason: "İkinci kalem", restock: [] }, staff);
+  await resolve(payments.ProcessCardRefundToken).execute(r2.refundId);
+  assert(gateway.refunds.length === 1 && gateway.refunds[0].paymentTransactionId.endsWith(second) && one<any>("SELECT status FROM refunds WHERE id = ?", r2.refundId).status === "succeeded", JSON.stringify(gateway.refunds));
 });
 await t("outbox: unknown event type goes dead at once; a throwing handler backs off and is retried", async () => {
   d1.raw.exec(`INSERT INTO outbox_events (id, aggregate_type, aggregate_id, event_type, payload_json, dedupe_key) VALUES

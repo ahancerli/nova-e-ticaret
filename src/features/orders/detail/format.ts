@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { AlertTriangle, Ban, Banknote, CheckCheck, PhoneCall, CircleDollarSign, ClipboardList, MessageSquarePlus, PackageCheck, PackageOpen, RotateCcw, ShoppingBag, StickyNote, Truck, XCircle } from "lucide-react";
+import { AlertTriangle, Ban, Banknote, CheckCheck, PackageMinus, PhoneCall, CircleDollarSign, ClipboardList, MessageSquarePlus, PackageCheck, PackageOpen, RotateCcw, ShoppingBag, StickyNote, Truck, XCircle } from "lucide-react";
 import type { OrderActionId } from "@/lib/order-rules";
 
 export const dt = new Intl.DateTimeFormat("tr-TR", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Istanbul" });
@@ -21,7 +21,7 @@ export const tlToMinor = (s: string) => {
 export const minorToTl = (m: number) => (m / 100).toFixed(2).replace(".", ",");
 
 export const ACTION_ICON: Record<OrderActionId, ComponentType<{ className?: string }>> = {
-  reconcile: Banknote, confirm_cod: PhoneCall, prepare: PackageOpen, ship: Truck, deliver: PackageCheck, complete: CheckCheck, cancel: Ban, refund: RotateCcw, note: MessageSquarePlus,
+  reconcile: Banknote, confirm_cod: PhoneCall, prepare: PackageOpen, ship: Truck, deliver: PackageCheck, complete: CheckCheck, cancel: Ban, cancel_items: PackageMinus, refund: RotateCcw, note: MessageSquarePlus,
 };
 
 export const EVENT_META: Record<string, { label: string; icon: ComponentType<{ className?: string }>; tone: string }> = {
@@ -33,6 +33,7 @@ export const EVENT_META: Record<string, { label: string; icon: ComponentType<{ c
   shipment_created: { label: "Kargoya verildi", icon: Truck, tone: "bg-blue-50 text-blue-600" },
   delivered: { label: "Teslim edildi", icon: PackageCheck, tone: "bg-emerald-50 text-emerald-600" },
   cancelled: { label: "Sipariş iptal edildi", icon: XCircle, tone: "bg-red-50 text-red-600" },
+  items_cancelled: { label: "Ürün iptal edildi", icon: PackageMinus, tone: "bg-red-50 text-red-600" },
   refund_requested: { label: "İade başlatıldı", icon: RotateCcw, tone: "bg-amber-50 text-amber-600" },
   refunded: { label: "İade tamamlandı", icon: RotateCcw, tone: "bg-emerald-50 text-emerald-600" },
   refund_failed: { label: "İade başarısız", icon: AlertTriangle, tone: "bg-red-50 text-red-600" },

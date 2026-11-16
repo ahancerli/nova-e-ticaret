@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { AlertTriangle, ArrowLeft, Ban, Banknote, ClipboardList, CreditCard, ExternalLink, FileText, Landmark, MapPin, MessageSquarePlus, MoreHorizontal, Package, PhoneCall, Printer, ReceiptText, RotateCcw, StickyNote, Tag, Truck, UserRound, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Ban, PackageMinus, Banknote, ClipboardList, CreditCard, ExternalLink, FileText, Landmark, MapPin, MessageSquarePlus, MoreHorizontal, Package, PhoneCall, Printer, ReceiptText, RotateCcw, StickyNote, Tag, Truck, UserRound, XCircle } from "lucide-react";
 import { ordersApi, type OrderActionBody } from "./api";
 import { formatMinor } from "@/lib/money";
 import { notify } from "@/lib/toast";
@@ -16,6 +16,7 @@ import { fmt, rel, tlToMinor, minorToTl, ACTION_ICON, EVENT_META, type Dialog } 
 import { ProgressTracker } from "./detail/ProgressTracker";
 import { ShipDrawer } from "./detail/ShipDrawer";
 import { RefundDialog } from "./detail/RefundDialog";
+import { CancelItemsDialog } from "./detail/CancelItemsDialog";
 import { Card, Row, Alert, Empty, ShipProgress, Address, Contact, CopyButton, NoteField } from "./detail/parts";
 
 export function OrderDetailView({ order, permissions }: { order: OrderDetail; permissions: string[] }) {
@@ -36,7 +37,9 @@ export function OrderDetailView({ order, permissions }: { order: OrderDetail; pe
   const payment = paymentStatusMeta(order.paymentStatus);
   const bank = order.payments.find((p) => p.bankTransfer)?.bankTransfer ?? null;
   const cancelEvent = order.events.find((e) => e.type === "cancelled");
-  const remainingToShip = order.items.reduce((a, i) => a + Math.max(0, i.quantity - i.shippedQty), 0);
+  const remainingToShip = order.items.reduce((a, i) => a + Math.max(0, i.quantity - i.shippedQty - i.cancelledQty), 0);
+  const cancelledMinor = order.money.cancelledMinor;
+  const invoiceOff = order.invoice != null && order.invoice.totalMinor !== order.money.netTotalMinor;
 
   const run = async (body: OrderActionBody, success: string) => {
     setBusy(true);
@@ -64,8 +67,8 @@ export function OrderDetailView({ order, permissions }: { order: OrderDetail; pe
     setDialog({ action: a });
   };
 
-  const secondary = (["reconcile", "prepare", "ship", "deliver", "complete", "note", "refund", "cancel"] as OrderActionId[])
-    .filter((a) => a !== primary && can(a) && (a !== "refund" || order.money.refundableMinor > 0));
+  const secondary = (["reconcile", "prepare", "ship", "deliver", "complete", "note", "cancel_items", "refund", "cancel"] as OrderActionId[])
+    .filter((a) => a !== primary && can(a) && (a !== "refund" || order.money.refundableMinor > 0) && (a !== "cancel_items" || remainingToShip > 0));
   const print = (doc: "fatura" | "irsaliye") => window.open(`/admin/yazdir?belge=${doc}&ids=${encodeURIComponent(order.id)}`, "_blank", "noopener");
 
   return (
@@ -138,13 +141,19 @@ export function OrderDetailView({ order, permissions }: { order: OrderDetail; pe
       {cod && order.status === "pending_payment" ? (
         <Alert tone="amber" icon={PhoneCall} title="Kapıda ödeme onayı bekleniyor"
           action={can("confirm_cod") ? <button type="button" onClick={() => open("confirm_cod")} className="inline-flex min-h-9 items-center rounded-lg bg-amber-600 px-3 text-sm font-semibold text-white hover:bg-amber-700">Kapıda ödemeyi onayla</button> : null}>
-          Müşteriyi arayıp siparişi doğrulayın; onaydan sonra hazırlanır. Tutar <b>{formatMinor(order.money.totalMinor)}</b> teslimatta tahsil edilir.
+          Müşteriyi arayıp siparişi doğrulayın; onaydan sonra hazırlanır. Tutar <b>{formatMinor(order.money.netTotalMinor)}</b> teslimatta tahsil edilir.
           {order.reservation.expiresAt ? <> Onaylanmazsa <b>{fmt(order.reservation.expiresAt)}</b> tarihinde otomatik iptal edilir.</> : null}
         </Alert>
       ) : null}
       {bank?.status === "mismatch" ? (
         <Alert tone="red" icon={AlertTriangle} title="Havale tutarı uyuşmuyor">
           Beklenen {formatMinor(bank.expectedMinor)}, kaydedilen {bank.receivedMinor != null ? formatMinor(bank.receivedMinor) : "—"}. Sipariş otomatik olarak ödendi yapılmadı.
+        </Alert>
+      ) : null}
+      {invoiceOff ? (
+        <Alert tone="amber" icon={FileText} title="Fatura tutarı güncel tutarla uyuşmuyor">
+          {order.invoice!.number} numaralı fatura {formatMinor(order.invoice!.totalMinor)}; ürün iptallerinden sonra sipariş {formatMinor(order.money.netTotalMinor)}.
+          Faturayı Faturalar ekranından iptal edip güncel tutarla yeniden yükleyin veya iade faturası kesin.
         </Alert>
       ) : null}
       {order.status === "cancelled" ? (
@@ -160,7 +169,12 @@ export function OrderDetailView({ order, permissions }: { order: OrderDetail; pe
         {/* ============================================================ main column */}
         <div className="min-w-0 space-y-5">
           <Card title="Ürünler" icon={Package} subtitle={`${order.items.length} kalem`}
-            actions={remainingToShip > 0 && can("ship") ? <button type="button" onClick={() => setShipOpen(true)} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"><Truck className="h-3.5 w-3.5" /> Kargoya ver</button> : null}>
+            actions={remainingToShip > 0 && (can("ship") || can("cancel_items")) ? (
+              <div className="flex gap-1.5">
+                {can("cancel_items") ? <button type="button" onClick={() => open("cancel_items")} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-medium text-red-600 hover:bg-red-50"><PackageMinus className="h-3.5 w-3.5" /> Ürün iptal et</button> : null}
+                {can("ship") ? <button type="button" onClick={() => setShipOpen(true)} className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"><Truck className="h-3.5 w-3.5" /> Kargoya ver</button> : null}
+              </div>
+            ) : null}>
             <ul className="divide-y divide-slate-100">
               {order.items.map((i) => (
                 <li key={i.id} className="flex gap-4 px-5 py-4">
@@ -187,7 +201,8 @@ export function OrderDetailView({ order, permissions }: { order: OrderDetail; pe
                       <span className="tabular-nums">{i.quantity} × {formatMinor(i.unitPriceMinor)}</span>
                       {i.discountMinor > 0 ? <span className="text-emerald-600 tabular-nums">−{formatMinor(i.discountMinor)} indirim</span> : null}
                       <span>KDV %{i.taxRateBps / 100}</span>
-                      <ShipProgress shipped={i.shippedQty} total={i.quantity} />
+                      <ShipProgress shipped={i.shippedQty} total={i.quantity - i.cancelledQty} />
+                      {i.cancelledQty ? <span className="rounded-full bg-red-50 px-2 py-0.5 font-medium text-red-600">{i.cancelledQty === i.quantity ? "İptal edildi" : `${i.cancelledQty} adet iptal`}</span> : null}
                     </div>
                   </div>
                 </li>
@@ -202,11 +217,50 @@ export function OrderDetailView({ order, permissions }: { order: OrderDetail; pe
               <Row label="Kargo" value={order.money.shippingMinor ? formatMinor(order.money.shippingMinor) : "Ücretsiz"} />
               <Row label={<span className="text-slate-400">KDV (dahil)</span>} value={<span className="text-slate-400">{formatMinor(order.money.taxMinor)}</span>} />
               <div className="flex items-center justify-between border-t border-slate-200 pt-3">
-                <dt className="font-semibold text-slate-800">Toplam</dt>
-                <dd className="text-lg font-bold tabular-nums text-slate-900">{formatMinor(order.money.totalMinor)}</dd>
+                <dt className="font-semibold text-slate-800">{cancelledMinor ? "Sipariş toplamı" : "Toplam"}</dt>
+                <dd className={`tabular-nums ${cancelledMinor ? "text-slate-500" : "text-lg font-bold text-slate-900"}`}>{formatMinor(order.money.totalMinor)}</dd>
               </div>
+              {cancelledMinor ? (
+                <>
+                  <Row label={<span className="text-red-600">İptal edilen ürünler</span>} value={<span className="text-red-600">−{formatMinor(cancelledMinor)}</span>} />
+                  <div className="flex items-center justify-between border-t border-slate-200 pt-3">
+                    <dt className="font-semibold text-slate-800">Güncel toplam</dt>
+                    <dd className="text-lg font-bold tabular-nums text-slate-900">{formatMinor(order.money.netTotalMinor)}</dd>
+                  </div>
+                </>
+              ) : null}
             </dl>
           </Card>
+
+          {order.cancellations.length ? (
+            <Card title="Ürün iptalleri" icon={PackageMinus} subtitle={`${order.cancellations.length} iptal · ${cod ? "tahsilattan düşen" : "iade"} ${formatMinor(cancelledMinor)}`}>
+              <ul className="divide-y divide-slate-100">
+                {order.cancellations.map((c) => (
+                  <li key={c.id} className="space-y-1 px-5 py-3.5 text-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium text-slate-800">{c.items.map((x) => `${x.quantity}× ${x.name}`).join(", ")}</p>
+                      <p className="font-semibold tabular-nums text-slate-900">{formatMinor(c.amountMinor)}</p>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      {fmt(c.createdAt)} · {c.source === "customer" ? "Müşteri iptal etti" : c.actor ?? "Mağaza"} · {c.reason}
+                      {c.refundStatus ? <> · iade {REFUND_STATUS[c.refundStatus]?.label.toLocaleLowerCase("tr-TR") ?? c.refundStatus}</> : null}
+                    </p>
+                    {c.campaignDiffMinor || c.shippingDiffMinor || c.waived || c.restoredMinor || c.estimate === "proportional" || c.invoiceAttention ? (
+                      <p className="flex flex-wrap gap-1.5 text-[11px]">
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">Ödenen pay {formatMinor(c.paidShareMinor)}</span>
+                        {c.campaignDiffMinor ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">Kampanya farkı −{formatMinor(c.campaignDiffMinor)}</span> : null}
+                        {c.shippingDiffMinor ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">Kargo farkı −{formatMinor(c.shippingDiffMinor)}</span> : null}
+                        {c.restoredMinor ? <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">Geri verilen +{formatMinor(c.restoredMinor)}</span> : null}
+                        {c.waived ? <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[#5b4fe0]">Fark düşülmedi</span> : null}
+                        {c.estimate === "proportional" ? <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">Orantılı hesap</span> : null}
+                        {c.invoiceAttention ? <span className="rounded bg-red-50 px-1.5 py-0.5 text-red-600">Faturalı siparişti</span> : null}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
 
           {order.refunds.length || order.money.refundedMinor ? (
             <Card title="İadeler" icon={RotateCcw} subtitle={`Tahsil edilen ${formatMinor(order.money.capturedMinor)} · iade ${formatMinor(order.money.refundedMinor)}${order.money.pendingRefundMinor ? ` · işlemde ${formatMinor(order.money.pendingRefundMinor)}` : ""}`}
@@ -397,7 +451,7 @@ export function OrderDetailView({ order, permissions }: { order: OrderDetail; pe
           description={a === "confirm_cod"
             ? "Müşteriyle görüştüyseniz onaylayın: sipariş hazırlanmaya alınır, ayrılan stok satışa düşer. Ödeme teslimatta kargo tarafından alınır."
             : a === "deliver" && cod && order.paymentStatus === "pending"
-              ? `Sipariş teslim edildi ve ${formatMinor(order.money.totalMinor)} kapıda tahsil edildi olarak işaretlenecek.`
+              ? `Sipariş teslim edildi ve ${formatMinor(order.money.netTotalMinor)} kapıda tahsil edildi olarak işaretlenecek.`
               : `Sipariş durumu “${orderStatusMeta(ORDER_ACTIONS[a].to!).label}” olarak güncellenecek.`}
           onCancel={() => setDialog(null)}
           onSubmit={() => void run({ action: a, note: note.trim() || undefined }, `Sipariş “${orderStatusMeta(ORDER_ACTIONS[a].to!).label}” durumuna alındı`)}>
@@ -405,13 +459,18 @@ export function OrderDetailView({ order, permissions }: { order: OrderDetail; pe
         </AdminFormDialog>
       ))}
 
+      {dialog?.action === "cancel_items" ? (
+        <CancelItemsDialog order={order} busy={busy} onCancel={() => setDialog(null)}
+          onSubmit={(body) => void run({ action: "cancel_items", ...body }, cod ? "Ürün iptal edildi, kapıda tahsil edilecek tutar güncellendi" : "Ürün iptal edildi")} />
+      ) : null}
+
       {dialog?.action === "refund" ? (
         <RefundDialog order={order} busy={busy} onCancel={() => setDialog(null)}
           onSubmit={(body) => void run({ action: "refund", ...body }, order.payments[0]?.provider === "iyzico" ? "İade iyzico’ya iletildi" : "İade kaydedildi")} />
       ) : null}
 
       {/* key: after a shipment the remaining quantities change → fresh form state */}
-      <ShipDrawer key={order.items.map((i) => i.shippedQty).join("-")} open={shipOpen} order={order} busy={busy} onClose={() => setShipOpen(false)}
+      <ShipDrawer key={order.items.map((i) => `${i.shippedQty}.${i.cancelledQty}`).join("-")} open={shipOpen} order={order} busy={busy} onClose={() => setShipOpen(false)}
         onSubmit={(body) => run({ action: "ship", ...body }, "Kargo gönderisi oluşturuldu")} />
     </div>
   );

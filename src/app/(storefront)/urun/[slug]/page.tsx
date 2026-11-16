@@ -4,7 +4,11 @@ import { notFound } from "next/navigation";
 import { ChevronRight, House } from "lucide-react";
 import { GetProductDetailToken, GetShellToken, GetSimilarProductsToken } from "@/modules/storefront";
 import { currentPrincipal, resolveService } from "@/server/app";
-import { ProductGrid, ProductInfoTabs, SimilarProducts, VariantPicker, deptTone, menuIndexOf } from "@/features/shop";
+import { ProductGrid, ProductInfoTabs, RecentlyViewed, SimilarProducts, VariantPicker, deptTone, menuIndexOf } from "@/features/shop";
+import { GetDeliveryRulesToken } from "@/modules/delivery";
+import { GetPaymentOptionsToken } from "@/modules/payments";
+import { GetProductQuestionsToken } from "@/modules/questions";
+import { GetProductSizeChartToken } from "@/modules/size-charts";
 import { GetProductReviewsToken } from "@/modules/reviews";
 import { TrackEvent } from "@/features/consent/commerce";
 
@@ -25,11 +29,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ProductPage({ params, searchParams }: Props) {
   const p = await getProductBySlug((await params).slug);
   if (!p) notFound();
-  const [reviews, similar, shell, user, { degerlendir }] = await Promise.all([
+  const user = await currentPrincipal("storefront");
+  const [reviews, questions, sizeChart, deliveryRules, paymentOptions, similar, shell, { degerlendir }] = await Promise.all([
     (await resolveService(GetProductReviewsToken)).execute(p.id, {}),
+    (await resolveService(GetProductQuestionsToken)).execute(p.id, { userId: user?.id ?? null }),
+    (await resolveService(GetProductSizeChartToken)).execute(p.id),
+    (await resolveService(GetDeliveryRulesToken)).execute(),
+    (await resolveService(GetPaymentOptionsToken)).execute(),
     (await resolveService(GetSimilarProductsToken)).execute(p.id, { pageSize: 12 }),
     resolveService(GetShellToken).then((q) => q.execute()),
-    currentPrincipal("storefront"),
     searchParams,
   ]);
   // Department colour of the product's category tints the gallery and accents the page.
@@ -60,13 +68,14 @@ export default async function ProductPage({ params, searchParams }: Props) {
           {p.breadcrumb.map((b) => <li key={b.slug} className="flex items-center gap-1.5"><ChevronRight className="size-3.5 opacity-60" aria-hidden /><Link href={`/kategori/${b.slug}`} className="font-medium hover:text-ink">{b.name}</Link></li>)}
         </ol>
       </nav>
-      <VariantPicker product={p} signedIn={Boolean(user)} />
+      <VariantPicker product={p} signedIn={Boolean(user)} sizeChart={sizeChart} installments={paymentOptions.card}
+        delivery={deliveryRules ? { rules: deliveryRules, serverNow: new Date().toISOString() } : null} />
       <TrackEvent id={p.id} event={{
         name: "view_item",
         item: { id: def?.sku || p.id, name: p.name, brand: p.brandName, category: p.breadcrumb.at(-1)?.name ?? null, price: (def?.priceMinor ?? 0) / 100, quantity: 1 },
       }} />
 
-      <ProductInfoTabs p={p} reviews={reviews} openReviews={degerlendir === "1"} />
+      <ProductInfoTabs p={p} reviews={reviews} questions={questions} signedIn={Boolean(user)} openReviews={degerlendir === "1"} />
       <SimilarProducts slug={p.slug} products={similar.items} total={similar.total} />
 
       {p.related.length > 0 && (
@@ -75,6 +84,7 @@ export default async function ProductPage({ params, searchParams }: Props) {
           <ProductGrid products={p.related} />
         </section>
       )}
+      <RecentlyViewed productId={p.id} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
     </div>
   );

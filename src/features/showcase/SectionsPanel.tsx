@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type ComponentType } from "react";
-import { ArrowDown, ArrowUp, CircleDot, Clapperboard, Grid3x3, Image as ImageIcon, LayoutGrid, Pencil, Plus, Rows3, Tags, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, CircleDot, Clapperboard, Grid3x3, History, Image as ImageIcon, LayoutGrid, Pencil, Plus, Rows3, Tags, Trash2 } from "lucide-react";
 import { notify } from "@/lib/toast";
 import { useFieldErrors } from "@/lib/use-field-errors";
 import { isoToLocalInput, localInputToIso } from "@/lib/form-values";
@@ -25,7 +25,7 @@ export interface ShowcaseOptions {
 }
 
 const ICON: Record<SectionType, ComponentType<{ className?: string }>> = {
-  hero_slider: Clapperboard, story_strip: CircleDot, product_carousel: Rows3, product_grid: Grid3x3, category_tiles: LayoutGrid, brand_strip: Tags, banner: ImageIcon,
+  hero_slider: Clapperboard, story_strip: CircleDot, product_carousel: Rows3, product_grid: Grid3x3, category_tiles: LayoutGrid, brand_strip: Tags, banner: ImageIcon, recently_viewed: History,
 };
 const STATE = { live: { label: "Yayında", tone: "green" }, scheduled: { label: "Zamanlandı", tone: "blue" }, ended: { label: "Süresi doldu", tone: "amber" }, off: { label: "Kapalı", tone: "slate" } } as const;
 
@@ -36,6 +36,7 @@ function summary(s: SectionRow, sliders: SliderRow[], collections: StoryCollecti
     case "category_tiles": return `${s.categoryIds.length} kategori`;
     case "brand_strip": return `${s.brandIds.length} marka`;
     case "banner": return s.targetUrl ? `→ ${s.targetUrl}` : s.media ? "Görsel var" : "Görsel yok";
+    case "recently_viewed": return `Ziyaretçiye göre · en fazla ${s.itemLimit}`;
     default: return s.selectionMode === "manual" ? `${s.productIds.length} ürün (elle)` : `${SELECTION_MODES[s.selectionMode]} · en fazla ${s.itemLimit}`;
   }
 }
@@ -221,6 +222,12 @@ function SectionForm({ section, type, sliders, collections, options, onDone }: {
           {f.selectionMode === "manual"
             ? <OrderedPicker id="sec-products" label="Ürünler" options={options.products} value={f.productIds} onChange={(productIds) => set({ productIds })} max={48} error={fe("productIds")} />
             : <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">Ürünler her ziyarette güncel veriden otomatik seçilir.</p>}
+        </>
+      ) : null}
+      {type === "recently_viewed" ? (
+        <>
+          <Field id="sec-limit" label="En fazla ürün" hint="1–16 arası."><input id="sec-limit" type="number" min={1} max={16} className={`${inputCls} max-w-32`} value={f.itemLimit} onChange={(e) => set({ itemLimit: e.target.value })} /></Field>
+          <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">Her ziyaretçi kendi baktığı ürünleri görür. Geçmişi olmayan veya işlevsel çerezlere izin vermeyen ziyaretçide bölüm gizlenir.</p>
         </>
       ) : null}
       {type === "category_tiles" ? <OrderedPicker id="sec-cats" label="Kategoriler" options={options.categories} value={f.categoryIds} onChange={(categoryIds) => set({ categoryIds })} max={24} error={fe("categoryIds")} /> : null}

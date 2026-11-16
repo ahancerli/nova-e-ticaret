@@ -2,7 +2,7 @@ import { ClockToken, DatabaseToken, token, type Container } from "@/core";
 import { GetProductPromotionsToken } from "@/modules/pricing";
 import { NO_PRODUCT_SEARCH, type ProductSearch, type StorefrontReadModel } from "./application/ports";
 import {
-  GetBrandPage, GetCategoryPage, GetComparison, GetFacets, GetHome, GetPopularSearches, GetProductDetail, GetShell, GetSimilarProducts, GetSitemap, ListActiveBrands, ListActiveCategories, ListCatalogProducts, SearchSuggest,
+  GetBrandPage, GetCategoryPage, GetComparison, GetFacets, GetHome, GetPopularSearches, GetProductCards, GetProductDetail, GetShell, GetSimilarProducts, GetSitemap, ListActiveBrands, ListActiveCategories, ListCatalogProducts, SearchSuggest,
 } from "./application/storefront-queries";
 import { D1StorefrontReadModel } from "./infrastructure/d1-storefront.read-model";
 
@@ -21,6 +21,7 @@ export const ListActiveCategoriesToken = token<ListActiveCategories>("ListActive
 export const SearchSuggestToken = token<SearchSuggest>("SearchSuggest");
 export const GetSitemapToken = token<GetSitemap>("GetSitemap");
 export const GetPopularSearchesToken = token<GetPopularSearches>("GetPopularSearches");
+export const GetProductCardsToken = token<GetProductCards>("GetProductCards");
 /** Text search port; the search module binds the engine-backed implementation (default: none → SQL match). */
 export const ProductSearchToken = token<ProductSearch>("ProductSearch");
 
@@ -40,5 +41,6 @@ export function registerStorefront(c: Container): void {
   c.scoped(ListActiveCategoriesToken, (r) => new ListActiveCategories(r.resolve(StorefrontReadModelToken)));
   c.scoped(GetSitemapToken, (r) => new GetSitemap(r.resolve(StorefrontReadModelToken)));
   c.scoped(SearchSuggestToken, (r) => new SearchSuggest(r.resolve(StorefrontReadModelToken), r.resolve(GetProductPromotionsToken), r.resolve(ProductSearchToken)));
+  c.scoped(GetProductCardsToken, (r) => new GetProductCards(r.resolve(StorefrontReadModelToken), r.resolve(GetProductPromotionsToken)));
   c.scoped(GetPopularSearchesToken, (r) => new GetPopularSearches(r.resolve(ProductSearchToken)));
 }

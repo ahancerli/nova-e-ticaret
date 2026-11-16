@@ -616,6 +616,17 @@ INSERT OR IGNORE INTO wishlist_items (wishlist_id, product_id) VALUES
 INSERT OR IGNORE INTO recent_views (visitor_key_hash, product_id, viewed_at) VALUES
  ('visitor_demo_1','p_knit','2026-10-12T09:00:00.000Z');
 
+INSERT OR IGNORE INTO size_charts (id, name, columns_json, rows_json, note, is_active) VALUES
+ ('sc_demo_erkek','Erkek üst giyim','["Beden","Göğüs (cm)","Bel (cm)","Boy (cm)"]',
+  '[["S","92-96","78-82","68"],["M","96-100","82-86","70"],["L","100-106","86-92","72"],["XL","106-112","92-98","74"]]',
+  'Ölçüleri vücudunuzdan, kıyafetin altına giydiğiniz ince bir tişörtle alın. İki beden arasındaysanız büyük olanı seçin.',1);
+INSERT OR IGNORE INTO size_chart_categories (category_id, size_chart_id) VALUES ('c_erkek','sc_demo_erkek');
+
+INSERT OR IGNORE INTO product_questions (id, product_id, user_id, body, is_anonymous, status, answer_body, answered_by, answered_at, created_at, updated_at) VALUES
+ ('pq_demo_1','p_knit','u_customer','Kumaşı tüylenme yapıyor mu, yıkamada çeker mi?',0,'answered',
+  'Merhaba, %70 pamuk karışımlı ipliğimiz tüylenmeye dayanıklıdır. 30 derecede ters çevirerek yıkadığınızda çekme yapmaz.','u_admin',
+  '2026-10-14T08:30:00.000Z','2026-10-13T20:10:00.000Z','2026-10-14T08:30:00.000Z');
+
 INSERT OR IGNORE INTO reviews
  (id, product_id, user_id, order_item_id, variant_id, rating, title, body, status, is_anonymous, verified_purchase, helpful_count,
   reject_reason, moderated_by, moderated_at, published_at, reply_body, reply_by, replied_at, contact_status, created_at, updated_at)

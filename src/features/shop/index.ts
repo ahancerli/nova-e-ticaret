@@ -1,7 +1,7 @@
 /**
  * Storefront ("shop") micro-frontend — the public surface the `(storefront)` routes import. Everything else
  * under src/features/shop is internal: `layout/` (SSR header, mega menu, footer), `home/` (SSR home sections),
- * `listing/` (SSR first page + GraphQL updates), `product/` (variant picker, info tabs, similar products), `reviews/` (product reviews + write dialog), `compare/`
+ * `listing/` (SSR first page + GraphQL updates), `product/` (variant picker, info tabs, similar products, delivery promise, size chart, recently viewed), `reviews/` (product reviews + write dialog), `questions/` (product Q&A), `compare/`
  * (comparison list, dock, /karsilastir table), `support/` (Bize ulaşın live chat widget), `ui/` (shared card / price / grid / rail / modal),
  * `data/` (GraphQL client). Server-only entry: client code inside the shop imports relative paths.
  */
@@ -13,9 +13,11 @@ export { loadListing, type PageSearchParams } from "./listing/load";
 export { VariantPicker } from "./product/VariantPicker";
 export { ProductInfoTabs } from "./product/ProductInfoTabs";
 export { SimilarProducts } from "./product/SimilarProducts";
+export { RecentlyViewed } from "./product/RecentlyViewed";
 export { ProductGrid } from "./ui/ProductGrid";
 export { ProductReviews } from "./reviews/ProductReviews";
 export { CompareBar } from "./compare/CompareBar";
+export { WishlistProvider } from "./wishlist/WishlistProvider";
 export { SupportWidget } from "./support/SupportWidget";
 export { CompareTable } from "./compare/CompareTable";
 export { PageHero } from "./ui/PageHero";

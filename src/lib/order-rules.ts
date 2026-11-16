@@ -74,7 +74,7 @@ export const orderFlowFor = (ctx?: OrderPaymentContext | null) => (isCod(ctx) ? 
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
-export type OrderActionId = "reconcile" | "confirm_cod" | "prepare" | "ship" | "deliver" | "complete" | "cancel" | "refund" | "note";
+export type OrderActionId = "reconcile" | "confirm_cod" | "prepare" | "ship" | "deliver" | "complete" | "cancel" | "cancel_items" | "refund" | "note";
 
 interface ActionRule {
   label: string;
@@ -100,6 +100,9 @@ export const ORDER_ACTIONS: Record<OrderActionId, ActionRule> = {
   complete: { label: "Siparişi tamamla", permission: "orders.write", from: ["delivered"], to: "completed" },
   // Paid orders need the refund flow (planned) — cancelling them here would keep the money without a refund record.
   cancel: { label: "Siparişi iptal et", permission: "orders.write", from: ["pending_payment", "awaiting_transfer"], to: "cancelled", danger: true, unpaidCodFrom: ["preparing", "shipped"] },
+  // Kısmi iptal: units not shipped yet leave the order (back to stock, refunded or no longer collected at the door). A
+  // cash-on-delivery order must be confirmed first (preparing); unpaid prepaid orders are cancelled as a whole.
+  cancel_items: { label: "Ürün iptal et", permission: "orders.write", from: ["paid", "preparing"], danger: true },
   // Paid orders are cancelled through a (full) refund; partial refunds keep the order status.
   // "cancelled": a card payment that arrived after expiry / cancel is recorded and must be paid back.
   refund: { label: "İade et", permission: "orders.write", from: ["paid", "preparing", "shipped", "delivered", "completed", "cancelled"], danger: true, codPaidOnly: true },

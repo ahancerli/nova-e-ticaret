@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { entityId as id } from "@/modules/shared/schemas";
+import { CUSTOMER_CANCEL_REASONS, type CustomerCancelReason } from "../domain/cancellation";
 
 const ORDER_STATUSES = ["pending_payment", "awaiting_transfer", "paid", "preparing", "shipped", "delivered", "completed", "cancelled", "refunded", "partially_refunded"] as const;
 const PAYMENT_STATUSES = ["unpaid", "pending", "paid", "failed", "refunded", "partially_refunded"] as const;
@@ -22,6 +23,20 @@ export const orderQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(10).max(100).default(25),
 });
 
+const cancelItems = z.array(z.object({ orderItemId: id, quantity: z.number().int().min(1).max(10_000) }).strict()).min(1, "İptal edilecek en az bir ürün seçin.").max(200);
+
+/** POST …/cancel-items/quote — preview of a partial cancellation (admin and Hesabım). */
+export const cancelItemsQuoteSchema = z.object({ items: cancelItems, waiveDifference: z.boolean().optional() }).strict();
+
+/** POST /api/account/orders/:no/cancel-items — the customer cancels units before the shop starts preparing. */
+export const customerCancelItemsSchema = z.object({
+  items: cancelItems,
+  reason: z.enum(Object.keys(CUSTOMER_CANCEL_REASONS) as [CustomerCancelReason, ...CustomerCancelReason[]], "İptal nedenini seçin."),
+  note: z.string().trim().max(300).optional(),
+}).strict();
+
+export const orderNumberParams = z.object({ no: z.string().trim().min(4).max(40).regex(/^[A-Za-z0-9-]+$/) });
+
 /** POST /api/admin/orders/:id/actions — one schema per state-machine action (lib/order-rules.ts). */
 export const orderActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("prepare"), note: z.string().trim().max(500).optional() }).strict(),
@@ -30,6 +45,13 @@ export const orderActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("deliver"), note: z.string().trim().max(500).optional() }).strict(),
   z.object({ action: z.literal("cancel"), reason: z.string().trim().min(3, "İptal sebebini yazın.").max(500) }).strict(),
   z.object({ action: z.literal("note"), note: z.string().trim().min(1, "Not boş olamaz.").max(1000) }).strict(),
+  z.object({
+    action: z.literal("cancel_items"),
+    items: cancelItems,
+    reason: z.string().trim().min(3, "İptal sebebini yazın.").max(500),
+    waiveDifference: z.boolean().optional(),
+    invoiceAcknowledged: z.boolean().optional(),
+  }).strict(),
   z.object({
     action: z.literal("reconcile"),
     receivedMinor: z.number().int().min(0).max(1_000_000_000),

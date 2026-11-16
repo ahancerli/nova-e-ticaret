@@ -1,8 +1,8 @@
 "use client";
 
-import { api } from "@/lib/api-client";
+import { api, newIdempotencyKey } from "@/lib/api-client";
 import type { AddressInput, AddressView } from "@/modules/addresses";
-import type { CustomerOrderDetail } from "@/modules/orders";
+import type { CancelItemsQuote, CancelItemsResult, CustomerCancelReason, CustomerOrderDetail } from "@/modules/orders";
 import type { ReturnCreateInput, ReturnOptions } from "@/modules/returns";
 
 const BASE = "/api/account/addresses";
@@ -17,6 +17,11 @@ export const addressesApi = {
 export const ordersApi = {
   /** Sipariş sorgula (guest): order number + checkout e-mail. */
   lookup: (orderNumber: string, email: string) => api<CustomerOrderDetail>("/api/orders/lookup", { method: "POST", json: { orderNumber, email } }),
+  /** Ürün iptal et: preview, then the cancellation (fresh Idempotency-Key per confirm). */
+  cancelQuote: (orderNumber: string, items: { orderItemId: string; quantity: number }[], signal?: AbortSignal) =>
+    api<CancelItemsQuote>(`/api/account/orders/${encodeURIComponent(orderNumber)}/cancel-items/quote`, { method: "POST", json: { items }, signal }).then((r) => r.data),
+  cancelItems: (orderNumber: string, body: { items: { orderItemId: string; quantity: number }[]; reason: CustomerCancelReason; note?: string }) =>
+    api<CancelItemsResult>(`/api/account/orders/${encodeURIComponent(orderNumber)}/cancel-items`, { method: "POST", json: body, idempotencyKey: newIdempotencyKey() }).then((r) => r.data),
 };
 
 export const returnsApi = {

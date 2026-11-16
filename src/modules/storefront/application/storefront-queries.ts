@@ -182,3 +182,12 @@ export class GetPopularSearches {
     return this.search.popular();
   }
 }
+
+/** Query: cards of published products in the given order, with campaigns (favourites list). Unpublished ids are dropped. */
+export class GetProductCards {
+  constructor(private readonly read: StorefrontReadModel, private readonly promotions: ProductPromotions) {}
+
+  async execute(ids: string[]): Promise<ProductCard[]> {
+    return withPromotions(this.promotions, await this.read.cardsByIds(ids));
+  }
+}

@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { OrderStatusPill } from "@/features/account/order-status";
 import { OrderDetailView } from "@/features/account/OrderDetailView";
 import { ReturnPanel } from "@/features/account/ReturnPanel";
+import { CancelItemsPanel } from "@/features/account/CancelItemsPanel";
 import { GetCustomerOrderToken } from "@/modules/orders";
 import { currentPrincipal, resolveService } from "@/server/app";
 
@@ -27,6 +28,11 @@ export default async function CustomerOrderPage({ params }: { params: Promise<{ 
       </div>
       <p className="-mt-4 text-sm text-ink-soft">{when.format(new Date(order.placedAt))}{order.paymentMethod ? ` · ${METHOD[order.paymentMethod] ?? order.paymentMethod}` : ""}</p>
 
+      {order.selfCancellable ? <CancelItemsPanel order={order} /> : ["paid", "preparing"].includes(order.status) && order.items.some((i) => i.quantity > i.shippedQuantity + i.cancelledQuantity) ? (
+        <p className="rounded-2xl bg-ground px-5 py-4 text-sm text-ink-soft">
+          {order.status === "preparing" ? "Siparişiniz hazırlanıyor." : "Bu ödeme yöntemiyle verilen siparişlerde iptal mağaza üzerinden yapılır."} Ürün iptali için bizimle iletişime geçin; kargoya verilmemiş ürünleri iptal edip tutarını iade ederiz.
+        </p>
+      ) : null}
       <OrderDetailView order={order} />
       <ReturnPanel orderNumber={order.orderNumber} />
     </div>

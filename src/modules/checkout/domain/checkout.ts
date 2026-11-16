@@ -25,6 +25,10 @@ export interface AddressInput {
   postalCode?: string;
   companyName?: string;
   taxOffice?: string;
+  /** VKN / TCKN as typed (validated); never stored in clear text. */
+  taxNumber?: string;
+  /** Set by ConfirmCheckout: the sealed tax number (JSON of encryptSecret) written to order_addresses. */
+  taxIdentifierEncrypted?: string | null;
 }
 
 export interface ConfirmInput {
@@ -55,6 +59,7 @@ export const reservationMinutes = (method: PaymentMethod) =>
   method === "bank_transfer" ? BANK_TRANSFER_HOURS * 60 : method === "cash_on_delivery" ? COD_CONFIRM_HOURS * 60 : RESERVATION_MINUTES;
 
 export const CheckoutErrors = {
+  taxNumberUnavailable: () => new ConflictError("tax_number_unavailable", "Kurumsal fatura şu an alınamıyor (sunucu anahtarı eksik). Lütfen vergi numarası olmadan devam edin veya bizimle iletişime geçin."),
   cartEmpty: () => new NotFoundError("cart_empty", "Sepetiniz boş."),
   nothingToBuy: () => new ConflictError("cart_empty", "Sepetinizde satın alınabilir ürün yok."),
   sessionNotFound: () => new NotFoundError("checkout_not_found", "Ödeme oturumu bulunamadı."),

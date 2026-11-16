@@ -21,7 +21,7 @@ export const AREA_OF_PREFIX: Record<string, Exclude<AuditArea, "all" | "other">>
   category: "catalog", brand: "catalog", product: "catalog", media: "catalog", attribute: "catalog", barcode: "catalog", bulk: "catalog", product_feed: "catalog",
   order: "orders", return: "orders", invoice: "orders",
   campaign: "campaigns", coupon: "campaigns", pricing_policy: "campaigns",
-  content: "content", showcase: "content", review: "content", review_settings: "content",
+  content: "content", showcase: "content", review: "content", review_settings: "content", question: "content", size_chart: "catalog", delivery_settings: "settings", iys: "settings",
   staff: "accounts", role: "accounts", customer: "accounts", account: "accounts", newsletter: "accounts",
   search: "catalog", settings: "settings", captcha: "settings", social_login: "settings", notification_rule: "settings", ai_integration: "settings", mail_integration: "settings", payment: "settings", bank_account: "settings", shipping_method: "settings", integration: "settings", marketplace: "settings", consent: "settings", tracking_tag: "settings", ai: "catalog",
 };
@@ -31,7 +31,7 @@ export const areaOf = (action: string): Exclude<AuditArea, "all"> => AREA_OF_PRE
 export const ENTITY_LABELS: Record<string, string> = {
   category: "Kategori", brand: "Marka", product: "Ürün", media: "Görsel", order: "Sipariş", campaign: "Kampanya", coupon: "Kupon",
   content_page: "İçerik sayfası", showcase: "Vitrin", user: "Kullanıcı", role: "Rol", site_settings: "Site ayarları", search: "Mağaza araması", captcha_settings: "Bot koruması", social_login: "Sosyal giriş", ai_integration: "AI entegrasyonu", mail_integration: "E-posta (SMTP)",
-  review: "Ürün yorumu", review_settings: "Yorum ayarları", notification_rule: "Bildirim ayarları", support_conversation: "Canlı destek konuşması", support_settings: "Canlı destek ayarları",
+  review: "Ürün yorumu", review_settings: "Yorum ayarları", product_question: "Ürün sorusu", size_chart: "Beden tablosu", delivery_settings: "Teslim tahmini", iys_settings: "İYS bağlantısı", notification_rule: "Bildirim ayarları", support_conversation: "Canlı destek konuşması", support_settings: "Canlı destek ayarları",
   newsletter_subscriber: "E-bülten abonesi", payment_config: "Ödeme yöntemi", return_request: "İade talebi", invoice: "Fatura", bank_account: "Banka hesabı", shipping_method: "Kargo ücreti", integration: "Entegrasyon", marketplace: "Pazaryeri bağlantısı", pricing_policy: "Kampanya kuralları", bulk_job: "Toplu işlem", attribute: "Özellik", product_feed: "Ürün kaynağı (XML / REST)",
 };
 
@@ -47,7 +47,7 @@ const ACTION_LABELS: Record<string, string> = {
   "order.reconcile": "Havale onaylandı", "order.prepare": "Sipariş hazırlanıyor", "order.ship": "Sipariş kargoya verildi",
   "order.deliver": "Sipariş teslim edildi", "order.complete": "Sipariş tamamlandı", "order.cancel": "Sipariş iptal edildi",
   "order.confirm_cod": "Kapıda ödeme siparişi onaylandı",
-  "order.refund": "Sipariş iade edildi", "order.note": "Siparişe not eklendi",
+  "order.refund": "Sipariş iade edildi", "iys.update": "İYS bağlantısı güncellendi", "iys.backfill": "Mevcut izinler İYS kuyruğuna alındı", "order.cancel_items": "Siparişte ürün iptal edildi", "order.note": "Siparişe not eklendi",
   "coupon.create": "Kupon oluşturuldu", "pricing_policy.update": "Kampanya kuralları güncellendi",
   "attribute.create": "Özellik eklendi", "attribute.update": "Özellik güncellendi", "attribute.delete": "Özellik silindi",
   "attribute.option_add": "Özellik değeri eklendi", "attribute.option_update": "Özellik değeri güncellendi", "attribute.option_delete": "Özellik değeri silindi",
@@ -59,6 +59,9 @@ const ACTION_LABELS: Record<string, string> = {
   "review.approve": "Yorum yayınlandı", "review.reject": "Yorum reddedildi", "review.hide": "Yorum yayından kaldırıldı", "review.reply": "Yoruma mağaza yanıtı verildi",
   "review.reply_delete": "Mağaza yanıtı kaldırıldı", "review.contact": "Yorum sahibiyle iletişime geçildi", "review.contact_status": "Yorumun iletişim durumu değişti",
   "review_settings.update": "Yorum ayarları güncellendi",
+  "question.answer": "Ürün sorusu yanıtlandı", "question.reject": "Ürün sorusu yayınlanmadı",
+  "size_chart.create": "Beden tablosu oluşturuldu", "size_chart.update": "Beden tablosu güncellendi", "size_chart.delete": "Beden tablosu silindi",
+  "delivery_settings.update": "Teslim tahmini kuralları güncellendi",
   "support.close": "Canlı destek konuşması kapatıldı", "support.reopen": "Canlı destek konuşması yeniden açıldı", "support_settings.update": "Canlı destek ayarları güncellendi", "notification_rule.update": "Bildirim ayarları güncellendi",
   "ai_integration.create": "AI entegrasyonu eklendi", "ai_integration.update": "AI entegrasyonu güncellendi", "ai_integration.delete": "AI entegrasyonu kaldırıldı",
   "search.synonym_add": "Arama eş anlamlısı eklendi", "search.synonym_delete": "Arama eş anlamlısı silindi", "search.reindex": "Arama dizini yeniden kuruldu", "search.term_hide": "Arama terimi popüler listeden gizlendi", "search.term_show": "Arama terimi yeniden gösterildi", "search.term_delete": "Arama terimi sayacı silindi", "captcha.update": "Bot koruması ayarı güncellendi", "social_login.update": "Sosyal giriş ayarı güncellendi", "customer.social_link": "Hesap sosyal girişe bağlandı", "mail_integration.create": "E-posta (SMTP) ayarı eklendi", "mail_integration.update": "E-posta (SMTP) ayarı güncellendi", "mail_integration.delete": "E-posta (SMTP) ayarı kaldırıldı",

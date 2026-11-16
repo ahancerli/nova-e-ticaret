@@ -1,4 +1,5 @@
 import { ClockToken, DatabaseToken, IdGeneratorToken, RateLimiterToken, token, type Container, type Resolver } from "@/core";
+import { IysQueueToken } from "@/modules/iys";
 import { AuditLogToken } from "@/modules/audit/audit-log";
 import { GetSignupLegalToken } from "@/modules/content";
 import { GeoDirectoryToken } from "@/modules/geo";
@@ -28,7 +29,7 @@ export function registerCustomers(c: Container): void {
   c.scoped(RunCustomerActionToken, (r) => new RunCustomerAction(deps(r)));
   c.scoped(CustomerEnrollmentToken, (r) => new CustomerEnrollment({
     customers: r.resolve(CustomerRepositoryToken), legal: r.resolve(GetSignupLegalToken), audit: r.resolve(AuditLogToken),
-    clock: r.resolve(ClockToken), ids: r.resolve(IdGeneratorToken),
+    clock: r.resolve(ClockToken), ids: r.resolve(IdGeneratorToken), iys: r.resolve(IysQueueToken),
   }));
   c.scoped(RegisterCustomerToken, (r) => new RegisterCustomer({
     db: r.resolve(DatabaseToken), enrollment: r.resolve(CustomerEnrollmentToken), credentials: r.resolve(CredentialWriterToken),

@@ -1,6 +1,7 @@
-import { sha256Hex, type Clock, type IdGenerator, type Logger } from "@/core";
+import { sha256Hex, type Clock, type Database, type IdGenerator, type Logger } from "@/core";
 import type { SettleOptions, SettleResult } from "@/modules/checkout";
-import { PaymentErrors, TOKEN_PATTERN, detailMatchesPayment } from "../domain/payment";
+import { planRefundParts } from "../domain/iyzico";
+import { PaymentErrors, TOKEN_PATTERN, detailMatchesPayment, fromProviderPrice } from "../domain/payment";
 import type { Address, CheckoutFormRequest, PaymentGateway, PaymentRepository } from "./ports";
 
 /** Payment settlement (checkout's SettlePayment) as seen from here. */
@@ -78,7 +79,7 @@ export class VerifyCardPayment {
     private readonly logger: Logger,
   ) {}
 
-  async execute(token: string, source: "callback" | "webhook", eventId?: string): Promise<VerifyResult> {
+  async execute(token: string, source: "callback" | "webhook", eventId?: string, signatureValid = false): Promise<VerifyResult> {
     if (!TOKEN_PATTERN.test(token)) return { status: "unknown", orderNumber: null };
     const pay = await this.payments.byToken(token);
     const detail = await this.gateway.checkoutFormDetail(token, pay?.conversationId ?? null);
@@ -91,7 +92,7 @@ export class VerifyCardPayment {
 
     const providerEventId = eventId ?? `${source}:${detail.paymentId ?? token}`;
     const fresh = await this.payments.recordEvent({
-      id: this.ids.newId(), paymentId: pay.id, providerEventId, eventType: `checkoutform.${source}`, payloadSha256: await sha256Hex(JSON.stringify(detail)),
+      id: this.ids.newId(), paymentId: pay.id, providerEventId, eventType: `checkoutform.${source}`, payloadSha256: await sha256Hex(JSON.stringify(detail)), signatureValid,
     });
     if (!fresh && pay.status === "paid") return { status: "paid", orderNumber: pay.orderNumber };
 
@@ -103,18 +104,29 @@ export class VerifyCardPayment {
       return { status: "failed", orderNumber: pay.orderNumber };
     }
 
-    await this.settlement.settle(pay.id, { providerPaymentId: detail.paymentId ?? null, allowLate: true });
+    // iyzico refunds per basket item (Refund V1): keep each item's transaction id with the settlement.
+    const items = (detail.itemTransactions ?? []).map((t) => ({
+      itemId: t.itemId, paymentTransactionId: t.paymentTransactionId, priceMinor: fromProviderPrice(t.price), paidPriceMinor: fromProviderPrice(t.paidPrice ?? t.price),
+    }));
+    await this.settlement.settle(pay.id, { providerPaymentId: detail.paymentId ?? null, allowLate: true, extra: this.payments.itemTransactionStatements(pay.id, items) });
     await this.payments.markEvent(providerEventId, "processed", now);
     return { status: "paid", orderNumber: pay.orderNumber };
   }
 }
 
 /**
- * Outbox command "refund.process": sends a card refund to the provider and finalises it either way.
- * Idempotent: a refund no longer in requested/processing is skipped.
+ * Outbox command "refund.process": pays a card refund back through iyzico Refund V1 — split over the basket item
+ * transactions (the cancelled items first, shipping last), one call per item. Each answered part is recorded, so a
+ * retry after a network error / provider outage (the call throws → the outbox retries) never refunds a part twice.
+ * Finalised as succeeded when every part went through; a final iyzico refusal fails the refund (staff sees the
+ * code; parts already paid back stay recorded). Payments settled before item transactions were stored fetch them
+ * once from /payment/detail.
  */
 export class ProcessCardRefund {
-  constructor(private readonly payments: PaymentRepository, private readonly gateway: PaymentGateway, private readonly refunds: RefundFinaliser) {}
+  constructor(
+    private readonly payments: PaymentRepository, private readonly gateway: PaymentGateway, private readonly refunds: RefundFinaliser,
+    private readonly ids: IdGenerator, private readonly db: Database,
+  ) {}
 
   async execute(refundId: string): Promise<string> {
     const r = await this.payments.refundToProcess(refundId);
@@ -124,8 +136,45 @@ export class ProcessCardRefund {
       await this.refunds.settle(refundId, { ok: false, failureCode: "no_provider_payment_id" });
       return "failed_no_payment_id";
     }
-    const res = await this.gateway.refund({ providerPaymentId: r.providerPaymentId, amountMinor: r.amountMinor, conversationId: `refund-${refundId}`, ip: "127.0.0.1" });
-    await this.refunds.settle(refundId, res.ok ? { ok: true, providerRefundId: res.providerRefundId } : { ok: false, failureCode: res.failureCode });
-    return res.ok ? "refunded" : res.failureCode;
+
+    let items = await this.payments.itemTransactions(r.paymentId);
+    if (!items.length) {
+      const fetched = await this.gateway.paymentItems(r.providerPaymentId);
+      if (fetched?.length) {
+        await this.db.batch(this.payments.itemTransactionStatements(r.paymentId, fetched));
+        items = await this.payments.itemTransactions(r.paymentId);
+      }
+    }
+    if (!items.length) {
+      await this.refunds.settle(refundId, { ok: false, failureCode: "no_item_transactions" });
+      return "failed_no_item_transactions";
+    }
+
+    const done = (await this.payments.refundParts(refundId)).filter((p) => p.status === "succeeded");
+    const left = r.amountMinor - done.reduce((a, p) => a + p.amountMinor, 0);
+    const plan = left > 0 ? planRefundParts(left, items, await this.payments.refundItemIds(refundId)) : [];
+    if (!plan) {
+      await this.refunds.settle(refundId, { ok: false, failureCode: done.length ? "partial_exceeds_items" : "exceeds_items" });
+      return "failed_exceeds_items";
+    }
+    const refs: string[] = [];
+    let sent = r.amountMinor - left;
+    for (const part of plan) {
+      const res = await this.gateway.refundItem({ paymentTransactionId: part.paymentTransactionId, amountMinor: part.amountMinor, conversationId: `refund-${refundId}-${part.itemId}`.slice(0, 64), ip: "127.0.0.1" });
+      await this.payments.recordRefundPart({
+        id: this.ids.newId(), refundId, paymentTransactionId: part.paymentTransactionId, amountMinor: part.amountMinor, status: res.ok ? "succeeded" : "failed",
+        providerRef: res.ok ? res.providerRef : null, failureCode: res.ok ? null : res.failureCode,
+      });
+      if (!res.ok) {
+        // "partial:<kuruş paid back>:<code>" = items already refunded before iyzico refused this one (see refund_parts);
+        // a later refund never takes those items again (planRefundParts counts succeeded parts).
+        await this.refunds.settle(refundId, { ok: false, failureCode: sent > 0 ? `partial:${sent}:${res.failureCode}` : res.failureCode });
+        return res.failureCode;
+      }
+      sent += part.amountMinor;
+      refs.push(res.providerRef ?? part.paymentTransactionId);
+    }
+    await this.refunds.settle(refundId, { ok: true, providerRefundId: refs.join(",").slice(0, 200) || null });
+    return "refunded";
   }
 }

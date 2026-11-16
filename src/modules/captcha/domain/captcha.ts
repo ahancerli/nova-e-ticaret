@@ -36,6 +36,7 @@ export const CAPTCHA_FORMS = {
   login: { label: "Giriş yap", where: "/giris ve ödeme adımındaki giriş" },
   forgot: { label: "Şifremi unuttum", where: "/sifremi-unuttum" },
   review: { label: "Ürün değerlendirmesi", where: "Ürün sayfası › Değerlendir" },
+  question: { label: "Ürün sorusu", where: "Ürün sayfası › Soru & cevap" },
   newsletter: { label: "E-bülten kaydı", where: "Site altındaki e-bülten formu" },
 } as const;
 

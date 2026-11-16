@@ -49,14 +49,33 @@ export class D1PricingRepository extends Repository implements PricingRepository
   }
 
   async activeCampaigns(now: string, couponCampaignId: string | null): Promise<Campaign[]> {
+    return this.campaignRows(
+      "c.is_active = 1 AND c.starts_at <= ? AND (c.ends_at IS NULL OR c.ends_at > ?) AND (c.requires_coupon = 0 OR c.id = ?)", now, now, couponCampaignId,
+    );
+  }
+
+  /** Campaigns by id whatever their state today (re-pricing an order with the campaigns it used). */
+  async campaignsByIds(ids: string[]): Promise<Campaign[]> {
+    if (!ids.length) return [];
+    return this.campaignRows(`c.id IN (${placeholders(ids.length)})`, ...ids);
+  }
+
+  async couponById(id: string): Promise<CouponSnapshot | null> {
+    const r = await this.db.first<{ id: string; campaign_id: string; code_normalized: string; allow_with_promotions: number }>(
+      "SELECT id, campaign_id, code_normalized, allow_with_promotions FROM coupons WHERE id = ?", id,
+    );
+    return r ? { id: r.id, campaignId: r.campaign_id, codeNormalized: r.code_normalized, allowWithPromotions: r.allow_with_promotions === 1 } : null;
+  }
+
+  private async campaignRows(where: string, ...params: unknown[]): Promise<Campaign[]> {
     const rows = await this.db.all<CampaignRow>(
       `SELECT c.*, COALESCE(c.offer_type, c.kind) AS kind,
               (SELECT m.public_url FROM media_assets m WHERE m.id = c.badge_media_id) AS badge_url,
               (SELECT json_group_array(json_object('minQuantity', t.min_quantity, 'percentageBps', t.percentage_bps)) FROM campaign_tiers t WHERE t.campaign_id = c.id) AS tiers_json
          FROM campaigns c
-        WHERE c.is_active = 1 AND c.starts_at <= ? AND (c.ends_at IS NULL OR c.ends_at > ?) AND (c.requires_coupon = 0 OR c.id = ?)
+        WHERE ${where}
         ORDER BY c.priority DESC, c.id`,
-      now, now, couponCampaignId,
+      ...params,
     );
     return rows.map((r) => {
       const tiers = (JSON.parse(r.tiers_json || "[]") as Campaign["tiers"]).sort((a, b) => a.minQuantity - b.minQuantity);

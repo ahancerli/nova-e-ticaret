@@ -99,6 +99,8 @@ export interface EnrollmentDeps {
   audit: AuditLog;
   clock: Clock;
   ids: IdGenerator;
+  /** İYS queue (marketing consents must reach İYS); statements join the sign-up transaction. */
+  iys: { statements(d: { consentId: string; purpose: string; granted: boolean; at: string; email?: string | null; phone?: string | null }): Statement[] };
 }
 
 export interface EnrollmentInput {
@@ -131,15 +133,21 @@ export class CustomerEnrollment {
     const id = deps.ids.newId();
     const now = deps.clock.nowIso();
     const { consentVersion } = await deps.legal.execute();
-    const consent = (purpose: string, granted: boolean) =>
-      deps.customers.consentStatement({ id: deps.ids.newId(), userId: id, purpose, version: consentVersion, granted, now });
+    const consent = (purpose: string, granted: boolean) => {
+      const consentId = deps.ids.newId();
+      return [
+        deps.customers.consentStatement({ id: consentId, userId: id, purpose, version: consentVersion, granted, now }),
+        // only a "yes" goes to İYS at sign-up (nothing to withdraw yet)
+        ...(granted ? deps.iys.statements({ consentId, purpose, granted, at: now, email, phone: input.phone }) : []),
+      ];
+    };
     return {
       userId: id,
       statements: [
         deps.customers.insertUserStatement({ id, email, displayName: `${firstName} ${lastName}`.trim(), phone: input.phone, now }),
         deps.customers.upsertProfileStatement(id, { firstName, lastName, companyName: null, notes: null }, now),
         deps.customers.assignCustomerRoleStatement(id),
-        consent("kvkk_notice", true), consent("marketing_email", input.marketingEmail), consent("marketing_sms", input.marketingSms),
+        ...consent("kvkk_notice", true), ...consent("marketing_email", input.marketingEmail), ...consent("marketing_sms", input.marketingSms),
         deps.audit.recordStatement({
           actor: { userId: id, requestId: input.requestId }, action: "customer.signup", entityType: "user", entityId: id,
           diff: { marketingEmail: input.marketingEmail, marketingSms: input.marketingSms, ...(input.method ? { method: input.method } : {}) },

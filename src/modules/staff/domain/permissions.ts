@@ -28,7 +28,7 @@ export const PERMISSION_GROUPS: { key: string; label: string; permissions: Permi
       { code: "storefront.write", label: "Vitrin", description: "Slider, hikaye ve ana sayfa blokları." },
       { code: "campaigns.write", label: "Kampanya ve kupon", description: "İndirim kuralları ve kuponlar." },
       { code: "content.write", label: "İçerik yönetimi", description: "Yasal metinler, kurumsal ve yardım sayfaları." },
-      { code: "reviews.moderate", label: "Ürün yorumları", description: "Yorumları yayınlama / reddetme, mağaza yanıtı, müşteriyle iletişim, yorum ayarları." },
+      { code: "reviews.moderate", label: "Ürün yorumları ve soruları", description: "Yorumları yayınlama / reddetme, mağaza yanıtı, müşteriyle iletişim, yorum ayarları; ürün sorularını yanıtlama." },
       { code: "support.chat", label: "Canlı destek", description: "Üyelerin canlı destek mesajlarını görme ve yanıtlama, konuşma kapatma." },
     ],
   },

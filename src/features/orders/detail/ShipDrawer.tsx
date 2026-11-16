@@ -9,7 +9,7 @@ export function ShipDrawer({ open, order, busy, onClose, onSubmit }: {
   open: boolean; order: OrderDetail; busy: boolean; onClose: () => void;
   onSubmit: (body: { shippingMethodId: string; trackingNumber?: string; trackingUrl?: string; items: { orderItemId: string; quantity: number }[] }) => Promise<boolean>;
 }) {
-  const remaining = useMemo(() => order.items.map((i) => ({ ...i, left: Math.max(0, i.quantity - i.shippedQty) })).filter((i) => i.left > 0), [order.items]);
+  const remaining = useMemo(() => order.items.map((i) => ({ ...i, left: Math.max(0, i.quantity - i.shippedQty - i.cancelledQty) })).filter((i) => i.left > 0), [order.items]);
   const [method, setMethod] = useState(order.shippingMethods[0]?.id ?? "");
   const [tracking, setTracking] = useState("");
   const [url, setUrl] = useState("");

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { sanitizeRichHtml } from "@/core";
 import type { ProductDetail } from "@/lib/types";
 import type { ReviewPage } from "@/modules/reviews/domain/review";
+import type { QuestionPage } from "@/modules/questions/domain/question";
+import { ProductQuestions } from "../questions/ProductQuestions";
 import { ProductReviews } from "../reviews/ProductReviews";
 import { ProductTabs, type ProductTab } from "./ProductTabs";
 
@@ -9,8 +11,8 @@ const Empty = ({ children }: { children: React.ReactNode }) => (
   <p className="rounded-2xl border border-dashed border-line bg-white px-5 py-10 text-center text-sm text-muted">{children}</p>
 );
 
-/** SSR content of the product tabs: description, spec sheet (brand first), reviews. `openReviews` = Hesabım › Değerlendir deep link. */
-export function ProductInfoTabs({ p, reviews, openReviews }: { p: ProductDetail; reviews: ReviewPage; openReviews: boolean }) {
+/** SSR content of the product tabs: description, spec sheet (brand first), reviews, Q&A. `openReviews` = Hesabım › Değerlendir deep link. */
+export function ProductInfoTabs({ p, reviews, questions, signedIn, openReviews }: { p: ProductDetail; reviews: ReviewPage; questions: QuestionPage; signedIn: boolean; openReviews: boolean }) {
   const specs = [...(p.brandName ? [{ label: "Marka", value: p.brandName, href: p.brandSlug ? `/marka/${p.brandSlug}` : null }] : []), ...p.specs.map((s) => ({ ...s, href: null }))];
   const tabs: ProductTab[] = [
     {
@@ -41,6 +43,10 @@ export function ProductInfoTabs({ p, reviews, openReviews }: { p: ProductDetail;
     {
       id: "degerlendirmeler", label: "Değerlendirmeler", count: reviews.summary.count,
       content: <ProductReviews productId={p.id} slug={p.slug} productName={p.name} initial={reviews} autoOpen={openReviews} embedded />,
+    },
+    {
+      id: "sorular", label: "Soru & cevap", count: questions.total,
+      content: <ProductQuestions slug={p.slug} productName={p.name} initial={questions} signedIn={signedIn} />,
     },
   ];
   return <ProductTabs tabs={tabs} initial={openReviews ? "degerlendirmeler" : undefined} />;

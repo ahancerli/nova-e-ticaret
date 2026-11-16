@@ -7,6 +7,9 @@ export interface PricingRepository {
   cartLines(cartId: string): Promise<CartLineSnapshot[]>;
   /** Active campaigns at `now`; coupon-only campaigns only for `couponCampaignId`. */
   activeCampaigns(now: string, couponCampaignId: string | null): Promise<Campaign[]>;
+  /** Campaigns by id whatever their state today. */
+  campaignsByIds(ids: string[]): Promise<Campaign[]>;
+  couponById(id: string): Promise<CouponSnapshot | null>;
   eligibility(campaignIds: string[], productIds: string[]): Promise<Map<string, Set<string>>>;
   conditionEligibility(campaignIds: string[], productIds: string[]): Promise<Map<string, Set<string>>>;
   policy(): Promise<PricingPolicySnapshot>;
@@ -79,5 +82,56 @@ export class GetProductPromotions {
     const floorOf = (i: PromotionItem) =>
       floors.find((f) => f.productId === i.productId && (i.variantId ? f.variantId === i.variantId : f.priceMinor === i.priceMinor))?.minPriceMinor ?? null;
     return productPromotions({ items: items.map((i) => ({ ...i, minPriceMinor: floorOf(i) })), campaigns, eligibility, policy });
+  }
+}
+
+/** A placed order line to re-price (frozen unit price and VAT of the order). */
+export interface RepriceLine {
+  variantId: string;
+  productId: string;
+  quantity: number;
+  unitPriceMinor: number;
+  taxRateBps: number;
+}
+
+export interface RepriceInput {
+  lines: RepriceLine[];
+  /** Campaigns the order used, with the rule version it recorded (order_adjustments.rule_snapshot_json). */
+  campaigns: { id: string; ruleVersion: number | null }[];
+  couponId: string | null;
+  /** Shipping as the order saw it: fee and free-shipping threshold (null = none). */
+  shipping: { feeMinor: number; freeAboveMinor: number | null } | null;
+  /** The order used a first-order campaign, so the customer qualified then. */
+  firstOrder: boolean;
+  strategy?: PricingPolicySnapshot["conflictStrategy"];
+}
+
+/**
+ * Query: re-price an order's lines with ONLY the campaigns that order used, as they are defined now (never adds a
+ * campaign the order did not get). `reliable` = every campaign still has the rule version the order recorded; the
+ * caller also compares the full re-price with the recorded amounts before trusting a difference.
+ */
+export class RepriceLines {
+  constructor(private readonly pricing: PricingRepository) {}
+
+  async execute(input: RepriceInput): Promise<{ quote: Quote; reliable: boolean }> {
+    const ids = [...new Set(input.campaigns.map((c) => c.id))];
+    const [campaigns, coupon] = await Promise.all([this.pricing.campaignsByIds(ids), input.couponId ? this.pricing.couponById(input.couponId) : Promise.resolve(null)]);
+    const reliable = ids.length === campaigns.length
+      && input.campaigns.every((c) => c.ruleVersion == null || campaigns.find((x) => x.id === c.id)?.ruleVersion === c.ruleVersion);
+    const productIds = [...new Set(input.lines.map((l) => l.productId))];
+    const crossSell = campaigns.filter((c) => c.kind === "cross_sell").map((c) => c.id);
+    const [eligibility, conditionEligibility, policy] = await Promise.all([
+      this.pricing.eligibility(ids, productIds), this.pricing.conditionEligibility(crossSell, productIds), this.pricing.policy(),
+    ]);
+    const lines: CartLineSnapshot[] = input.lines.filter((l) => l.quantity > 0).map((l, i) => ({
+      cartItemId: `line-${i}`, variantId: l.variantId, productId: l.productId, sku: "", productName: "", variantLabel: "", imageUrl: null,
+      quantity: l.quantity, unitPriceMinor: l.unitPriceMinor, taxRateBps: l.taxRateBps, available: Number.MAX_SAFE_INTEGER, sellable: true,
+    }));
+    const quote = priceCart({
+      lines, campaigns, eligibility, conditionEligibility, coupon, couponInvalid: false, shipping: input.shipping,
+      policy: { ...policy, conflictStrategy: input.strategy ?? policy.conflictStrategy }, firstOrder: input.firstOrder,
+    });
+    return { quote, reliable };
   }
 }

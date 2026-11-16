@@ -2,15 +2,15 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink, KeyRound, MessageSquareText, PlugZap, Send, ShieldCheck, Trash2, Truck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, FileText, KeyRound, MessageSquareText, PlugZap, Send, ShieldCheck, Trash2, Truck } from "lucide-react";
 import { notify } from "@/lib/toast";
 import { useFieldErrors } from "@/lib/use-field-errors";
 import { AdminConfirmDialog } from "@/components/admin/AdminConfirmDialog";
 import { Field, inputCls } from "@/components/admin/form";
 import { AdminBadge, AdminCard, AdminCardTitle, AdminPageHeader } from "@/components/admin/ui";
-import type { IntegrationPageView, ProviderView, SmsEvent, SmsEventSetting } from "@/modules/integrations";
+import type { IntegrationPageView, InvoiceTrigger, InvoicingSettings, ProviderView, SmsEvent, SmsEventSetting } from "@/modules/integrations";
 import {
-  SMS_EVENTS, SMS_EVENT_INFO, SMS_TEMPLATE_MAX, SMS_VARIABLES, defaultSmsEvents, renderTemplate, smsParts,
+  DEFAULT_INVOICING, INVOICE_TRIGGERS, SMS_EVENTS, SMS_EVENT_INFO, SMS_TEMPLATE_MAX, SMS_VARIABLES, defaultSmsEvents, renderTemplate, smsParts,
 } from "@/modules/integrations/domain/providers";
 import { integrationsApi } from "./api";
 
@@ -27,6 +27,16 @@ const COPY = {
     title: "Kargo entegrasyonları", icon: Truck,
     subtitle: "“Kargoya ver” ile gönderiyi kargo firmasına kaydeder, takip numarasını ve teslim durumunu otomatik alır.",
   },
+  accounting: {
+    title: "e-Fatura / e-Arşiv", icon: FileText,
+    subtitle: "Siparişlerin faturasını entegratörünüzde (GİB onaylı) keser: e-Fatura mükellefine e-Fatura, diğerlerine e-Arşiv. PDF müşteriye e-postayla gider.",
+  },
+} as const;
+
+const KIND_TEXT = {
+  sms: { firm: "SMS firması", none: "SMS firması bağlı değil; müşteriye sipariş SMS'i gitmez.", noAdapter: "SMS gönderilmez", remove: "Firma bilgileri ve şifreler silinir; müşterilere SMS gönderimi durur." },
+  shipping: { firm: "Kargo firması", none: "Kargo firması bağlı değil; “Kargoya ver” derken takip numarasını elle girersiniz.", noAdapter: "gönderiler manuel işlenir (takip no elle girilir)", remove: "Firma bilgileri ve şifreler silinir; yeni gönderiler manuel işlenir. Kayıtlı gönderilerin takibi durur." },
+  accounting: { firm: "e-Fatura entegratörü", none: "Entegratör bağlı değil; faturaları entegratörünüzün portalında kesip Faturalar ekranından elle kaydedersiniz.", noAdapter: "faturalar elle kaydedilir", remove: "Bilgiler ve şifreler silinir; otomatik fatura kesimi durur. Kesilmiş faturalar Faturalar ekranında kalır." },
 } as const;
 
 /** Sample values for the SMS preview. */
@@ -54,6 +64,7 @@ export function ProviderIntegrationManager({ initial }: { initial: IntegrationPa
   const same = !!current && current.providerCode === selected;
   const [values, setValues] = useState<Record<string, string>>(() => initialValues(provider, same ? current!.values : {}));
   const [events, setEvents] = useState<Record<SmsEvent, SmsEventSetting>>(() => ({ ...defaultSmsEvents(), ...(current?.settings.events ?? {}) } as Record<SmsEvent, SmsEventSetting>));
+  const [invoicing, setInvoicing] = useState<InvoicingSettings>(() => ({ ...DEFAULT_INVOICING, ...(current?.settings.invoicing ?? {}) }));
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [phone, setPhone] = useState("");
@@ -78,7 +89,7 @@ export function ProviderIntegrationManager({ initial }: { initial: IntegrationPa
     try {
       await integrationsApi.provider.save(kind, {
         providerCode: provider.code, values: Object.fromEntries(Object.entries(values).filter(([, v]) => v !== "")),
-        ...(kind === "sms" ? { events } : {}), expectedUpdatedAt: current?.updatedAt ?? null,
+        ...(kind === "sms" ? { events } : {}), ...(kind === "accounting" ? { invoicing: { auto: invoicing.auto, trigger: invoicing.trigger } } : {}), expectedUpdatedAt: current?.updatedAt ?? null,
       });
       notify.success(current ? `${provider.name} bağlantısı güncellendi` : `${provider.name} bağlandı`, { description: "Bilgileri denemek için test düğmesini kullanın." });
       router.refresh();
@@ -136,6 +147,7 @@ export function ProviderIntegrationManager({ initial }: { initial: IntegrationPa
                   <p className="text-xs text-slate-500">
                     {current.secretsSet.length ? "şifre kayıtlı · " : ""}son güncelleme {dt.format(new Date(current.updatedAt))}
                     {kind === "sms" && current.settings.events ? ` · ${Object.values(current.settings.events).filter((e) => e?.enabled).length} bildirim açık` : ""}
+                    {kind === "accounting" && current.settings.invoicing ? (current.settings.invoicing.auto ? ` · otomatik kesim açık (${INVOICE_TRIGGERS[current.settings.invoicing.trigger].toLocaleLowerCase("tr-TR")})` : " · otomatik kesim kapalı") : ""}
                   </p>
                 </div>
               </div>
@@ -158,19 +170,19 @@ export function ProviderIntegrationManager({ initial }: { initial: IntegrationPa
             {errors.get("phone") && <p className="text-xs text-red-600">{errors.get("phone")}</p>}
             {!connectedReady && (
               <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-100">
-                Bu kayıt için uygulamada adaptör yok; {kind === "sms" ? "SMS gönderilmez" : "gönderiler manuel işlenir (takip no elle girilir)"}. Aşağıdan hazır bir firma seçin.
+                Bu kayıt için uygulamada adaptör yok; {KIND_TEXT[kind].noAdapter}. Aşağıdan hazır bir firma seçin.
               </p>
             )}
           </div>
         ) : (
           <p className="px-5 py-4 text-sm text-slate-600">
-            {kind === "sms" ? "SMS firması bağlı değil; müşteriye sipariş SMS'i gitmez." : "Kargo firması bağlı değil; “Kargoya ver” derken takip numarasını elle girersiniz."} Aşağıdan firmanızı seçin.
+            {KIND_TEXT[kind].none} Aşağıdan firmanızı seçin.
           </p>
         )}
       </AdminCard>
 
       <AdminCard className="max-w-5xl">
-        <AdminCardTitle title={kind === "sms" ? "SMS firması" : "Kargo firması"} subtitle="Çalıştığınız firmayı seçin. “Hazır” olanların entegrasyonu uygulamada bulunur." />
+        <AdminCardTitle title={KIND_TEXT[kind].firm} subtitle="Çalıştığınız firmayı seçin. “Hazır” olanların entegrasyonu uygulamada bulunur." />
         <div className="grid gap-3 px-5 py-5 sm:grid-cols-2 lg:grid-cols-3" role="radiogroup" aria-label="Firma">
           {providers.map((p) => {
             const on = p.code === selected;
@@ -242,6 +254,22 @@ export function ProviderIntegrationManager({ initial }: { initial: IntegrationPa
             </div>
 
             {kind === "sms" && <SmsEventsEditor events={events} onChange={setEvents} errors={errors} />}
+            {kind === "accounting" && (
+              <fieldset className="space-y-3 rounded-xl border border-slate-200 p-4">
+                <legend className="px-1 text-xs font-medium text-slate-600">Otomatik kesim</legend>
+                <label className="flex items-start gap-2 text-sm text-slate-700">
+                  <input type="checkbox" className="mt-0.5 size-4 accent-[#7367f0]" checked={invoicing.auto} onChange={(e) => setInvoicing((v) => ({ ...v, auto: e.target.checked }))} />
+                  <span>Faturaları otomatik kes <span className="block text-xs text-slate-500">Yalnız açtığınız andan sonra verilen siparişler; eski siparişleri Faturalar ekranından “Entegratörle kes” ile tek tek kesebilirsiniz.</span></span>
+                </label>
+                <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Ne zaman kesilsin">
+                  {(Object.entries(INVOICE_TRIGGERS) as [InvoiceTrigger, string][]).map(([k, label]) => (
+                    <button key={k} type="button" role="radio" aria-checked={invoicing.trigger === k} disabled={!invoicing.auto} onClick={() => setInvoicing((v) => ({ ...v, trigger: k }))}
+                      className={`h-9 rounded-lg px-3 text-sm font-medium transition disabled:opacity-50 ${invoicing.trigger === k ? "bg-[#7367f0] text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{label}</button>
+                  ))}
+                </div>
+                <p className="text-xs leading-5 text-slate-500">Kesim sunucuda <code className="rounded bg-slate-100 px-1">/api/cron/invoices</code> ile dakikada bir ilerler. Kısmi iptal edilen ürünler faturaya girmez; kesilen PDF siparişe eklenir ve müşteriye e-postayla gider.</p>
+              </fieldset>
+            )}
             {kind === "shipping" && (
               <div className="rounded-xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-600 ring-1 ring-slate-100">
                 <p className="font-semibold text-slate-700">Nasıl çalışır?</p>
@@ -262,7 +290,7 @@ export function ProviderIntegrationManager({ initial }: { initial: IntegrationPa
       </AdminCard>
 
       <AdminConfirmDialog open={confirmRemove} title="Entegrasyon kaldırılsın mı?"
-        description={kind === "sms" ? "Firma bilgileri ve şifreler silinir; müşterilere SMS gönderimi durur." : "Firma bilgileri ve şifreler silinir; yeni gönderiler manuel işlenir. Kayıtlı gönderilerin takibi durur."}
+        description={KIND_TEXT[kind].remove}
         confirmLabel="Evet, kaldır" busyLabel="Kaldırılıyor…" busy={removing} onConfirm={remove} onCancel={() => setConfirmRemove(false)} />
     </div>
   );

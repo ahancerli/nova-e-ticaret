@@ -50,6 +50,12 @@ import { registerInvoices } from "@/modules/invoices";
 import { registerReturns } from "@/modules/returns";
 import { registerReviews } from "@/modules/reviews";
 import { registerAlerts } from "@/modules/alerts";
+import { registerWishlist } from "@/modules/wishlist";
+import { registerQuestions } from "@/modules/questions";
+import { registerSizeCharts } from "@/modules/size-charts";
+import { registerDelivery } from "@/modules/delivery";
+import { registerRecentlyViewed } from "@/modules/recently-viewed";
+import { registerIys } from "@/modules/iys";
 import { registerNewsletter } from "@/modules/newsletter";
 import { registerSearch } from "@/modules/search";
 import { registerSettings } from "@/modules/settings";
@@ -104,6 +110,12 @@ registerInvoices(container); // e-Arşiv faturalar: panel attach (PDF in private
 registerReturns(container); // iade (cayma hakkı) talepleri: customer request → panel decision → order refund
 registerReviews(container); // product reviews & ratings: moderation, store reply, reviewer contact (mail + notifications)
 registerAlerts(container); // "Stok gelince / Fiyat düşünce haber ver" per variant, e-mailed by /api/cron/product-alerts (MailSender)
+registerWishlist(container); // Favoriler: one list per customer (heart on cards / product page, header counter, Hesabım › Favorilerim)
+registerQuestions(container); // Ürün soru-cevap: customer asks on the product page, staff answers in the panel, asker gets the answer by e-mail
+registerSizeCharts(container); // Beden tabloları: chart per category (inherited) or product, "Beden tablosu" dialog on the product page
+registerDelivery(container); // Tahmini teslim: "Bugün sipariş verirsen yarın kargoda" rules (panel Kargo ücretleri)
+registerIys(container); // İYS: marketing consents (e-mail / SMS) registered at İleti Yönetim Sistemi, changes pulled back (cron /api/cron/iys)
+registerRecentlyViewed(container); // Son gezilenler: recent_views per member / guest cookie, only with functional cookie consent
 registerNewsletter(container); // E-bülten: footer sign-up with double opt-in e-mail (MailSender), unsubscribe links, panel list
 registerSupport(container); // Canlı destek: member ↔ staff chat, live events via GraphQL subscription over SSE (in-process hub)
 registerPricing(container);

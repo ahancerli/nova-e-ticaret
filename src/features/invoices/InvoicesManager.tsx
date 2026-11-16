@@ -3,15 +3,17 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { FileText, FileUp, ReceiptText, XCircle } from "lucide-react";
+import { FileText, FileUp, Loader2, ReceiptText, Send, XCircle } from "lucide-react";
 import { formatMinor } from "@/lib/money";
 import { notify } from "@/lib/toast";
 import { useFieldErrors } from "@/lib/use-field-errors";
 import { AdminDrawer } from "@/components/admin/AdminDrawer";
 import { Field, inputCls } from "@/components/admin/form";
 import { AdminBadge, AdminCard, AdminPageHeader } from "@/components/admin/ui";
-import type { InvoiceView, PendingInvoiceRow } from "@/modules/invoices";
+import type { InvoiceJobView, InvoiceView, PendingInvoiceRow } from "@/modules/invoices";
 import { INVOICE_KINDS } from "@/modules/invoices/domain/invoice";
+import { INVOICE_JOB_STATUSES } from "@/modules/invoices/domain/invoice-jobs";
+import { INVOICE_TRIGGERS, type InvoiceTrigger } from "@/modules/integrations/domain/providers";
 import { invoicesApi } from "./api";
 
 const day = new Intl.DateTimeFormat("tr-TR", { day: "2-digit", month: "short", year: "numeric", timeZone: "Europe/Istanbul" });
@@ -19,25 +21,55 @@ const btn = "inline-flex h-9 items-center gap-2 rounded-lg border border-slate-2
 const primary = "inline-flex h-10 items-center gap-2 rounded-lg bg-[#7367f0] px-4 text-sm font-semibold text-white shadow-sm shadow-[#7367f0]/30 hover:bg-[#6559df] disabled:opacity-60";
 const istanbulToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" }).format(new Date());
 
+type Pending = PendingInvoiceRow & { job: InvoiceJobView | null };
+const JOB_TONE = { queued: "blue", running: "blue", issued: "green", failed: "red", cancelled: "slate" } as const;
+
 /**
- * Faturalar: paid web orders waiting for their e-Arşiv invoice, and the invoices attached so far. The invoice is
- * issued in the accounting provider's portal (no integrator adapter yet); its number and PDF are attached here,
- * the customer gets an e-mail and downloads the PDF from the order page.
+ * Faturalar: paid web orders waiting for their e-Arşiv / e-Fatura, and the invoices so far. With an e-invoice
+ * integrator (Paraşüt) connected, "Entegratörle kes" (or the automatic trigger) issues it there and attaches number +
+ * PDF here; without one, staff issue it in the provider's portal and attach it by hand. The customer is e-mailed.
  */
-export function InvoicesManager({ tab, pending, invoices, pendingCount, canWrite }: {
-  tab: "pending" | "issued" | "cancelled"; pending: PendingInvoiceRow[]; invoices: InvoiceView[]; pendingCount: number; canWrite: boolean;
+export function InvoicesManager({ tab, pending, invoices, pendingCount, failedJobs, integrator, canWrite }: {
+  tab: "pending" | "issued" | "cancelled"; pending: Pending[]; invoices: InvoiceView[]; pendingCount: number; failedJobs: number;
+  integrator: { name: string; auto: boolean; trigger: InvoiceTrigger } | null; canWrite: boolean;
 }) {
   const router = useRouter();
   const [target, setTarget] = useState<PendingInvoiceRow | null>(null);
+  const [queueing, setQueueing] = useState<string | null>(null);
+  const queue = async (o: Pending) => {
+    setQueueing(o.orderId);
+    try {
+      await invoicesApi.queue(o.orderId);
+      notify.success(`#${o.orderNumber} faturası ${integrator?.name ?? "entegratör"} üzerinden kesiliyor`, { description: "Kesim birkaç dakika içinde tamamlanır; PDF müşteriye e-postayla gider." });
+      router.refresh();
+    } catch (err) {
+      notify.error(err, { fallback: "Fatura kesimi başlatılamadı." });
+    } finally {
+      setQueueing(null);
+    }
+  };
   const [cancelling, setCancelling] = useState<InvoiceView | null>(null);
   const tabs = [["bekleyen", "pending", `Fatura bekleyen (${pendingCount})`], ["kesilen", "issued", "Kesilenler"], ["iptal", "cancelled", "İptal edilenler"]] as const;
 
   return (
     <div className="space-y-6">
       <AdminPageHeader title="Faturalar" subtitle="Ödemesi alınmış web siparişlerinin e-Arşiv faturaları. Pazaryeri siparişlerini pazaryeri entegrasyonunuz faturalar." />
-      <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-100">
-        Otomatik fatura kesimi için bir entegratör (Paraşüt, BirFatura, Uyumsoft, QNB eFinans, Logo, Nilvera, Sovos) bağlanmadı. Faturayı entegratörünüzün portalında kesip numarasını ve PDF&apos;ini buradan ekleyin; müşteriye e-postayla bildirilir. Entegrasyon için yazılım firmanıza bilgi verin.
-      </div>
+      {integrator ? (
+        <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700 ring-1 ring-slate-200">
+          Faturalar <b>{integrator.name}</b> üzerinden kesiliyor. {integrator.auto ? `Otomatik kesim açık: ${INVOICE_TRIGGERS[integrator.trigger].toLocaleLowerCase("tr-TR")} fatura kendiliğinden kesilir.` : "Otomatik kesim kapalı: “Entegratörle kes” ile başlatın."}{" "}
+          <Link href="/admin/entegrasyonlar/e-fatura" className="font-medium text-[#7367f0] hover:underline">Ayarlar</Link>
+        </div>
+      ) : (
+        <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-100">
+          e-Fatura entegratörü bağlı değil. Faturayı entegratörünüzün portalında kesip numarasını ve PDF&apos;ini buradan ekleyin ya da{" "}
+          <Link href="/admin/entegrasyonlar/e-fatura" className="font-semibold underline">Paraşüt&apos;ü bağlayın</Link>; faturalar otomatik kesilsin.
+        </div>
+      )}
+      {failedJobs > 0 && (
+        <div role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-100">
+          {failedJobs} siparişin faturası entegratörde kesilemedi. Aşağıda hatayı görüp “Tekrar dene” deyin veya faturayı elle ekleyin.
+        </div>
+      )}
       <nav aria-label="Sekmeler" className="flex flex-wrap gap-2">
         {tabs.map(([slug, key, label]) => (
           <Link key={key} href={`/admin/faturalar?sekme=${slug}`} aria-current={tab === key ? "page" : undefined}
@@ -49,15 +81,35 @@ export function InvoicesManager({ tab, pending, invoices, pendingCount, canWrite
         {tab === "pending" ? (
           pending.length === 0 ? <Empty text="Faturası kesilmemiş ödenmiş sipariş yok." /> : (
             <Table head={["Sipariş", "Müşteri / firma", "Durum", "Tutar", ""]}>
-              {pending.map((o) => (
-                <tr key={o.orderId}>
-                  <td className="px-5 py-3"><Link href={`/admin/siparisler/${o.orderId}`} className="font-mono font-semibold text-slate-900 hover:text-[#7367f0]">{o.orderNumber}</Link><p className="text-xs text-slate-500">{day.format(new Date(o.placedAt))}</p></td>
-                  <td className="px-3 py-3"><p className="font-medium text-slate-800">{o.companyName ?? o.customerName ?? "—"}</p><p className="text-xs text-slate-500">{o.customerEmail}</p></td>
-                  <td className="px-3 py-3"><AdminBadge tone="blue">{o.status}</AdminBadge></td>
-                  <td className="px-3 py-3 text-right tabular-nums">{formatMinor(o.totalMinor)}</td>
-                  <td className="px-5 py-3 text-right">{canWrite && <button type="button" className={btn} onClick={() => setTarget(o)}><FileUp className="h-4 w-4" /> Fatura ekle</button>}</td>
-                </tr>
-              ))}
+              {pending.map((o) => {
+                const open = o.job && (o.job.status === "queued" || o.job.status === "running");
+                return (
+                  <tr key={o.orderId}>
+                    <td className="px-5 py-3"><Link href={`/admin/siparisler/${o.orderId}`} className="font-mono font-semibold text-slate-900 hover:text-[#7367f0]">{o.orderNumber}</Link><p className="text-xs text-slate-500">{day.format(new Date(o.placedAt))}</p></td>
+                    <td className="px-3 py-3"><p className="font-medium text-slate-800">{o.companyName ?? o.customerName ?? "—"}</p><p className="text-xs text-slate-500">{o.customerEmail}</p></td>
+                    <td className="px-3 py-3">
+                      <AdminBadge tone="blue">{o.status}</AdminBadge>
+                      {o.job ? <span className="mt-1 block"><AdminBadge tone={JOB_TONE[o.job.status]}>{integrator?.name ?? "Entegratör"}: {INVOICE_JOB_STATUSES[o.job.status]}</AdminBadge></span> : null}
+                      {o.job?.status === "failed" && o.job.lastError ? <p className="mt-1 max-w-xs text-xs text-red-600">{o.job.lastError}</p> : null}
+                    </td>
+                    <td className="px-3 py-3 text-right tabular-nums">{formatMinor(o.totalMinor)}</td>
+                    <td className="px-5 py-3">
+                      {canWrite && (
+                        <div className="flex justify-end gap-1">
+                          {integrator && (open ? (
+                            <span className="inline-flex h-9 items-center gap-1.5 px-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Kesiliyor</span>
+                          ) : (
+                            <button type="button" className={btn} disabled={queueing === o.orderId} onClick={() => void queue(o)}>
+                              <Send className="h-4 w-4" /> {o.job?.status === "failed" ? "Tekrar dene" : "Entegratörle kes"}
+                            </button>
+                          ))}
+                          {!open && <button type="button" className={btn} onClick={() => setTarget(o)}><FileUp className="h-4 w-4" /> Elle ekle</button>}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </Table>
           )
         ) : invoices.length === 0 ? <Empty text={tab === "issued" ? "Henüz fatura eklenmedi." : "İptal edilmiş fatura yok."} /> : (

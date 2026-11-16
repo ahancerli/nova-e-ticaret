@@ -131,6 +131,13 @@ class BannerLoader implements HomeSectionLoader {
   }
 }
 
+/** Son gezilenler: per-visitor data, so only the frame is server-rendered; the browser fills it. */
+class RecentlyViewedLoader implements HomeSectionLoader {
+  async load(_db: Database, sec: HomeSectionRow): Promise<HomeSection | null> {
+    return { id: sec.id, type: "recently_viewed", title: sec.title, subtitle: sec.subtitle, limit: Math.min(Math.max(sec.item_limit || 12, 1), 16) };
+  }
+}
+
 export const HOME_SECTION_LOADERS: Record<string, HomeSectionLoader> = {
   hero_slider: new HeroSliderLoader(),
   story_strip: new StoryStripLoader(),
@@ -139,4 +146,5 @@ export const HOME_SECTION_LOADERS: Record<string, HomeSectionLoader> = {
   category_tiles: new CategoryTilesLoader(),
   brand_strip: new BrandStripLoader(),
   banner: new BannerLoader(),
+  recently_viewed: new RecentlyViewedLoader(),
 };

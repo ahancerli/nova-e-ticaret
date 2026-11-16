@@ -5,20 +5,23 @@ import type { Actor } from "@/modules/shared/actor";
 import { InvoiceErrors } from "../domain/errors";
 import { MAX_INVOICE_PDF_BYTES, isPdf, type InvoiceView, type PendingInvoiceRow } from "../domain/invoice";
 import type { InvoiceRecordInput } from "../http/schemas";
+import type { D1InvoiceJobRepository } from "../infrastructure/d1-invoice-jobs.repository";
 import type { D1InvoiceRepository } from "../infrastructure/d1-invoice.repository";
+import type { InvoiceJobView } from "../domain/invoice-jobs";
 
 export interface InvoiceDeps { db: Database; repo: D1InvoiceRepository; storage: ObjectStorage; audit: AuditLog; clock: Clock; ids: IdGenerator }
 
 /** Query (panel Faturalar): orders waiting for an invoice, or issued / cancelled invoices. */
 export class ListInvoices {
-  constructor(private readonly repo: D1InvoiceRepository) {}
-  async execute(tab: "pending" | "issued" | "cancelled"): Promise<{ pending: PendingInvoiceRow[]; invoices: InvoiceView[]; pendingCount: number }> {
+  constructor(private readonly repo: D1InvoiceRepository, private readonly jobs: D1InvoiceJobRepository) {}
+  async execute(tab: "pending" | "issued" | "cancelled"): Promise<{ pending: (PendingInvoiceRow & { job: InvoiceJobView | null })[]; invoices: InvoiceView[]; pendingCount: number; failedJobs: number }> {
     if (tab === "pending") {
-      const pending = await this.repo.pending();
-      return { pending, invoices: [], pendingCount: pending.length };
+      const [pending, failedJobs] = await Promise.all([this.repo.pending(), this.jobs.failedCount()]);
+      const jobs = await this.jobs.latestJobs(pending.map((p) => p.orderId));
+      return { pending: pending.map((p) => ({ ...p, job: jobs.get(p.orderId) ?? null })), invoices: [], pendingCount: pending.length, failedJobs };
     }
-    const [invoices, pendingCount] = await Promise.all([this.repo.list(tab), this.repo.pendingCount()]);
-    return { pending: [], invoices, pendingCount };
+    const [invoices, pendingCount, failedJobs] = await Promise.all([this.repo.list(tab), this.repo.pendingCount(), this.jobs.failedCount()]);
+    return { pending: [], invoices, pendingCount, failedJobs };
   }
 }
 

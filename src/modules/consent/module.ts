@@ -9,6 +9,7 @@ import {
 import type { ConsentRepository, CookiePolicySource } from "./application/ports";
 import { CaptureOrderTracking, SendServerPurchase, fetchTrackingHttp, type TrackingHttp } from "./application/server-tracking";
 import { D1ConsentRepository } from "./infrastructure/d1-consent.repository";
+import { HasFunctionalConsent } from "./application/functional-consent";
 
 export const ConsentRepositoryToken = token<ConsentRepository>("ConsentRepository");
 /** Storefront layout: banner + tags to load after consent. */
@@ -22,6 +23,7 @@ export const RecordConsentToken = token<RecordConsent>("RecordConsent");
 export const ListConsentRecordsToken = token<ListConsentRecords>("ListConsentRecords");
 /** Checkout confirm: consent + vendor cookies for the server-side purchase. */
 export const CaptureOrderTrackingToken = token<CaptureOrderTracking>("CaptureOrderTracking");
+export const HasFunctionalConsentToken = token<HasFunctionalConsent>("HasFunctionalConsent");
 /** HTTP client of the vendors' server APIs (tests swap it). */
 export const TrackingHttpToken = token<TrackingHttp>("TrackingHttp");
 
@@ -41,6 +43,7 @@ export function registerConsent(c: Container): void {
   c.scoped(RecordConsentToken, (r) => new RecordConsent(deps(r)));
   c.scoped(ListConsentRecordsToken, (r) => new ListConsentRecords(r.resolve(ConsentRepositoryToken)));
   c.scoped(CaptureOrderTrackingToken, (r) => new CaptureOrderTracking({ db: r.resolve(DatabaseToken), repo: r.resolve(ConsentRepositoryToken), policy: policy(r), clock: r.resolve(ClockToken) }));
+  c.scoped(HasFunctionalConsentToken, (r) => new HasFunctionalConsent({ repo: r.resolve(ConsentRepositoryToken), policy: policy(r), clock: r.resolve(ClockToken) }));
   c.singleton(TrackingHttpToken, () => fetchTrackingHttp);
   // purchase from the server once the payment is confirmed (card settled / bank transfer reconciled)
   addOutboxHandler("order.paid", (r) => new SendServerPurchase({

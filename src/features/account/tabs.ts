@@ -6,6 +6,7 @@ export const ACCOUNT_TABS = [
   { key: "siparisler", label: "Siparişlerim", tone: "var(--color-dept-1)" },
   { key: "bilgiler", label: "Kişisel bilgilerim", tone: "var(--color-dept-5)" },
   { key: "adresler", label: "Adreslerim", tone: "var(--color-dept-3)" },
+  { key: "favoriler", label: "Favorilerim", tone: "var(--color-dept-6)" },
   { key: "degerlendirmeler", label: "Değerlendirmelerim", tone: "var(--color-dept-4)" },
   { key: "haber-ver", label: "Haber ver listem", tone: "var(--color-dept-2)" },
   { key: "sifre", label: "Şifre ve güvenlik", tone: "var(--color-brand)" },
