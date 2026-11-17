@@ -7,6 +7,7 @@ tablo/kolon ayrıntıları için doğrudan [`schema.sql`](schema.sql) okunmalıd
 | Dosya | İçerik |
 |---|---|
 | `schema.sql` | Tek DDL scripti: **169 STRICT tablo**. Tekrar çalıştırılabilir (tablolar/indeksler `IF NOT EXISTS`, trigger'lar drop + create). Her tablonun başında Türkçe `-- TABLO:` açıklaması, her kolonun sonunda Türkçe yorum var (yeni kolon eklerken yorumunu da yaz). |
+| `late-indexes.sql` | Migration ile eklenen kolonların indeksleri (ör. `products.model_code`). `schema.sql`'e konamaz: eski veritabanında kolon henüz yokken çalışır. `scripts/db.mjs` migration'lardan sonra uygular, `db:check` bu nesneleri de bekler. |
 | `nova-veritabani-rehberi.pdf` | Tüm tabloların kolon kolon açıklaması + iş akışları (sipariş, ödeme, kampanya, pazaryeri) ve durum makineleri. |
 | `seed.sql` | Roller/izinler, demo katalog, demo kullanıcılar ve **demo bir sipariş zinciri** (sepet → checkout → sipariş → havale → kargo). `INSERT OR IGNORE`, tekrar çalıştırılabilir. Gerçek kişi verisi, sır veya gerçek IBAN yok. |
 | `drop_all.sql` | Tüm tabloları FK sırasıyla siler (`db:reset`). |
@@ -169,3 +170,11 @@ cron expire: süresi dolan rezervasyonlu ödenmemiş sipariş ──► cancelle
 4. Trigger'lar her çalıştırmada drop + create edildiğinden değişiklikleri `npm run db:schema` (ya da container'ın yeniden başlaması) ile uygulanır.
 5. `npm test` (tüm şema ve modül testleri, bkz. kök README §9) yeşil olmalı. Seed'e eklenen veri `INSERT OR IGNORE` olmalı.
 6. SQLite sürüm farkı: SQLite ≥ 3.51, ilişkili alt sorgunun **ORDER BY**'ında dış tablo kolonuna izin vermez (`no such column`). Dış referansı yalnız `WHERE`'de kullan (örnek: `pricing.ts` `image_url` için `COALESCE(alt sorgu1, alt sorgu2)`).
+
+
+## Ölçek notları (2026-11-17)
+
+- **Partition yok:** SQLite tablo bölümlemeyi desteklemez. Karşılığı: sorguya uygun indeks (aşağıda), büyüyen kayıt tablolarında süreli silme (ör. `social_ai_*` 30 gün, `integration_messages` 7 gün) ve taze planlayıcı istatistiği (`PRAGMA optimize`, bağlantı açılışında).
+- **İndeksler:** `schema.sql` INDEXES bölümünün sonundaki "Scale indexes" bloğu, entegrasyon testlerinin çalıştırdığı bütün sorguların `EXPLAIN QUERY PLAN` çıktısından ve ebeveyni silinen yabancı anahtarlardan çıkarıldı. Yeni sorgu yazınca planına bakın: `SCAN <büyük tablo>` görüyorsanız indeks gerekir.
+- **Zaman damgaları:** sonradan eklenen `created_at` / `updated_at` kolonları NULL olabilir ve `trg_ts_*` trigger'ları ile yazılır (ALTER ifade varsayılanı ekleyemez). Migration `0000-row-timestamps.sql` bilerek ilk sırada çalışır.
+- **Yavaş sorgu kaydı:** `SLOW_QUERY_MS` (varsayılan 250) üstündeki her SQL uygulama logunda `slow query` satırı olarak görünür.

@@ -28,7 +28,7 @@ ENV NODE_ENV=production \
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
-COPY --chown=node:node db/schema.sql db/seed.sql db/drop_all.sql ./db/
+COPY --chown=node:node db/schema.sql db/seed.sql db/drop_all.sql db/late-indexes.sql ./db/
 COPY --chown=node:node db/migrations ./db/migrations
 COPY --chown=node:node scripts ./scripts
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh

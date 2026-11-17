@@ -5,11 +5,22 @@ import { DEFAULT_PRICE_LIST } from "@/modules/catalog/domain/product";
 import { mediaKindOf } from "@/modules/media/domain/image";
 import type { ListParams, NavItem, ShellData, SitemapEntry, StorefrontReadModel } from "../application/ports";
 import { HOME_SECTION_LOADERS, type HomeSectionRow } from "./home-sections";
-import { CARD_SELECT, PAGE_SIZE, SORTS, toCard, type CardRow } from "./product-cards";
+import { CARD_SELECT, MIN_PRICE_SQL, PAGE_SIZE, SORTS, toCard, type CardRow } from "./product-cards";
 
 const rows = <T>(r: SqlResult | undefined) => (r?.results ?? []) as T[];
 type NavRow = { id: string; parent_id: string | null; label: string; href: string | null; category_slug: string | null; brand_slug: string | null; menu: string };
 type CategoryRow = { id: string; parent_id: string | null; slug: string; name: string; image_url: string | null; menu_image_url: string | null };
+type FacetRows = {
+  brands: { slug: string; name: string; n: number }[];
+  attrs: { code: string; label: string; value_code: string; option_label: string; color_hex: string | null; n: number }[];
+  price: { lo: number | null; hi: number | null } | null;
+};
+// Per process; see `facets()`.
+const FACET_TTL_MS = 60_000;
+const FACET_CACHE_LIMIT = 300;
+const facetCache = new Map<string, { at: number; stamp: number; rows: FacetRows }>();
+/** Most candidates the similar-products score looks at. */
+const SIMILAR_POOL = 400;
 const likeOf = (q: string) => `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
 export class D1StorefrontReadModel extends Repository implements StorefrontReadModel {
@@ -204,22 +215,32 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
     if (p.minPrice != null) { priceConds.push("min_price >= ?"); priceParams.push(p.minPrice); }
     if (p.maxPrice != null) { priceConds.push("min_price <= ?"); priceParams.push(p.maxPrice); }
 
+    // Two steps, so a big category stays fast: (1) find the page's product ids on cheap columns only — without a
+    // price filter / sort the newest-first order comes straight from ix_products_status_published and stops after
+    // one page; (2) build the cards (image, price, stock, rating subqueries) for those 24 ids alone.
     const withSql = ctes.length ? `WITH RECURSIVE ${ctes.join(", ")} ` : "";
-    const base = `${withSql}SELECT * FROM (${CARD_SELECT} WHERE ${where.join(" AND ")}) AS x ${priceConds.length ? "WHERE " + priceConds.join(" AND ") : ""}`;
+    const from = `FROM products p LEFT JOIN brands b ON b.id = p.brand_id WHERE ${where.join(" AND ")}`;
+    const needsPrice = priceConds.length > 0 || p.sort === "price_asc" || p.sort === "price_desc";
+    const base = needsPrice
+      ? `${withSql}SELECT * FROM (SELECT p.id, p.name, p.published_at, ${MIN_PRICE_SQL} AS min_price ${from}) AS x ${priceConds.length ? "WHERE " + priceConds.join(" AND ") : ""}`
+      : `${withSql}SELECT p.id, p.name, p.published_at ${from}`;
     const allParams = [...params, ...priceParams];
 
     // ORDER BY comes from an allowlist; page is an integer from the validated query.
-    const order = SORTS[p.sort].replaceAll("p.", "x.");
+    const order = needsPrice ? SORTS[p.sort].replaceAll("p.", "x.") : SORTS[p.sort];
     const offset = (Math.trunc(p.page) - 1) * PAGE_SIZE;
-    const [items, count] = await this.db.batch([
+    const [page, count] = await this.db.batch([
       p.sort === "relevance" && p.matchIds
         // json_each numbers the array elements: `key` is the engine's rank
-        ? this.db.statement(`SELECT r.* FROM (${base}) r JOIN json_each(?) j ON j.value = r.id ORDER BY j.key LIMIT ${PAGE_SIZE} OFFSET ${offset}`, ...allParams, JSON.stringify(p.matchIds))
+        ? this.db.statement(`SELECT r.id FROM (${base}) r JOIN json_each(?) j ON j.value = r.id ORDER BY j.key LIMIT ${PAGE_SIZE} OFFSET ${offset}`, ...allParams, JSON.stringify(p.matchIds))
         : this.db.statement(`${base} ORDER BY ${order} LIMIT ${PAGE_SIZE} OFFSET ${offset}`, ...allParams),
       this.db.statement(`SELECT COUNT(*) AS n FROM (${base})`, ...allParams),
     ]);
+    const ids = rows<{ id: string }>(page).map((r) => r.id);
+    const cards = ids.length ? await this.db.all<CardRow>(`${CARD_SELECT} WHERE p.id IN (${placeholders(ids.length)})`, ...ids) : [];
+    const byId = new Map(cards.map((c) => [c.id, c]));
     const total = rows<{ n: number }>(count)[0]?.n ?? 0;
-    return { items: rows<CardRow>(items).map(toCard), total, page: p.page, pageSize: PAGE_SIZE, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
+    return { items: ids.flatMap((id) => { const c = byId.get(id); return c ? [toCard(c)] : []; }), total, page: p.page, pageSize: PAGE_SIZE, pages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
   }
 
   async facets(p: Omit<ListParams, "sort" | "page">): Promise<Facets> {
@@ -228,17 +249,25 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
     const matched = `${withSql}matched AS (SELECT p.id FROM products p LEFT JOIN brands b ON b.id = p.brand_id WHERE ${where.join(" AND ")})`;
     const selected = (code: string, value: string) => (p.attrs[code] ?? []).includes(value);
 
-    const [brands, attrs, price] = await this.db.batch([
+    // Facet counts walk the whole matched set (a category of 20 000 products = 20 000 rows per count), so the raw
+    // rows are kept per scope for a minute. A catalog change (product, price, stock, attribute, image: every write
+    // that reaches catalog_change_log) drops them at once, so a filter never offers a value that was just removed.
+    const stamp = (await this.db.first<{ n: number | null }>("SELECT MAX(id) AS n FROM catalog_change_log"))?.n ?? 0;
+    const cacheKey = JSON.stringify([matched, params]);
+    const hit = facetCache.get(cacheKey);
+    let raw: FacetRows;
+    if (hit && hit.stamp === stamp && Date.now() - hit.at < FACET_TTL_MS) raw = hit.rows;
+    else {
+      const [brands, attrs, price] = await this.db.batch([
       this.db.statement(`${matched} SELECT b.slug, b.name, COUNT(*) AS n FROM matched m JOIN products p ON p.id = m.id JOIN brands b ON b.id = p.brand_id GROUP BY b.id ORDER BY b.name`, ...params),
       this.db.statement(`${matched}
         SELECT d.code, d.label, ao.value_code, ao.label AS option_label, ao.color_hex, COUNT(DISTINCT m.id) AS n
-          FROM matched m
-          JOIN (SELECT pav.product_id, pav.attribute_id, pav.option_id FROM product_attribute_values pav WHERE pav.option_id IS NOT NULL
-                UNION
-                SELECT v.product_id, vo.attribute_id, vo.option_id FROM variant_options vo JOIN product_variants v ON v.id = vo.variant_id AND v.is_active = 1) av
-            ON av.product_id = m.id
-          JOIN attribute_definitions d ON d.id = av.attribute_id AND d.is_filterable = 1
-          JOIN attribute_options ao ON ao.id = av.option_id
+          FROM (SELECT m.id, pav.attribute_id, pav.option_id FROM matched m JOIN product_attribute_values pav ON pav.product_id = m.id WHERE pav.option_id IS NOT NULL
+                UNION ALL
+                SELECT m.id, vo.attribute_id, vo.option_id FROM matched m JOIN product_variants v ON v.product_id = m.id AND v.is_active = 1
+                  JOIN variant_options vo ON vo.variant_id = v.id) m
+          JOIN attribute_definitions d ON d.id = m.attribute_id AND d.is_filterable = 1
+          JOIN attribute_options ao ON ao.id = m.option_id
          GROUP BY d.code, ao.value_code
          ORDER BY d.code, ao.sort_order`, ...params),
       this.db.statement(`${matched} SELECT MIN(vp.unit_price_minor) AS lo, MAX(vp.unit_price_minor) AS hi
@@ -246,14 +275,23 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
                     JOIN variant_prices vp ON vp.variant_id = v.id AND vp.price_list_id = ?`, ...params, DEFAULT_PRICE_LIST),
     ]);
 
+      raw = {
+        brands: rows<{ slug: string; name: string; n: number }>(brands),
+        attrs: rows<FacetRows["attrs"][number]>(attrs),
+        price: rows<{ lo: number | null; hi: number | null }>(price)[0] ?? null,
+      };
+      if (facetCache.size >= FACET_CACHE_LIMIT) facetCache.clear();
+      facetCache.set(cacheKey, { at: Date.now(), stamp, rows: raw });
+    }
+
     const attrMap = new Map<string, Facets["attributes"][number]>();
-    for (const r of rows<{ code: string; label: string; value_code: string; option_label: string; color_hex: string | null; n: number }>(attrs)) {
+    for (const r of raw.attrs) {
       if (!attrMap.has(r.code)) attrMap.set(r.code, { code: r.code, label: r.label, options: [] });
       attrMap.get(r.code)!.options.push({ value: r.value_code, label: r.option_label, colorHex: r.color_hex, count: r.n, selected: selected(r.code, r.value_code) });
     }
-    const pr = rows<{ lo: number | null; hi: number | null }>(price)[0];
+    const pr = raw.price;
     return {
-      brands: rows<{ slug: string; name: string; n: number }>(brands).map((b) => ({ value: b.slug, label: b.name, count: b.n, selected: p.brand === b.slug })),
+      brands: raw.brands.map((b) => ({ value: b.slug, label: b.name, count: b.n, selected: p.brand === b.slug })),
       attributes: [...attrMap.values()],
       price: { minMinor: pr?.lo ?? 0, maxMinor: pr?.hi ?? 0 },
     };
@@ -352,8 +390,11 @@ export class D1StorefrontReadModel extends Repository implements StorefrontReadM
           WHERE c.is_active = 1 AND c.id NOT IN (SELECT id FROM own)
             AND c.parent_id IN (SELECT parent_id FROM categories WHERE id IN (SELECT id FROM own) AND parent_id IS NOT NULL)),
        cand AS (
-         SELECT pc.product_id AS id, MIN(pool.dist) AS dist FROM product_categories pc JOIN pool ON pool.id = pc.category_id
-          WHERE pc.product_id <> (SELECT id FROM me) GROUP BY pc.product_id),
+         -- bounded pool (own category first): the card subqueries below run per candidate, so a category with
+         -- tens of thousands of products must not be scored whole
+         SELECT id, MIN(dist) AS dist FROM (
+           SELECT pc.product_id AS id, pool.dist FROM product_categories pc JOIN pool ON pool.id = pc.category_id
+            WHERE pc.product_id <> (SELECT id FROM me) ORDER BY pool.dist LIMIT ${SIMILAR_POOL}) GROUP BY id),
        scored AS (
          SELECT c.*,
                 (CASE cand.dist WHEN 0 THEN 40 ELSE 15 END)

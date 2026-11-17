@@ -20,6 +20,9 @@ export const SORTS: Record<SortKey, string> = {
  * inlined so callers can use plain positional `?` parameters after it.
  */
 const PL = `'${DEFAULT_PRICE_LIST.replace(/[^a-z0-9_]/g, "")}'`;
+/** Lowest active variant price of product `p` — the listing's price filter / sort key (same expression as the card). */
+export const MIN_PRICE_SQL = `(SELECT MIN(vp.unit_price_minor) FROM product_variants v JOIN variant_prices vp ON vp.variant_id = v.id AND vp.price_list_id = ${PL}
+           WHERE v.product_id = p.id AND v.is_active = 1)`;
 export const CARD_SELECT = `
   SELECT p.id, p.slug, p.name, p.published_at, b.name AS brand_name, b.slug AS brand_slug,
          (SELECT m.public_url FROM product_media pm JOIN media_assets m ON m.id = pm.media_id AND m.mime_type LIKE 'image/%' LEFT JOIN product_variants dv ON dv.id = pm.variant_id

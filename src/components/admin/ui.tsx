@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { InfoHint } from "./InfoHint"
 
 const cx = (...names: Array<string | false | null | undefined>) => names.filter(Boolean).join(" ")
 
@@ -6,15 +7,21 @@ export function AdminPageHeader({
 	title,
 	subtitle,
 	actions,
+	info,
 }: {
 	title: string
 	subtitle?: string
 	actions?: ReactNode
+	/** Longer explanation behind an info button beside the title. */
+	info?: ReactNode
 }) {
 	return (
 		<div className="flex flex-wrap items-start justify-between gap-3">
 			<div>
-				<h1 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>
+				<h1 className="flex items-center gap-2 font-display text-[1.7rem] font-semibold leading-tight tracking-tight text-[#191640]">
+					{title}
+					{info ? <InfoHint title={title}>{info}</InfoHint> : null}
+				</h1>
 				{subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
 			</div>
 			{actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
@@ -34,15 +41,20 @@ export function AdminCardTitle({
 	title,
 	subtitle,
 	actions,
+	info,
 }: {
 	title: string
 	subtitle?: string
 	actions?: ReactNode
+	info?: ReactNode
 }) {
 	return (
 		<div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-200 px-5 py-4">
 			<div>
-				<h2 className="text-base font-semibold text-slate-900">{title}</h2>
+				<h2 className="flex items-center gap-1.5 text-base font-semibold text-slate-900">
+					{title}
+					{info ? <InfoHint title={title}>{info}</InfoHint> : null}
+				</h2>
 				{subtitle ? <p className="mt-1 text-xs text-slate-500">{subtitle}</p> : null}
 			</div>
 			{actions ? <div className="flex items-center gap-2">{actions}</div> : null}
@@ -54,14 +66,20 @@ export function AdminStatCard({
 	label,
 	value,
 	hint,
+	info,
 }: {
 	label: string
 	value: string
 	hint?: string
+	/** How the number is calculated. */
+	info?: ReactNode
 }) {
 	return (
 		<AdminCard className="p-5">
-			<p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+			<p className="flex items-center gap-1 text-xs font-medium text-slate-500">
+				{label}
+				{info ? <InfoHint title={label}>{info}</InfoHint> : null}
+			</p>
 			<p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{value}</p>
 			{hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
 		</AdminCard>

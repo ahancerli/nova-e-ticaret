@@ -30,7 +30,7 @@ test("invite a panel user → they set their own password → panel sign-in; sto
   await page.getByRole("button", { name: "Kullanıcı davet et" }).click();
   await page.locator("#inv-name").fill("Ahmet Depocu");
   await page.locator("#inv-email").fill(email);
-  await page.getByRole("checkbox", { name: /Sipariş Yöneticisi/ }).check();
+  await page.getByRole("checkbox", { name: /Sipariş Sorumlusu/ }).check();
   await page.getByRole("button", { name: "Davet bağlantısı oluştur" }).click();
   const link = await page.locator("#one-time-link").inputValue();
   expect(link).toMatch(/\/admin\/sifre\/[A-Za-z0-9_-]{20,}$/);

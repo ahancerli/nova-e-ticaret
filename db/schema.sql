@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS staff_profiles (
   mfa_required  INTEGER NOT NULL DEFAULT 1 CHECK (mfa_required IN (0,1)),  -- İki adımlı doğrulama zorunlu mu (0/1)
   invited_by    TEXT REFERENCES users(id) ON DELETE SET NULL,  -- Daveti gönderen personel
   invited_at    TEXT,  -- Davetin gönderildiği zaman
-  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Oluşturulma zamanı (UTC ISO-8601)
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Oluşturulma zamanı (UTC ISO-8601)
+  updated_at TEXT  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
 ) STRICT;
 
 -- is_system roles ship with the product (code fixed, not deletable); 'admin' always holds every permission and
@@ -76,7 +77,8 @@ CREATE TABLE IF NOT EXISTS roles (
   name        TEXT NOT NULL CHECK (length(name) BETWEEN 2 AND 80),  -- Rolün görünen adı
   description TEXT CHECK (description IS NULL OR length(description) <= 300),  -- Rol açıklaması
   is_system   INTEGER NOT NULL DEFAULT 0 CHECK (is_system IN (0,1)),  -- 1 = hazır sistem rolü (silinemez, kodu değişmez). admin her izne sahiptir, customer personele atanamaz
-  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Son düzenleme, aynı anda iki kişi düzenlerse çakışma kontrolü için de kullanılır
+  updated_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Son düzenleme, aynı anda iki kişi düzenlerse çakışma kontrolü için de kullanılır
+  created_at TEXT  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS permissions (
@@ -239,7 +241,8 @@ CREATE TABLE IF NOT EXISTS media_assets (
   sha256      TEXT,  -- Dosya içeriğinin özeti (aynı dosyanın tekrar yüklenmesini tanımak için)
   rights_note TEXT,  -- Telif / kullanım hakkı notu
   uploaded_by TEXT REFERENCES users(id) ON DELETE SET NULL,  -- Yükleyen personel
-  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Oluşturulma zamanı (UTC ISO-8601)
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Oluşturulma zamanı (UTC ISO-8601)
+  updated_at TEXT  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS brands (
@@ -350,6 +353,7 @@ CREATE TABLE IF NOT EXISTS product_media (
   media_id   TEXT NOT NULL REFERENCES media_assets(id) ON DELETE RESTRICT,  -- Görsel dosyası (media_assets)
   sort_order INTEGER NOT NULL DEFAULT 0,  -- Sıralama (küçük olan önce)
   is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0,1)),  -- Kapak görseli mi (genel galeride ürün başına tek, varyant görsellerinde hep 0)
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
   FOREIGN KEY (variant_id, product_id) REFERENCES product_variants(id, product_id) ON DELETE CASCADE
 ) STRICT;
 
@@ -372,6 +376,8 @@ CREATE TABLE IF NOT EXISTS attribute_definitions (
   -- Added 2026-11-09: product images change with this axis (Renk): the editor assigns photos per value and the shop swaps
   -- the gallery when it is picked. Only meaningful on variant axes (checked by the attribute use cases).
   varies_media    INTEGER NOT NULL DEFAULT 0 CHECK (varies_media IN (0,1)),  -- 1 = bu eksen değiştikçe ürün görselleri değişir (Renk)
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
+  updated_at TEXT,  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
   CHECK (is_variant_axis = 0 OR data_type = 'select')
 ) STRICT;
 
@@ -388,6 +394,8 @@ CREATE TABLE IF NOT EXISTS attribute_options (
   -- stay on existing variants but are not offered for new ones.
   numeric_value   REAL,  -- Sayısal karşılık (numara 38.5, 6 m²): sıralama ve aralık filtresi için
   is_active       INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),  -- Pasif değer mevcut varyantlarda kalır ama yenilere önerilmez
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
+  updated_at TEXT,  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
   UNIQUE (attribute_id, value_code),
   UNIQUE (id, attribute_id)
 ) STRICT;
@@ -446,6 +454,7 @@ CREATE TABLE IF NOT EXISTS supplier_variants (
   lead_time_days        INTEGER CHECK (lead_time_days IS NULL OR lead_time_days >= 0),  -- Tedarik süresi (gün)
   is_preferred          INTEGER NOT NULL DEFAULT 0 CHECK (is_preferred IN (0,1)),  -- Tercih edilen tedarikçi mi
   updated_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Son güncelleme zamanı (uygulama yazar)
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
   PRIMARY KEY (supplier_id, variant_id),
   UNIQUE (supplier_id, supplier_product_code)
 ) STRICT;
@@ -457,7 +466,9 @@ CREATE TABLE IF NOT EXISTS price_lists (
   name          TEXT NOT NULL,  -- Liste adı
   currency      TEXT NOT NULL CHECK (length(currency) = 3),  -- Para birimi (ISO 4217, varsayılan TRY)
   tax_inclusive INTEGER NOT NULL DEFAULT 1 CHECK (tax_inclusive IN (0,1)),  -- Fiyatlar KDV dahil mi (1)
-  is_active     INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1))  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  is_active     INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
+  updated_at TEXT  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS variant_prices (
@@ -491,7 +502,9 @@ CREATE TABLE IF NOT EXISTS warehouses (
   id        TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
   code      TEXT NOT NULL UNIQUE,  -- Depo kodu
   name      TEXT NOT NULL,  -- Depo adı
-  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1))  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
+  updated_at TEXT  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS inventory_balances (
@@ -559,7 +572,9 @@ CREATE TABLE IF NOT EXISTS navigation_menus (
   id        TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
   code      TEXT NOT NULL UNIQUE,  -- Menü kodu (header, footer …)
   name      TEXT NOT NULL,  -- Menü adı
-  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1))  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
+  updated_at TEXT  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS navigation_items (
@@ -573,6 +588,8 @@ CREATE TABLE IF NOT EXISTS navigation_items (
   brand_id    TEXT REFERENCES brands(id) ON DELETE SET NULL,  -- Markaya link
   sort_order  INTEGER NOT NULL DEFAULT 0,  -- Sıralama (küçük olan önce)
   is_active   INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
+  updated_at TEXT,  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
   CHECK (parent_id IS NULL OR parent_id <> id),
   CHECK ((href IS NOT NULL) + (category_id IS NOT NULL) + (brand_id IS NOT NULL) <= 1)
 ) STRICT;
@@ -582,7 +599,9 @@ CREATE TABLE IF NOT EXISTS story_collections (
   id        TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
   name      TEXT NOT NULL,  -- Grup adı
   slug      TEXT NOT NULL UNIQUE,  -- Kısa ad
-  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1))  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
+  updated_at TEXT  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS stories (
@@ -596,6 +615,8 @@ CREATE TABLE IF NOT EXISTS stories (
   starts_at      TEXT,  -- Yayın başlangıcı
   ends_at        TEXT,  -- Yayın bitişi
   is_active      INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
+  updated_at TEXT,  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
   CHECK (ends_at IS NULL OR starts_at IS NULL OR ends_at > starts_at)
 ) STRICT;
 
@@ -614,7 +635,9 @@ CREATE TABLE IF NOT EXISTS sliders (
   id        TEXT PRIMARY KEY,  -- Birincil anahtar (uygulamada üretilen UUID)
   code      TEXT NOT NULL UNIQUE,  -- Slider kodu
   name      TEXT NOT NULL,  -- Slider adı
-  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1))  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
+  updated_at TEXT  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS slides (
@@ -631,6 +654,8 @@ CREATE TABLE IF NOT EXISTS slides (
   starts_at        TEXT,  -- Yayın başlangıcı
   ends_at          TEXT,  -- Yayın bitişi
   is_active        INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
+  updated_at TEXT,  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
   CHECK (ends_at IS NULL OR starts_at IS NULL OR ends_at > starts_at)
 ) STRICT;
 
@@ -658,6 +683,7 @@ CREATE TABLE IF NOT EXISTS home_sections (
   starts_at           TEXT,  -- Yayın başlangıcı
   ends_at             TEXT,  -- Yayın bitişi
   updated_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Son güncelleme zamanı (uygulama yazar)
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
   CHECK (section_type <> 'hero_slider' OR slider_id IS NOT NULL),
   CHECK (section_type <> 'story_strip' OR story_collection_id IS NOT NULL),
   CHECK (section_type <> 'banner' OR media_id IS NOT NULL OR is_active = 0),
@@ -742,6 +768,8 @@ CREATE TABLE IF NOT EXISTS seo_documents (
   canonical_url    TEXT,  -- Asıl adres (kopya içerik için)
   og_media_id      TEXT REFERENCES media_assets(id) ON DELETE SET NULL,  -- Sosyal medya paylaşım görseli
   noindex          INTEGER NOT NULL DEFAULT 0 CHECK (noindex IN (0,1)),  -- 1 = arama motorlarında dizine eklenmesin
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
+  updated_at TEXT,  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
   CHECK ((product_id IS NOT NULL) + (category_id IS NOT NULL) + (brand_id IS NOT NULL) + (page_id IS NOT NULL) + (route_path IS NOT NULL) = 1)
 ) STRICT;
 
@@ -756,7 +784,8 @@ CREATE TABLE IF NOT EXISTS site_settings (
   is_public      INTEGER NOT NULL DEFAULT 0 CHECK (is_public IN (0,1)),  -- 1 = mağaza oturumsuz okuyabilir
   schema_version INTEGER NOT NULL DEFAULT 1,  -- Değer formatı sürümü
   updated_by     TEXT REFERENCES users(id) ON DELETE SET NULL,  -- Son değiştiren personel
-  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))  -- Son güncelleme zamanı (uygulama yazar)
+  updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Son güncelleme zamanı (uygulama yazar)
+  created_at TEXT  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
 ) STRICT;
 
 -- -----------------------------------------------------------------------------
@@ -887,7 +916,8 @@ CREATE TABLE IF NOT EXISTS coupons (
   is_active          INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
   created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Oluşturulma zamanı (UTC ISO-8601)
   -- 0 = refused while an automatic campaign already discounts the cart (coupon exclusion). Added 2026-11.
-  allow_with_promotions INTEGER NOT NULL DEFAULT 1 CHECK (allow_with_promotions IN (0,1))  -- 0 = sepette otomatik kampanya indirimi varsa kupon reddedilir
+  allow_with_promotions INTEGER NOT NULL DEFAULT 1 CHECK (allow_with_promotions IN (0,1)),  -- 0 = sepette otomatik kampanya indirimi varsa kupon reddedilir
+  updated_at TEXT  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS coupon_redemptions (
@@ -1406,6 +1436,7 @@ CREATE TABLE IF NOT EXISTS order_adjustments (
   rule_snapshot_json TEXT NOT NULL CHECK (json_valid(rule_snapshot_json)),  -- Uygulanan kural (JSON kopyası)
   amount_minor       INTEGER NOT NULL CHECK (amount_minor >= 0),  -- İndirim tutarı (kuruş)
   target             TEXT NOT NULL CHECK (target IN ('item','order','shipping')),  -- item satır / order sipariş / shipping kargo
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
   FOREIGN KEY (order_item_id, order_id) REFERENCES order_items(id, order_id) ON DELETE CASCADE,
   CHECK (target <> 'item' OR order_item_id IS NOT NULL),
   CHECK (campaign_id IS NOT NULL OR coupon_id IS NOT NULL)
@@ -1450,7 +1481,9 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
   iban_normalized   TEXT NOT NULL UNIQUE CHECK (length(iban_normalized) BETWEEN 15 AND 34 AND iban_normalized = upper(iban_normalized) AND iban_normalized NOT GLOB '* *'),  -- IBAN (büyük harf, boşluksuz)
   currency          TEXT NOT NULL DEFAULT 'TRY' CHECK (length(currency) = 3),  -- Para birimi (ISO 4217, varsayılan TRY)
   instructions      TEXT,  -- Müşteriye gösterilecek açıklama
-  is_active         INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1))  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  is_active         INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
+  updated_at TEXT  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS payments (
@@ -1505,6 +1538,7 @@ CREATE TABLE IF NOT EXISTS bank_transfers (
   matched_at       TEXT,  -- Onay zamanı
   expires_at       TEXT NOT NULL,  -- Havale için son süre (sonra sipariş iptal)
   created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Oluşturulma zamanı (UTC ISO-8601)
+  updated_at TEXT,  -- Son güncelleme zamanı (UTC ISO-8601, trigger ile yazılır)
   CHECK (status <> 'matched' OR (matched_by IS NOT NULL AND matched_at IS NOT NULL AND received_minor = expected_minor))
 ) STRICT;
 
@@ -1689,6 +1723,7 @@ CREATE TABLE IF NOT EXISTS integrations (
   public_config_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(public_config_json)),  -- Gizli olmayan ayarlar + SMS olay şablonları (JSON)
   is_active          INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0,1)),  -- Aktif mi (tür başına tek)
   updated_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),  -- Son güncelleme zamanı (uygulama yazar)
+  created_at TEXT,  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
   UNIQUE (kind, provider_code)
 ) STRICT;
 
@@ -1881,7 +1916,8 @@ CREATE TABLE IF NOT EXISTS shipping_methods (
   currency         TEXT NOT NULL DEFAULT 'TRY' CHECK (length(currency) = 3),  -- Para birimi (ISO 4217, varsayılan TRY)
   is_active        INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),  -- Aktif mi (0/1), pasif kayıt kullanılmaz / vitrinde görünmez
   -- Added 2026-11-14: panel Kargo ücretleri edits are guarded on it (409 shipping_method_changed).
-  updated_at       TEXT  -- Son güncelleme zamanı (panel eşzamanlı düzenleme kontrolü)
+  updated_at       TEXT,  -- Son güncelleme zamanı (panel eşzamanlı düzenleme kontrolü)
+  created_at TEXT  -- Kaydın oluşturulma zamanı (UTC ISO-8601, trigger ile yazılır)
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS shipments (
@@ -2727,6 +2763,58 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_support_open_customer ON support_conversati
 CREATE INDEX IF NOT EXISTS ix_support_conv_customer    ON support_conversations(customer_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS ix_support_conv_inbox       ON support_conversations(status, last_message_at DESC);
 
+-- -----------------------------------------------------------------------------
+-- Scale indexes (2026-11-17): every one answers a statement the application runs (found by EXPLAIN QUERY PLAN over
+-- the statements of the integration suites) or a foreign key whose parent rows are deleted (variant / product /
+-- cart / media delete would scan the child table otherwise). Only columns of the original tables: see
+-- db/late-indexes.sql for columns added by migrations.
+-- -----------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS ix_order_adjustments_order    ON order_adjustments(order_id);
+CREATE INDEX IF NOT EXISTS ix_order_adjustments_campaign ON order_adjustments(campaign_id) WHERE campaign_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_order_adjustments_coupon   ON order_adjustments(coupon_id) WHERE coupon_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_order_items_variant        ON order_items(variant_id);
+CREATE INDEX IF NOT EXISTS ix_campaign_alloc_checkout    ON campaign_allocations(checkout_id, status);
+CREATE INDEX IF NOT EXISTS ix_campaign_alloc_expiry      ON campaign_allocations(status, expires_at);
+CREATE INDEX IF NOT EXISTS ix_coupon_red_checkout        ON coupon_redemptions(checkout_id, status);
+CREATE INDEX IF NOT EXISTS ix_coupon_red_expiry          ON coupon_redemptions(status, expires_at);
+CREATE INDEX IF NOT EXISTS ix_coupons_campaign           ON coupons(campaign_id);
+CREATE INDEX IF NOT EXISTS ix_stock_res_variant          ON stock_reservations(variant_id, status);
+CREATE INDEX IF NOT EXISTS ix_stock_res_order            ON stock_reservations(order_id) WHERE order_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_inv_movements_reference    ON inventory_movements(reference_type, reference_id);
+CREATE INDEX IF NOT EXISTS ix_shipment_items_item        ON shipment_items(order_item_id);
+CREATE INDEX IF NOT EXISTS ix_shipments_tracking         ON shipments(tracking_number) WHERE tracking_number IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_shipments_method           ON shipments(shipping_method_id);
+CREATE INDEX IF NOT EXISTS ix_order_cancellations_refund ON order_cancellations(refund_id) WHERE refund_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_bank_transfers_account     ON bank_transfers(bank_account_id);
+CREATE INDEX IF NOT EXISTS ix_payment_events_payment     ON payment_events(payment_id);
+CREATE INDEX IF NOT EXISTS ix_refunds_status_created     ON refunds(status, created_at);
+CREATE INDEX IF NOT EXISTS ix_invoices_order             ON invoices(order_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_invoice_jobs_order         ON invoice_jobs(order_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_return_requests_user       ON return_requests(user_id, created_at) WHERE user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_marketplace_orders_order   ON marketplace_orders(order_id) WHERE order_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_marketplace_listings_variant ON marketplace_listings(variant_id);
+CREATE INDEX IF NOT EXISTS ix_product_media_media        ON product_media(media_id);
+CREATE INDEX IF NOT EXISTS ix_product_media_variant      ON product_media(variant_id) WHERE variant_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_supplier_variants_variant  ON supplier_variants(variant_id);
+CREATE INDEX IF NOT EXISTS ix_product_relations_related  ON product_relations(related_product_id);
+CREATE INDEX IF NOT EXISTS ix_product_feed_items_product ON product_feed_items(product_id) WHERE product_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_cart_items_variant         ON cart_items(variant_id);
+CREATE INDEX IF NOT EXISTS ix_carts_status_expiry        ON carts(status, expires_at);
+CREATE INDEX IF NOT EXISTS ix_checkout_cart              ON checkout_sessions(cart_id);
+CREATE INDEX IF NOT EXISTS ix_checkout_user              ON checkout_sessions(user_id) WHERE user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_wishlist_items_product     ON wishlist_items(product_id);
+CREATE INDEX IF NOT EXISTS ix_recent_views_product       ON recent_views(product_id);
+CREATE INDEX IF NOT EXISTS ix_comparison_items_product   ON comparison_items(product_id);
+CREATE INDEX IF NOT EXISTS ix_product_alerts_variant     ON product_alerts(variant_id);
+CREATE INDEX IF NOT EXISTS ix_product_alerts_product     ON product_alerts(product_id);
+CREATE INDEX IF NOT EXISTS ix_user_consents_user         ON user_consents(user_id, purpose, recorded_at) WHERE user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_user_consents_guest        ON user_consents(guest_identity_hash, purpose) WHERE guest_identity_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_newsletter_user            ON newsletter_subscribers(user_id) WHERE user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_iys_queue_transaction      ON iys_queue(transaction_id) WHERE transaction_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_idempotency_expires        ON idempotency_keys(expires_at);
+CREATE INDEX IF NOT EXISTS ix_integration_messages_created ON integration_messages(created_at);
+
+
 -- =============================================================================
 -- TRIGGERS
 -- =============================================================================
@@ -3153,6 +3241,192 @@ AFTER UPDATE OF on_hand, reserved ON inventory_balances
 WHEN NEW.on_hand - NEW.reserved <> OLD.on_hand - OLD.reserved
 BEGIN
   INSERT INTO catalog_change_log (kind, product_id, variant_id) SELECT 'stock', product_id, id FROM product_variants WHERE id = NEW.variant_id;
+END;
+
+-- -----------------------------------------------------------------------------
+-- Row timestamps (2026-11-17). These tables got created_at / updated_at late, so the columns are nullable and the
+-- database stamps them: application statements stay unchanged and a migrated database behaves like a fresh one.
+-- A statement that sets the column itself wins (WHEN clauses).
+-- -----------------------------------------------------------------------------
+CREATE TRIGGER IF NOT EXISTS trg_ts_attribute_definitions_ins
+AFTER INSERT ON attribute_definitions FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE attribute_definitions SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_attribute_options_ins
+AFTER INSERT ON attribute_options FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE attribute_options SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_price_lists_ins
+AFTER INSERT ON price_lists FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE price_lists SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_warehouses_ins
+AFTER INSERT ON warehouses FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE warehouses SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_navigation_menus_ins
+AFTER INSERT ON navigation_menus FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE navigation_menus SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_navigation_items_ins
+AFTER INSERT ON navigation_items FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE navigation_items SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_story_collections_ins
+AFTER INSERT ON story_collections FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE story_collections SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_stories_ins
+AFTER INSERT ON stories FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE stories SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_sliders_ins
+AFTER INSERT ON sliders FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE sliders SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_slides_ins
+AFTER INSERT ON slides FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE slides SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_seo_documents_ins
+AFTER INSERT ON seo_documents FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE seo_documents SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_bank_accounts_ins
+AFTER INSERT ON bank_accounts FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE bank_accounts SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_roles_ins
+AFTER INSERT ON roles FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE roles SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_home_sections_ins
+AFTER INSERT ON home_sections FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE home_sections SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_site_settings_ins
+AFTER INSERT ON site_settings FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE site_settings SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_integrations_ins
+AFTER INSERT ON integrations FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE integrations SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_shipping_methods_ins
+AFTER INSERT ON shipping_methods FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE shipping_methods SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_supplier_variants_ins
+AFTER INSERT ON supplier_variants FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE supplier_variants SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_order_adjustments_ins
+AFTER INSERT ON order_adjustments FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE order_adjustments SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_product_media_ins
+AFTER INSERT ON product_media FOR EACH ROW WHEN NEW.created_at IS NULL
+BEGIN
+  UPDATE product_media SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_attribute_definitions_upd
+AFTER UPDATE ON attribute_definitions FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE attribute_definitions SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_attribute_options_upd
+AFTER UPDATE ON attribute_options FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE attribute_options SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_price_lists_upd
+AFTER UPDATE ON price_lists FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE price_lists SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_warehouses_upd
+AFTER UPDATE ON warehouses FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE warehouses SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_navigation_menus_upd
+AFTER UPDATE ON navigation_menus FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE navigation_menus SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_navigation_items_upd
+AFTER UPDATE ON navigation_items FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE navigation_items SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_story_collections_upd
+AFTER UPDATE ON story_collections FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE story_collections SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_stories_upd
+AFTER UPDATE ON stories FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE stories SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_sliders_upd
+AFTER UPDATE ON sliders FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE sliders SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_slides_upd
+AFTER UPDATE ON slides FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE slides SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_seo_documents_upd
+AFTER UPDATE ON seo_documents FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE seo_documents SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_bank_accounts_upd
+AFTER UPDATE ON bank_accounts FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE bank_accounts SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_staff_profiles_upd
+AFTER UPDATE ON staff_profiles FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE staff_profiles SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_coupons_upd
+AFTER UPDATE ON coupons FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE coupons SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_bank_transfers_upd
+AFTER UPDATE ON bank_transfers FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE bank_transfers SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
+END;
+CREATE TRIGGER IF NOT EXISTS trg_ts_media_assets_upd
+AFTER UPDATE ON media_assets FOR EACH ROW WHEN NEW.updated_at IS OLD.updated_at
+BEGIN
+  UPDATE media_assets SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE rowid = NEW.rowid;
 END;
 
 -- Integrations reference rows (insert only).

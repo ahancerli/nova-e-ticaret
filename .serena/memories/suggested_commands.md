@@ -12,3 +12,5 @@
 - Node via nvm (`nvm alias default node`); `uv`/`serena`/`claude` in `~/.local/bin` (PATH set in `~/.zshenv`).
 - Docker Desktop 4.17 (2023) does not start on this macOS — needs an update before local `docker compose`.
 - Search engine for `npm run dev`: `docker compose up -d meilisearch` and `MEILI_URL=http://localhost:7700` in `.env.local` (no key locally); force an index rebuild with POST `/api/cron/search-sync?full=1` (Bearer CRON_SECRET) or panel Katalog › Arama.
+
+- Slow SQL: `SLOW_QUERY_MS=25 npm run dev` logs every statement above the threshold (`slow query` JSON lines). Scale check: build a throw-away DB (`DATABASE_PATH=data/bench/nova.db node scripts/db.mjs init`), clone seed rows with `INSERT … SELECT` over a recursive series, start dev on it and time pages with curl.

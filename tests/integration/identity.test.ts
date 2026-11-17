@@ -71,7 +71,7 @@ await t("admin login: session cookie (Strict, 8h), principal with role permissio
   const stored = d1.raw.prepare("SELECT token_hash FROM sessions WHERE user_id = 'u_staff'").get() as any;
   assert(stored && stored.token_hash !== c.value, "only the token's HMAC is stored");
   const p = await principal("admin");
-  assert(p?.isStaff && p.permissions.has("catalog.write") && !p.permissions.has("catalog.publish"), JSON.stringify(p && [...p.permissions]));
+  assert(p?.isStaff && p.permissions.has("catalog.write") && !p.permissions.has("orders.write"), JSON.stringify(p && [...p.permissions]));
   assert((await principal("storefront")) === null, "admin session is not a storefront session");
   assert(loginEvents.includes("admin:u_staff"), "listener");
 });

@@ -12,6 +12,9 @@ import { notify } from "@/lib/toast";
 import { useDialogFocus, useIsClient, usePresence } from "@/lib/motion";
 import { Popover } from "@/components/ui/Popover";
 import { Portal } from "@/components/ui/Portal";
+import { motion } from "motion/react";
+import { Celebration } from "@/components/admin/Celebration";
+import { InfoHint } from "@/components/admin/InfoHint";
 import { AdminSidebar, iconMap, type SidebarGroup } from "@/features/admin-shell/AdminSidebar";
 import { CommandPalette, type PaletteItem } from "@/features/admin-shell/CommandPalette";
 import { NotificationBell } from "@/features/notifications/NotificationBell";
@@ -27,7 +30,9 @@ function initials(name: string) {
 }
 
 /** Admin chrome: sidebar (fixed on desktop, sliding drawer on mobile), sticky top bar, command palette. */
-export function AdminShell({ user, groups, quickCreate, env, support = false, children }: {
+export function AdminShell({ user, groups, quickCreate, env, support = false, fontClassName = "", children }: {
+  /** next/font variable class of the display face (page titles). */
+  fontClassName?: string;
   user: ShellUser; groups: SidebarGroup[]; quickCreate: QuickCreate; env: "development" | "production";
   /** Live support dock (module on + `support.chat`). */
   support?: boolean;
@@ -77,6 +82,9 @@ export function AdminShell({ user, groups, quickCreate, env, support = false, ch
     });
   }, [pathname, links]);
 
+  // The open page's own entry (longest matching href): its purpose sits behind the info button in the top bar.
+  const page = useMemo(() => links.filter((l) => pathname === l.href || pathname.startsWith(`${l.href}/`)).sort((a, b) => b.href.length - a.href.length)[0] ?? null, [links, pathname]);
+
   const paletteItems = useMemo<PaletteItem[]>(() => [
     ...(quickCreate.product ? [{ id: "new-product", label: "Yeni ürün oluştur", group: "Hızlı işlemler", href: "/admin/urunler/yeni", icon: Package, keywords: "ekle urun" }] : []),
     ...(quickCreate.category ? [{ id: "new-category", label: "Yeni kategori oluştur", group: "Hızlı işlemler", href: "/admin/kategoriler/yeni", icon: FolderTree, keywords: "ekle" }] : []),
@@ -101,8 +109,8 @@ export function AdminShell({ user, groups, quickCreate, env, support = false, ch
   const iconBtn = "inline-flex size-10 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 aria-expanded:bg-slate-100 aria-expanded:text-slate-800";
 
   return (
-    <div className="min-h-dvh bg-[#f5f6fb] xl:grid xl:grid-cols-[272px_minmax(0,1fr)]">
-      <aside className="sticky top-0 hidden h-dvh flex-col border-r border-white/5 bg-[#25293c] text-slate-200 xl:flex">
+    <div className={`${fontClassName} min-h-dvh bg-ground xl:grid xl:grid-cols-[272px_minmax(0,1fr)]`}>
+      <aside className="sticky top-0 hidden h-dvh flex-col bg-ink text-indigo-100 xl:flex">
         <SidebarContent groups={groups} env={env} />
       </aside>
       <MobileSidebar open={mobileOpen} onClose={() => setMobileOpen(false)} groups={groups} env={env} />
@@ -128,6 +136,9 @@ export function AdminShell({ user, groups, quickCreate, env, support = false, ch
                 ))}
               </ol>
             </nav>
+            {page?.info ? (
+              <InfoHint title={page.label} href={`/admin/kilavuz#${encodeURIComponent(page.href)}`} className="hidden md:inline-flex">{page.info}</InfoHint>
+            ) : null}
 
             <div className="flex flex-1 justify-center px-1">
               <button type="button" onClick={() => setPaletteOpen(true)}
@@ -215,11 +226,17 @@ export function AdminShell({ user, groups, quickCreate, env, support = false, ch
             </div>
           </div>
         </header>
-        <main className="p-4 sm:p-6 lg:p-8">{children}</main>
+        <main className="p-4 sm:p-6 lg:p-8">
+          {/* one short entrance per page change: the content settles in, the chrome stays still */}
+          <motion.div key={pathname} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}>
+            {children}
+          </motion.div>
+        </main>
       </div>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />
       {support && <SupportDock />}
+      <Celebration />
     </div>
   );
 }
@@ -243,8 +260,8 @@ function SidebarContent({ groups, env, onNavigate }: { groups: SidebarGroup[]; e
         <Link href="/admin" onClick={onNavigate} className="flex items-center gap-3">
           <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-[#7367f0] to-[#a29bfe] text-lg font-black text-white shadow-lg shadow-[#7367f0]/40">n</span>
           <span className="leading-tight">
-            <span className="block text-lg font-extrabold tracking-tight text-white">nova<span className="text-[#a29bfe]">.</span></span>
-            <span className="block text-[10px] font-medium uppercase tracking-[0.18em] text-slate-400">Yönetim Paneli</span>
+            <span className="block font-display text-xl font-extrabold tracking-tight text-white">nova<span className="text-[#a29bfe]">.</span></span>
+            <span className="block text-[11px] font-medium text-indigo-200/60">Yönetim paneli</span>
           </span>
         </Link>
       </div>
@@ -254,12 +271,12 @@ function SidebarContent({ groups, env, onNavigate }: { groups: SidebarGroup[]; e
       <div className="flex-none border-t border-white/5 p-4">
         <div className="rounded-xl bg-white/[0.04] p-3 ring-1 ring-white/5">
           <div className="flex items-center justify-between text-[11px]">
-            <span className="font-semibold uppercase tracking-wide text-slate-400">Ortam</span>
+            <span className="font-semibold text-indigo-200/60">Ortam</span>
             <span className={`inline-flex items-center gap-1.5 font-semibold ${env === "production" ? "text-emerald-400" : "text-amber-300"}`}>
               <span className={`size-1.5 rounded-full ${env === "production" ? "bg-emerald-400" : "bg-amber-300"}`} />{env === "production" ? "Canlı" : "Local"}
             </span>
           </div>
-          <p className="mt-1 text-[11px] text-slate-500">nova. commerce · v1.0</p>
+          <p className="mt-1 text-[11px] text-indigo-200/40">nova. commerce v1.0</p>
         </div>
       </div>
     </>
@@ -277,7 +294,7 @@ function MobileSidebar({ open, onClose, groups, env }: { open: boolean; onClose:
         <button type="button" tabIndex={-1} aria-label="Menüyü kapat" data-state={presence.state} onClick={onClose}
           className="absolute inset-0 bg-slate-900/50 backdrop-blur-[2px] data-[state=closed]:animate-fade-out data-[state=open]:animate-fade-in" />
         <div ref={ref} role="dialog" aria-modal="true" aria-label="Yönetim menüsü" data-state={presence.state} onAnimationEnd={presence.onAnimationEnd}
-          className="absolute inset-y-0 left-0 flex w-[min(300px,85vw)] flex-col bg-[#25293c] text-slate-200 shadow-2xl data-[state=closed]:animate-slide-out-left data-[state=open]:animate-slide-in-left">
+          className="absolute inset-y-0 left-0 flex w-[min(300px,85vw)] flex-col bg-ink text-indigo-100 shadow-2xl data-[state=closed]:animate-slide-out-left data-[state=open]:animate-slide-in-left">
           <button type="button" onClick={onClose} aria-label="Kapat" className="absolute right-3 top-3.5 z-10 grid size-9 place-items-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white">
             <X className="h-5 w-5" />
           </button>

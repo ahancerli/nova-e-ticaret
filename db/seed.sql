@@ -10,9 +10,9 @@
 -- RBAC ------------------------------------------------------------------------
 INSERT OR IGNORE INTO roles (id, code, name, description, is_system) VALUES
  ('role_customer','customer','Müşteri','Mağaza üyeleri. Personele atanamaz.',1),
- ('role_catalog','catalog_manager','Katalog Yöneticisi','Ürün, kategori, marka ve vitrin içeriklerini yönetir.',1),
- ('role_order','order_manager','Sipariş Yöneticisi','Siparişleri hazırlar, kargolar, iade ve havale onayı yapar.',1),
- ('role_marketing','marketing_manager','Pazarlama','Kampanya, vitrin ve içerik sayfalarını yönetir.',1),
+ ('role_catalog','catalog_manager','Ürün Sorumlusu','Ürün, kategori, marka, özellik ve vitrini yönetir, ürünü yayına alır, ürün yorum ve sorularını yanıtlar.',1),
+ ('role_order','order_manager','Sipariş Sorumlusu','Siparişleri hazırlar, kargolar, iade ve havale onayı yapar, müşterilerle ve canlı destekle ilgilenir.',1),
+ ('role_marketing','marketing_manager','Reklam ve Pazarlama','Kampanya, kupon, vitrin, içerik, e-bülten ve Social AI Marketing (WhatsApp / Instagram) yönetir.',1),
  ('role_admin','admin','Yönetici','Tüm yetkiler. Kullanıcı ve rol yönetimi dahil.',1);
 
 INSERT OR IGNORE INTO permissions (id, code, description) VALUES
@@ -38,9 +38,9 @@ INSERT OR IGNORE INTO permissions (id, code, description) VALUES
  ('perm_20','social_ai.chat','Social AI Marketing konuşmalarını görme ve yanıtlama');
 
 INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES
- ('role_catalog','perm_01'),('role_catalog','perm_02'),('role_catalog','perm_07'),
- ('role_order','perm_04'),('role_order','perm_05'),('role_order','perm_06'),('role_order','perm_14'),('role_order','perm_16'),
- ('role_marketing','perm_01'),('role_marketing','perm_07'),('role_marketing','perm_08'),('role_marketing','perm_15'),('role_marketing','perm_17');
+ ('role_catalog','perm_01'),('role_catalog','perm_02'),('role_catalog','perm_03'),('role_catalog','perm_07'),('role_catalog','perm_17'),
+ ('role_order','perm_04'),('role_order','perm_05'),('role_order','perm_06'),('role_order','perm_14'),('role_order','perm_16'),('role_order','perm_18'),
+ ('role_marketing','perm_01'),('role_marketing','perm_07'),('role_marketing','perm_08'),('role_marketing','perm_14'),('role_marketing','perm_15'),('role_marketing','perm_17'),('role_marketing','perm_19'),('role_marketing','perm_20');
 INSERT OR IGNORE INTO role_permissions (role_id, permission_id) SELECT 'role_admin', id FROM permissions;
 
 -- Core config -------------------------------------------------------------------

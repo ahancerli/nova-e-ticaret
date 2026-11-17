@@ -10,10 +10,29 @@ export function openSqlite(path: string): DatabaseSync {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
+  if (path !== ":memory:") {
+    // Scale settings: 64 MB page cache (default is 2 MB), sorts / temp b-trees in memory, read through a 256 MB
+    // memory map, and planner statistics kept fresh (the planner picks the wrong index on big tables without them;
+    // 0x10002 = analyze only tables that need it, with a row limit so it stays fast).
+    db.exec("PRAGMA cache_size = -65536; PRAGMA temp_store = MEMORY; PRAGMA mmap_size = 268435456; PRAGMA wal_autocheckpoint = 2000; PRAGMA optimize = 0x10002;");
+  }
   return db;
 }
 
 const RETURNING = /\bRETURNING\b/i;
+// Statements slower than this are logged (SQL text only, never parameters). node:sqlite is synchronous: a slow
+// statement blocks every other request of the process, so these lines are the first place to look when pages lag.
+const SLOW_MS = Number(process.env.SLOW_QUERY_MS || 250);
+
+function timed<T>(sql: string, run: () => T): T {
+  const started = performance.now();
+  try {
+    return run();
+  } finally {
+    const ms = performance.now() - started;
+    if (ms >= SLOW_MS) console.warn(JSON.stringify({ time: new Date().toISOString(), level: "warn", msg: "slow query", ms: Math.round(ms), sql: sql.replace(/\s+/g, " ").trim().slice(0, 600) }));
+  }
+}
 const STATEMENT_CACHE_LIMIT = 500;
 
 const toParam = (v: unknown): SQLInputValue => (v === undefined ? null : typeof v === "boolean" ? (v ? 1 : 0) : (v as SQLInputValue));
@@ -28,7 +47,7 @@ class SqliteStatement implements SqlStatement {
   }
 
   async first<T = Record<string, unknown>>(colName?: string): Promise<T | null> {
-    const row = this.driver.statement(this.sql).get(...this.params) as Record<string, SQLInputValue> | undefined;
+    const row = timed(this.sql, () => this.driver.statement(this.sql).get(...this.params)) as Record<string, SQLInputValue> | undefined;
     if (!row) return null;
     return (colName ? row[colName] : plain(row)) as T;
   }
@@ -87,10 +106,10 @@ export class SqliteDriver implements SqlDriver {
   execute(s: SqliteStatement): SqlResult {
     const st = this.statement(s.sql);
     if (st.columns().length === 0) {
-      const r = st.run(...s.params);
+      const r = timed(s.sql, () => st.run(...s.params));
       return { results: [], success: true, meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) } };
     }
-    const results = (st.all(...s.params) as Record<string, SQLInputValue>[]).map(plain);
+    const results = (timed(s.sql, () => st.all(...s.params)) as Record<string, SQLInputValue>[]).map(plain);
     // INSERT/UPDATE/DELETE … RETURNING yields one row per changed row
     return { results, success: true, meta: { changes: RETURNING.test(s.sql) ? results.length : 0 } };
   }

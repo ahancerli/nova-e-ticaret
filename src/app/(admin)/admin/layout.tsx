@@ -1,107 +1,18 @@
+import { Bricolage_Grotesque } from "next/font/google";
 import { redirect } from "next/navigation";
 import { AdminShell } from "@/features/admin-shell/AdminShell";
-import type { SidebarEntry, SidebarGroup } from "@/features/admin-shell/AdminSidebar";
+import type { SidebarGroup } from "@/features/admin-shell/AdminSidebar";
+import { visibleNav } from "@/features/admin-shell/nav";
 import { ConfigToken } from "@/core";
 import { GetStaffRolesToken } from "@/modules/identity";
 import { GetPublicSupportConfigToken } from "@/modules/support";
 import { currentPrincipal, resolveService } from "@/server/app";
 
+// Brand display face for page titles (same family as the storefront headings); body text stays on the system stack.
+const display = Bricolage_Grotesque({ subsets: ["latin", "latin-ext"], variable: "--nf-display", display: "swap" });
+
 export const dynamic = "force-dynamic";
 export const metadata = { title: { default: "Yönetim", template: "%s | nova. yönetim" }, robots: { index: false, follow: false } };
-
-type NavLink = {
-  type: "link";
-  href: string;
-  label: string;
-  /** Required permission; leave out for pages every staff member sees. */
-  perm?: string;
-  icon: SidebarEntry["icon"];
-};
-
-type NavNest = {
-  type: "nest";
-  label: string;
-  icon: SidebarEntry["icon"];
-  children: NavLink[];
-};
-
-type NavEntry = NavLink | NavNest;
-
-const NAV: Array<{ title: string; items: NavEntry[] }> = [
-  {
-    title: "ANA",
-    items: [
-      { type: "link", href: "/admin", label: "Dashboard", perm: "orders.read", icon: "dashboard" },
-      { type: "link", href: "/admin/siparisler", label: "Siparişler", perm: "orders.read", icon: "orders" },
-      { type: "link", href: "/admin/iadeler", label: "İadeler", perm: "orders.read", icon: "returns" },
-      { type: "link", href: "/admin/faturalar", label: "Faturalar", perm: "orders.read", icon: "invoices" },
-      { type: "link", href: "/admin/musteriler", label: "Müşteriler", perm: "customers.read", icon: "customers" },
-      { type: "link", href: "/admin/e-bulten", label: "E-bülten", perm: "customers.read", icon: "newsletter" },
-      { type: "link", href: "/admin/yorumlar", label: "Ürün yorumları", perm: "reviews.moderate", icon: "reviews" },
-      { type: "link", href: "/admin/sorular", label: "Ürün soruları", perm: "reviews.moderate", icon: "reviews" },
-      { type: "link", href: "/admin/canli-destek", label: "Canlı destek", perm: "support.chat", icon: "support" },
-      {
-        type: "nest",
-        label: "Social AI Marketing",
-        icon: "social",
-        children: [
-          { type: "link", href: "/admin/social-ai/whatsapp", label: "WhatsApp", perm: "social_ai.manage", icon: "social" },
-          { type: "link", href: "/admin/social-ai/instagram", label: "Instagram", perm: "social_ai.manage", icon: "social" },
-          { type: "link", href: "/admin/social-ai/konusmalar", label: "Konuşmalar", perm: "social_ai.chat", icon: "social" },
-          { type: "link", href: "/admin/social-ai/bot-ayarlari", label: "Bot ayarları", perm: "social_ai.manage", icon: "social" },
-        ],
-      },
-      { type: "link", href: "/admin/bildirimler", label: "Bildirimler", icon: "notifications" },
-    ],
-  },
-  {
-    title: "KATALOG",
-    items: [
-      {
-        type: "nest",
-        label: "Catalog",
-        icon: "products",
-        children: [
-          { type: "link", href: "/admin/urunler", label: "Ürünler", perm: "catalog.read", icon: "products" },
-          { type: "link", href: "/admin/kategoriler", label: "Kategoriler", perm: "catalog.write", icon: "categories" },
-          { type: "link", href: "/admin/markalar", label: "Markalar", perm: "catalog.write", icon: "brands" },
-          { type: "link", href: "/admin/ozellikler", label: "Özellikler & varyantlar", perm: "catalog.write", icon: "categories" },
-          { type: "link", href: "/admin/beden-tablolari", label: "Beden tabloları", perm: "catalog.write", icon: "categories" },
-          { type: "link", href: "/admin/arama", label: "Arama", perm: "catalog.write", icon: "search" },
-          { type: "link", href: "/admin/kampanyalar", label: "Kampanyalar", perm: "campaigns.write", icon: "campaigns" },
-          { type: "link", href: "/admin/vitrin", label: "Vitrin", perm: "storefront.write", icon: "showcase" },
-          { type: "link", href: "/admin/toplu-islemler", label: "Toplu işlemler", perm: "catalog.write", icon: "bulk" },
-        ],
-      },
-    ],
-  },
-  {
-    title: "YÖNETİM",
-    items: [
-      { type: "link", href: "/admin/odemeler", label: "Ödeme sistemleri", perm: "payments.secrets", icon: "payments" },
-      { type: "link", href: "/admin/kargo-ucretleri", label: "Kargo ücretleri", perm: "settings.write", icon: "shipping" },
-      {
-        type: "nest",
-        label: "Entegrasyonlar",
-        icon: "integrations",
-        children: [
-          { type: "link", href: "/admin/entegrasyonlar/ai", label: "AI entegrasyonları", perm: "integrations.write", icon: "integrations" },
-          { type: "link", href: "/admin/entegrasyonlar/e-posta", label: "E-posta (SMTP)", perm: "integrations.write", icon: "integrations" },
-          { type: "link", href: "/admin/entegrasyonlar/sms", label: "SMS entegrasyonları", perm: "integrations.write", icon: "integrations" },
-          { type: "link", href: "/admin/entegrasyonlar/kargo", label: "Kargo entegrasyonları", perm: "integrations.write", icon: "integrations" },
-          { type: "link", href: "/admin/entegrasyonlar/e-fatura", label: "e-Fatura / e-Arşiv", perm: "integrations.write", icon: "integrations" },
-          { type: "link", href: "/admin/entegrasyonlar/iys", label: "İYS (ticari ileti izinleri)", perm: "integrations.write", icon: "integrations" },
-          { type: "link", href: "/admin/entegrasyonlar/pazaryerleri", label: "Pazaryerleri", perm: "integrations.write", icon: "integrations" },
-          { type: "link", href: "/admin/entegrasyonlar/cerez-onayi", label: "Çerez onayı & izleme", perm: "integrations.write", icon: "integrations" },
-        ],
-      },
-      { type: "link", href: "/admin/kullanicilar", label: "Kullanıcılar", perm: "users.manage", icon: "users" },
-      { type: "link", href: "/admin/icerik", label: "İçerik yönetimi", perm: "content.write", icon: "content" },
-      { type: "link", href: "/admin/ayarlar", label: "Site ayarları", perm: "settings.write", icon: "settings" },
-      { type: "link", href: "/admin/denetim", label: "Denetim kayıtları", perm: "audit.read", icon: "audit" },
-    ],
-  },
-];
 
 /** Every admin page is gated on the server. UI hiding below is convenience only; APIs re-check permissions. */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -109,18 +20,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!user) redirect("/admin/giris?next=/admin");
   if (!user.isStaff) redirect("/");
 
-  const groups: SidebarGroup[] = NAV.map((group) => {
-    const items: SidebarEntry[] = [];
-    for (const item of group.items) {
-      if (item.type === "nest") {
-        const children = item.children.filter((c) => !c.perm || user.permissions.has(c.perm));
-        if (children.length > 0) items.push({ type: "nest", label: item.label, icon: item.icon, children });
-        continue;
-      }
-      if (!item.perm || user.permissions.has(item.perm)) items.push(item);
-    }
-    return { title: group.title, items };
-  }).filter((g) => g.items.length > 0);
+  const groups: SidebarGroup[] = visibleNav((p) => user.permissions.has(p));
 
   const can = (p: string) => user.permissions.has(p);
   const [roles, config, support] = await Promise.all([
@@ -131,6 +31,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <AdminShell
+      fontClassName={display.variable}
       user={{ displayName: user.displayName, email: user.email, roles }}
       groups={groups}
       quickCreate={{ product: can("catalog.write"), category: can("catalog.write"), brand: can("catalog.write"), page: can("content.write") }}

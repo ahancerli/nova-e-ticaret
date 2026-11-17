@@ -74,6 +74,8 @@ function migrate(db) {
 		applied++
 	}
 	console.log(`✓ migrations: ${applied} applied, ${files.length - applied} already present`)
+	// Indexes on migrated columns: only now every column exists (see db/late-indexes.sql).
+	db.exec(read("db/late-indexes.sql"))
 }
 
 // Drift report: pending migrations (probe fails), tables/indexes/triggers/views or columns from db/schema.sql the
@@ -93,6 +95,7 @@ function drift(db) {
 		})
 	const ref = new DatabaseSync(":memory:")
 	ref.exec(read("db/schema.sql"))
+	ref.exec(read("db/late-indexes.sql"))
 	const objects = (d) =>
 		new Set(
 			d
@@ -183,6 +186,7 @@ switch (action) {
 		db.exec(read("db/drop_all.sql"))
 		applySchema(db)
 		applySeed(db)
+		db.exec(read("db/late-indexes.sql"))
 		db.close()
 		break
 	}

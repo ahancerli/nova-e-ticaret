@@ -376,7 +376,7 @@ Kurallar: use case bağımlılıklarını constructor'dan alır, somut sınıf b
 | `/api/admin/iys` · `/iys/test` · `/iys/retry` · `/iys/backfill` | GET/PUT · POST · POST · POST | integrations.write; İYS bağlantısı, giriş testi, reddedilenleri tekrar dene, mevcut izinleri kuyruğa al |
 | `/assets/*` | GET | Herkese açık, yalnız üretilmiş anahtar biçimi. Görsel ve ürün videosu (MP4); `Range: bytes=…` → 206 + `Content-Range`, karşılanamayan aralık 416 (Safari / iOS, Range yanıtlamayan sunucudan video oynatmaz) |
 
-Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/app/(admin)/admin/layout.tsx` içindeki `NAV`'dan izinlere göre süzülür.
+Roller ve izinler seed'dedir (db/README.md §6). Panel menüsü `src/features/admin-shell/nav.ts` içindeki `NAV`'dan izinlere göre süzülür (`visibleNav`); aynı liste üst çubuktaki sayfa bilgi düğmesini ve `/admin/kilavuz` kullanım kılavuzunu da besler: yeni sayfa = `NAV`'a `info` cümlesiyle bir satır. Gruplar işe göredir (Satış, Katalog, Pazarlama, Müşteriler, Entegrasyonlar, Sistem). Başarı bildirimi (`notify.success`) panelde balon animasyonunu tetikler (`components/admin/Celebration`, `motion` paketi); açıklama gereken yere `components/admin/InfoHint` konur (`AdminPageHeader` / `AdminCardTitle` / `AdminStatCard` `info` prop'u).
 
 ## 9. Testler
 
