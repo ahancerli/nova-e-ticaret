@@ -18,7 +18,7 @@ done
 echo "→ syncing source to ${HOST}:${DIR}"
 ssh "$HOST" "mkdir -p '$DIR'"
 rsync -az --delete \
-	--exclude .git --exclude node_modules --exclude .next --exclude data --exclude test-results \
+	--exclude .git --exclude node_modules --exclude .next --exclude /data --exclude test-results \
 	--exclude playwright-report --exclude '.env' --exclude '.env.*' --exclude '*.tsbuildinfo' \
 	--exclude '* 2.*' --exclude .DS_Store --exclude deploy/.deploy.env \
 	./ "$HOST:$DIR/"
