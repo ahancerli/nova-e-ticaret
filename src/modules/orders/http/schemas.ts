@@ -89,7 +89,7 @@ export const orderBulkSchema = z.object({
 /** Sipariş sorgula (guest): order number + the e-mail used at checkout. */
 export const guestOrderLookupSchema = z.object({
   orderNumber: z.string().trim().min(4, "Sipariş numarasını girin.").max(40),
-  email: z.email("Geçerli bir e-posta girin.").max(254),
+  email: z.string().trim().pipe(z.email("Geçerli bir e-posta girin.").max(254)),
 }).strict();
 
 export type OrderQuery = z.output<typeof orderQuerySchema>;

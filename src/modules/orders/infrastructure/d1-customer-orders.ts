@@ -66,6 +66,15 @@ export class D1CustomerOrderReadModel extends Repository {
     return this.detailWhere("order_number = ? AND user_id IS NULL AND sales_channel = 'web' AND lower(customer_email) = lower(?)", orderNumber, email);
   }
 
+  async isMemberOrder(orderNumber: string, email: string): Promise<boolean> {
+    const row = await this.db.first<{ hit: number }>(
+      `SELECT 1 AS hit FROM orders o JOIN users u ON u.id = o.user_id
+        WHERE o.order_number = ? AND o.sales_channel = 'web' AND (lower(o.customer_email) = lower(?) OR u.email_normalized = lower(?))`,
+      orderNumber, email, email,
+    );
+    return !!row;
+  }
+
   private async detailWhere(where: string, ...params: unknown[]): Promise<CustomerOrderDetail | null> {
     const o = await this.db.first<{ id: string; order_number: string; placed_at: string; status: string; payment_status: string; payment_method: string | null; payment_fee_minor: number; total_minor: number; subtotal_minor: number; discount_minor: number; shipping_minor: number; sales_channel: string; user_id: string | null }>(
       `SELECT id, order_number, placed_at, status, payment_status, payment_method, payment_fee_minor, total_minor, subtotal_minor, discount_minor, shipping_minor, sales_channel, user_id

@@ -1,6 +1,7 @@
 import { NotFoundError } from "@/core";
 import type { Actor } from "@/modules/shared/actor";
 import { CUSTOMER_CANCEL_REASONS, type CustomerCancelReason } from "../domain/cancellation";
+import { ORDER_NUMBER_PATTERN, normalizeOrderNumber } from "../domain/order-number";
 import type { CustomerOrderDetail, CustomerOrderSummary } from "../infrastructure/d1-customer-orders";
 import type { CancelItemsQuote, CancelItemsResult, ItemCancellations } from "./item-cancellations";
 
@@ -9,11 +10,13 @@ export interface CustomerOrderReadModel {
   list(userId: string): Promise<CustomerOrderSummary[]>;
   detail(userId: string, orderNumber: string): Promise<CustomerOrderDetail | null>;
   guestDetail(orderNumber: string, email: string): Promise<CustomerOrderDetail | null>;
+  /** True when number + e-mail (checkout or account e-mail) belong to an order placed while signed in. */
+  isMemberOrder(orderNumber: string, email: string): Promise<boolean>;
   /** Id of the customer's own order (null for anyone else's). */
   ownOrderId(userId: string, orderNumber: string): Promise<string | null>;
 }
 
-const ORDER_NO = /^[A-Z0-9-]{4,40}$/;
+const ORDER_NO = ORDER_NUMBER_PATTERN;
 
 /** Query: the signed-in customer's orders, newest first. */
 export class ListCustomerOrders {
@@ -31,15 +34,23 @@ export class GetCustomerOrder {
   }
 }
 
+export type GuestOrderLookupResult = { kind: "guest"; order: CustomerOrderDetail } | { kind: "member"; orderNumber: string } | null;
+
 /**
- * Query: a guest's order by order number + the e-mail it was placed with (Sipariş sorgula). Member orders are
- * never returned here (they sign in); a wrong pair answers null, same as an unknown number.
+ * Query: a guest's order by order number + the e-mail it was placed with (Sipariş sorgula). The number is
+ * normalized first (spaces, "#", lower case, Turkish "İ"). Member orders are never returned here: a correct pair
+ * answers `member` (the customer must sign in — knowing number + e-mail already proves the order is theirs);
+ * a wrong pair answers null, same as an unknown number.
  */
 export class LookupGuestOrder {
   constructor(private readonly read: CustomerOrderReadModel) {}
-  execute(orderNumber: string, email: string): Promise<CustomerOrderDetail | null> {
-    const no = orderNumber.trim().toUpperCase();
-    return ORDER_NO.test(no) ? this.read.guestDetail(no, email.trim()) : Promise.resolve(null);
+  async execute(orderNumber: string, email: string): Promise<GuestOrderLookupResult> {
+    const no = normalizeOrderNumber(orderNumber);
+    const mail = email.trim();
+    if (!ORDER_NO.test(no) || !mail) return null;
+    const order = await this.read.guestDetail(no, mail);
+    if (order) return { kind: "guest", order };
+    return (await this.read.isMemberOrder(no, mail)) ? { kind: "member", orderNumber: no } : null;
   }
 }
 

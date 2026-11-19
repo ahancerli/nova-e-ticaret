@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Search } from "lucide-react";
-import { errorMessage } from "@/lib/api-client";
+import { ClientApiError, errorMessage } from "@/lib/api-client";
 import { useFieldErrors } from "@/lib/use-field-errors";
 import type { CustomerOrderDetail } from "@/modules/orders";
+import { normalizeOrderNumber } from "@/modules/orders/domain/order-number";
 import { ordersApi } from "./api";
 import { OrderStatusPill } from "./order-status";
 import { OrderDetailView } from "./OrderDetailView";
@@ -17,18 +19,21 @@ export function GuestOrderLookup({ initialNumber = "" }: { initialNumber?: strin
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the order was placed with an account: link to its Hesabım page (signs in first).
+  const [memberOrder, setMemberOrder] = useState<string | null>(null);
   // The e-mail that found the order (the field may be edited afterwards).
   const [order, setOrder] = useState<{ detail: CustomerOrderDetail; email: string } | null>(null);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
-    setBusy(true); setError(null); errors.clear();
+    setBusy(true); setError(null); setMemberOrder(null); errors.clear();
     try {
       const r = await ordersApi.lookup(orderNumber, email);
       setOrder({ detail: r.data, email: email.trim() });
     } catch (err) {
       setOrder(null);
+      if (err instanceof ClientApiError && err.code === "member_order") setMemberOrder(normalizeOrderNumber(orderNumber));
       if (!errors.fromError(err)) setError(errorMessage(err, "Sipariş sorgulanamadı."));
     } finally {
       setBusy(false);
@@ -51,7 +56,14 @@ export function GuestOrderLookup({ initialNumber = "" }: { initialNumber?: strin
           {errors.get("email") && <p className="mt-1 text-xs text-danger">{errors.get("email")}</p>}
         </div>
         <button className="btn btn-primary h-11 rounded-full" disabled={busy}><Search className="size-4" />{busy ? "Sorgulanıyor…" : "Sorgula"}</button>
-        {error && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-danger sm:col-span-3">{error}</p>}
+        {error && (
+          <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-sm text-danger sm:col-span-3">
+            {error}
+            {memberOrder && (
+              <> <Link className="font-semibold underline" href={`/hesabim/siparis/${encodeURIComponent(memberOrder)}`}>Giriş yap ve siparişi gör</Link></>
+            )}
+          </p>
+        )}
       </form>
       {order && (
         <div className="space-y-6" aria-live="polite">

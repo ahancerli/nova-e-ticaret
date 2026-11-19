@@ -268,12 +268,17 @@ await t("addresses: country rules — TR province / district from the lists, nat
 });
 
 // --- 4b. guest order lookup ----------------------------------------------------------------------------------
-await t("guest lookup: number + checkout e-mail (any case); wrong e-mail / member order → null", async () => {
+await t("guest lookup: number (any case, #, spaces) + checkout e-mail; wrong e-mail → null; member order → sign in", async () => {
   const o = await placeOrder("bank_transfer", "Misafir@Example.com");
-  const hit = await resolve(orders.LookupGuestOrderToken).execute(o.orderNumber.toLowerCase(), "misafir@example.com");
-  assert(hit && hit.orderNumber === o.orderNumber && hit.items.length === 1 && hit.bankTransfer, json(hit));
-  assert(await resolve(orders.LookupGuestOrderToken).execute(o.orderNumber, "baska@example.com") === null, "wrong e-mail");
-  assert(await resolve(orders.LookupGuestOrderToken).execute("NOVA-2026-0001", "musteri@nova.local") === null, "member order not exposed");
+  const lookup = resolve(orders.LookupGuestOrderToken);
+  const hit = await lookup.execute(o.orderNumber.toLowerCase(), " misafir@example.com ");
+  assert(hit?.kind === "guest" && hit.order.orderNumber === o.orderNumber && hit.order.items.length === 1 && hit.order.bankTransfer, json(hit));
+  const messy = `#${o.orderNumber.slice(0, 6).toLowerCase()} ${o.orderNumber.slice(6)}`;
+  assert((await lookup.execute(messy, "MISAFIR@example.com"))?.kind === "guest", "typed with # and spaces");
+  assert(await lookup.execute(o.orderNumber, "baska@example.com") === null, "wrong e-mail");
+  const member = await lookup.execute("nova-2026-0001", "musteri@nova.local");
+  assert(member?.kind === "member" && member.orderNumber === "NOVA-2026-0001" && !("order" in member), json(member));
+  assert(await lookup.execute("NOVA-2026-0001", "baska@example.com") === null, "member order + wrong e-mail");
 });
 
 // --- 4c. return requests -------------------------------------------------------------------------------------
@@ -369,8 +374,9 @@ await t("invoices: paid web orders are queued; attach number + PDF (private key)
   assert(await resolve(invoices.GetInvoicePdfToken).forCustomer(o.orderNumber, { email: "baska@example.com" }) === null, "wrong e-mail");
   assert(await resolve(invoices.GetInvoicePdfToken).forCustomer(o.orderNumber, { userId: "u_customer" }) === null, "other member");
   // the customer order view shows it
-  const view = await resolve(orders.LookupGuestOrderToken).execute(o.orderNumber, "fatura@example.com");
-  assert(view.invoice?.number === "ABC2026000000001" && view.invoice.hasPdf, json(view.invoice));
+  const found = await resolve(orders.LookupGuestOrderToken).execute(o.orderNumber, "fatura@example.com");
+  const view = found?.kind === "guest" ? found.order : null;
+  assert(view?.invoice?.number === "ABC2026000000001" && view.invoice.hasPdf, json(view.invoice));
   // cancel → back in the queue, a new one may be attached; number unique across orders
   await resolve(invoices.CancelInvoiceToken).execute(inv.id, "Tutar hatalı", staff);
   assert((await resolve(invoices.ListInvoicesToken).execute("pending")).pending.some((r: any) => r.orderId === o.orderId), "requeued");
