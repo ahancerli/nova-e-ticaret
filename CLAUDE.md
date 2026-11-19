@@ -16,6 +16,11 @@ When a task is done, if the change affects anything the memories describe — fo
 changed. Skip it for local changes (a bug fix, a UI text, one component). A Stop hook (`.claude/hooks/serena-memory-check.sh`)
 reminds you if architecture files changed without a memory update.
 
+## Deploying to production
+
+- When the user asks to deploy ("deploy et", "canlıya al", "prod'a gönder"), first read Serena memory `deploy`
+  (server, `deploy/.deploy.env`, SSH key check, how to verify the live site). Commit and push first if asked.
+
 ## Keeping the local database in sync
 
 - After every task (not only schema work), make the local database match `db/schema.sql` + `db/migrations`:

@@ -51,5 +51,6 @@ Authoritative docs (read the relevant section instead of rediscovering): `README
 - language/framework versions, runtime constraints: `mem:tech_stack`
 - coding patterns (use case, UnitOfWork guards, route(), DI tokens, client/server import split, UI text rules): `mem:conventions`
 - dev/db/docker/test/deploy commands and Darwin specifics: `mem:suggested_commands`
+- production server, how to deploy / verify / reach the server, prod DB state, customer domain switch: `mem:deploy`
 - definition-of-done checks: `mem:task_completion`
 - repo hazards (iCloud duplicate files, local D1 corruption, stale dev modules): `mem:pitfalls`
