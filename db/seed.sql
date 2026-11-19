@@ -83,6 +83,11 @@ INSERT OR IGNORE INTO payment_configs (id, provider, name, environment, is_activ
 INSERT OR IGNORE INTO shipping_methods (id, code, name, fee_minor, free_above_minor) VALUES
  ('sm_std','STANDARD','Standart Teslimat',3990,50000);
 
+-- @demo-data-below ----------------------------------------------------------------
+-- Everything above is the base every database needs (roles, permissions, warehouse, price list, setting keys,
+-- inactive payment rows, one shipping method). Everything below is demo catalog / content / users: skipped when
+-- the container starts on a fresh database with SEED_ON_INIT=false (scripts/db.mjs).
+
 -- Media (placeholder paths under /public/demo) ---------------------------------
 INSERT OR IGNORE INTO media_assets (id, storage_key, public_url, mime_type, byte_size, width, height, alt_text, rights_note) VALUES
  ('m_hero1','demo/hero-1.svg','/demo/hero-1.svg','image/svg+xml',1200,1600,640,'Yeni sezon seçkisi','demo'),

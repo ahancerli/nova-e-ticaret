@@ -98,7 +98,7 @@ npm run deploy
 ssh root@SUNUCU_IP "cd /opt/nova && docker compose exec app node scripts/create-admin.mjs siz@ornek.com 'Ad Soyad'"
 ```
 Sunucuda `/opt/nova/.env` içindeki `COMPOSE_FILE` sayesinde düz `docker compose ps | logs -f app | restart app` prod dosyalarıyla çalışır.
-İlk açılışta veritabanı boşsa `db/seed.sql` (roller/izinler + demo katalog) yüklenir — demo kullanıcıları silin/parolalarını değiştirin; mevcut veri taşınacaksa `SEED_ON_INIT=false`.
+İlk açılışta veritabanı boşsa `db/seed.sql` yüklenir. `SEED_ON_INIT=false` (canlı şablonun varsayılanı): yalnız dosyadaki `-- @demo-data-below` işaretinin üstü — roller/izinler, ana depo, fiyat listesi, ayar anahtarları (örnek firma bilgileri: panelden doldurulur), kapalı ödeme kayıtları, standart kargo; demo katalog/içerik/kullanıcı yok, ilk yönetici `create-admin` ile açılır. `true`: demo katalog + demo kullanıcılar da yüklenir (silin/parolalarını değiştirin).
 
 **Eski Cloudflare D1 verisini taşıma (bir kez):**
 ```bash

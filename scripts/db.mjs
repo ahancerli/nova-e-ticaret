@@ -34,9 +34,20 @@ function applySchema(db) {
 	console.log("✓ schema (db/schema.sql)")
 }
 
-function applySeed(db) {
-	db.exec(read("db/seed.sql"))
-	console.log("✓ seed (db/seed.sql)")
+const DEMO_MARKER = "-- @demo-data-below"
+
+/** Full seed, or with `baseOnly` only the part above DEMO_MARKER (roles, permissions, core config — no demo data). */
+function applySeed(db, { baseOnly = false } = {}) {
+	const sql = read("db/seed.sql")
+	if (!baseOnly) {
+		db.exec(sql)
+		console.log("✓ seed (db/seed.sql)")
+		return
+	}
+	const cut = sql.indexOf(DEMO_MARKER)
+	if (cut < 0) fail(`db/seed.sql: marker "${DEMO_MARKER}" missing`)
+	db.exec(sql.slice(0, cut))
+	console.log("✓ base seed (db/seed.sql above the demo marker; SEED_ON_INIT=false)")
 }
 
 function migrate(db) {
@@ -152,7 +163,7 @@ switch (action) {
 		const db = openDatabase(path)
 		const fresh = !hasSchema(db)
 		applySchema(db)
-		if (fresh && process.env.SEED_ON_INIT !== "false") applySeed(db)
+		if (fresh) applySeed(db, { baseOnly: process.env.SEED_ON_INIT === "false" })
 		migrate(db)
 		db.close()
 		console.log(`✓ database ready: ${path}${fresh ? " (new)" : ""}`)
