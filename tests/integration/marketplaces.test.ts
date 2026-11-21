@@ -93,9 +93,11 @@ await t("trendyol client: auth + User-Agent headers, URLs, order parsing, batch 
 
 await t("kafka REST bus: produce v2 records, consumer instance → subscribe → fetch → commit → delete", async () => {
   const calls: string[] = [];
+  let commitBody: unknown = "not called";
   const fake = async (url: string, init: any) => {
     const u = new URL(url);
     calls.push(`${init.method} ${u.pathname}`);
+    if (init.method === "POST" && u.pathname.endsWith("/offsets")) commitBody = init.body;
     if (init.method === "POST" && u.pathname === "/topics/nova.catalog.stock") return new Response(json({ offsets: [{ partition: 0, offset: 5 }] }));
     if (u.pathname.endsWith("/records")) return new Response(json([{ topic: "nova.catalog.stock", key: "p1", value: { kind: "stock" }, partition: 0, offset: 5 }]));
     return new Response(init.method === "DELETE" ? null : "{}", { status: init.method === "DELETE" ? 204 : 200 });
@@ -106,6 +108,8 @@ await t("kafka REST bus: produce v2 records, consumer instance → subscribe →
   assert(batch.records.length === 1 && batch.records[0]!.key === "p1", json(batch.records));
   await batch.commit();
   assert(calls[0] === "POST /topics/nova.catalog.stock" && calls[1] === "POST /consumers/grp" && calls[2]!.endsWith("/subscription") && calls.some((c) => c.endsWith("/offsets")) && calls.at(-1)!.startsWith("DELETE"), json(calls));
+  // REST Proxy 7.x answers 500 to a `{}` commit body; "commit everything fetched" must be sent without a body.
+  assert(commitBody === undefined, `commit must send no body, got ${json(commitBody)}`);
 });
 
 // --- container ---------------------------------------------------------------------------------------

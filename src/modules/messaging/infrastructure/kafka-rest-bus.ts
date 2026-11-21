@@ -9,7 +9,7 @@ import type { BusMessage, ConsumedBatch, MessageBus } from "../application/ports
  *   consume  POST /consumers/{group}                                      → instance (auto commit OFF, earliest)
  *            POST /consumers/{group}/instances/{name}/subscription        topics [topic]
  *            GET  /consumers/{group}/instances/{name}/records             → [{topic, key, value, partition, offset}]
- *            POST /consumers/{group}/instances/{name}/offsets             {} = commit everything fetched
+ *            POST /consumers/{group}/instances/{name}/offsets             no body = commit everything fetched
  *            DELETE /consumers/{group}/instances/{name}
  *
  * Every poll uses a short-lived consumer instance of the group (no state kept between cron requests); offsets live in
@@ -67,7 +67,9 @@ export class KafkaRestBus implements MessageBus {
         records,
         commit: async () => {
           try {
-            if (records.length) await this.call("POST", `${base}/offsets`, {});
+            // No body = "commit everything fetched". A `{}` body makes Confluent REST Proxy 7.x fail with HTTP 500
+            // (it iterates the missing `offsets` list), so the request must carry no body at all.
+            if (records.length) await this.call("POST", `${base}/offsets`);
           } finally {
             await close();
           }
